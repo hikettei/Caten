@@ -8,7 +8,65 @@
    #:get-blueprint-from-polyhedral))
 
 (in-package :caten/codegen/polyhedral)
+;; ~~ Polyhedral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Polyhedral-IR ()
+  ((schedule :accessor poly-schedule :initarg :schedule)
+   (domain   :accessor poly-domain :initarg :domain)
+   (dependencies :accessor poly-dependencies :initarg :dependencies)
+   (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
+   (blueprint :accessor poly-blueprint :initarg :blueprint)))
 
+(defun make-polyhedral-ir (blueprint domain read write schedule)
+  (let ((pg (make-instance 'Polyhedral-IR)))
+    (setf (poly-schedule pg) schedule (poly-domain pg) domain (poly-blueprint pg) blueprint)
+    (let* ((access (union-access-info-from-sink read))
+           (access (union-access-info-set-must-source access write))
+           (access (union-access-info-set-schedule access schedule))
+           (flow (union-access-info-compute-flow access))
+           (RaW (union-flow-get-must-dependence flow))
+           (access (union-access-info-from-sink write))
+           (access (union-access-info-set-must-source access write))
+           (access (union-access-info-set-may-source access read))
+           (access (union-access-info-set-schedule access schedule))
+           (flow   (union-access-info-compute-flow access))
+           (WaW    (union-flow-get-must-dependence flow))
+           (WaR    (union-flow-get-may-dependence flow))
+           (dependencies (union-map-union (union-map-union WaR RaW) WaW)))
+      (setf (poly-dependencies pg) dependencies)
+      pg)))
+
+(defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg))
+                                :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg)))
+
+(defun gid (n) (intern (format nil "_gid~a" n)))
+(defun ->ast (schedule rank)
+  (macrolet ((set-option (name level)
+	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+				 :pointer (isl::context-handle isl::*context*)
+				 :int ,level
+				 :void)))
+    (set-option "ast_build_atomic_upper_bound" 1)
+    (set-option "ast_build_detect_min_max" 1)
+    (set-option "ast_build_exploit_nested_bounds" 1)
+    (set-option "ast_build_scale_strides" 1)
+    (set-option "ast_build_allow_else" 0)
+    (set-option "ast_build_allow_or" 0))
+  (let* ((schedule (isl:copy schedule))
+	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
+         (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
+         (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
+         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
+	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
+    ast-build-node))
+
+(defmethod debug-render-to-clang ((pg Polyhedral-IR))
+  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (ast   (->ast (poly-schedule pg) 0))
+         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+         (str   (isl::%isl-printer-get-str q)))
+    str))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "Context for tracking loop structure during traversal"
@@ -186,169 +244,38 @@
    
    Returns a Polyhedral-IR object."
   (declare (type Graph blueprint))
-  
   ;; Extract domain, reads, writes
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
-         (reads/writes (extract-accesses ctx blueprint))
-         (pir (make-polyhedral-ir domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
-    pir))
+         (reads/writes (extract-accesses ctx blueprint)))
+    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Polyhedral-IR ()
-  ((schedule :accessor poly-schedule)
-   (domain   :accessor poly-domain)
-   (dependencies :accessor poly-dependencies)))
-
-(defun make-polyhedral-ir (domain read write schedule)
-  (let ((pg (make-instance 'Polyhedral-IR)))
-    (setf (poly-schedule pg) schedule
-          (poly-domain pg) domain)
-    (let* ((access (union-access-info-from-sink read))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-schedule access schedule))
-           (flow (union-access-info-compute-flow access))
-           (RaW (union-flow-get-must-dependence flow))
-           (access (union-access-info-from-sink write))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-may-source access read))
-           (access (union-access-info-set-schedule access schedule))
-           (flow   (union-access-info-compute-flow access))
-           (WaW    (union-flow-get-must-dependence flow))
-           (WaR    (union-flow-get-may-dependence flow))
-           (dependencies (union-map-union (union-map-union WaR RaW) WaW)))
-      (setf (poly-dependencies pg) dependencies)
-      pg)))
-
-(defun gid (n) (intern (format nil "_gid~a" n)))
-
-(defun ->ast (schedule rank)
-  (macrolet ((set-option (name level)
-	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				 :pointer (isl::context-handle isl::*context*)
-				 :int ,level
-				 :void)))
-    (set-option "ast_build_atomic_upper_bound" 1)
-    (set-option "ast_build_detect_min_max" 1)
-    (set-option "ast_build_exploit_nested_bounds" 1)
-    (set-option "ast_build_scale_strides" 1)
-    (set-option "ast_build_allow_else" 0)
-    (set-option "ast_build_allow_or" 0))
-  (let* ((schedule (isl:copy schedule))
-	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
-         (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
-         (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
-	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
-    ast-build-node))
-
-(defmethod debug-render-to-clang ((pg Polyhedral-IR))
-  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (->ast (poly-schedule pg) 0))
-         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
-         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
-         (str   (isl::%isl-printer-get-str q)))
-    str))
-
-(defmethod pprint-schedule ((schedule schedule))
-  (let ((schedule (yaml:parse (schedule-to-str schedule))))
-    (with-output-to-string (out)
-      (format out "~%")
-      (labels ((indent (n)
-                 (make-string n :initial-element #\space))
-               (separate-screen (indent &key (n 120))
-                 (format out "~%~a~a~%" (indent indent) (make-string n :initial-element #\-)))
-               (explore (schedule key &key (indent 0))
-                 (cond
-                   ((string= key "domain")
-                    (format out "~adomain(~%" (indent indent))
-                    (let ((domains (cl-ppcre:split
-                                    ";"
-                                    (cl-ppcre:regex-replace-all
-                                     "{|}"
-                                     (gethash key schedule)
-                                     ""))))
-                      (format out "~a"
-                              (apply
-                               #'concatenate
-                               'string
-                               (butlast
-                                (loop for dom in domains
-                                      collect (format nil "~a~a" (indent (+ indent 2)) dom)
-                                      collect (format nil "~%"))))))
-                    (format out "~a)" (indent indent)))
-                   ((string= key "child")
-                    (format out "~%~achild()" (indent indent))
-                    (separate-screen indent)
-                    (mapc
-                     #'(lambda (x)
-                         (explore (gethash key schedule) x :indent (+ indent 2)))
-                     (reverse (alexandria:hash-table-keys (gethash key schedule)))))
-                   ((string= key "schedule")
-                    (let ((schedules (cl-ppcre:split
-                                      " , "
-                                      (cl-ppcre:regex-replace-all
-                                       "{|}"
-                                       (subseq (gethash key schedule) 1 (1- (length (gethash key schedule))))
-                                       ""))))
-                      (format out "~aschedule()" (indent indent))
-                      (when schedules (format out "~%"))
-                      (format out "~a"
-                              (apply
-                               #'concatenate
-                               'string
-                               (butlast
-                                (loop for s in schedules
-                                      for nth upfrom 0
-                                      for separator = (if (= 1 (length schedules)) "-" (if (zerop nth) "┏" (if (= (length schedules) (1+ nth)) "┗" "┃")))
-                                      collect (format nil "~a  ~a~a" (indent indent) separator s)
-                                      collect (format nil "~%")))))))
-                   ((or (string= key "sequence") (string= key "set"))
-                    (format out "~a~a()" (indent indent) key)
-                    (mapc
-                     #'(lambda (x)
-                         (mapc
-                          #'(lambda (k)
-                              (explore x k :indent (+ 2 indent)))
-                          (alexandria:hash-table-keys x)))
-                     (gethash key schedule)))
-                   ((string= key "filter")
-                    (format out "~%~afilter(~%" (indent indent))
-                    (let ((domains (cl-ppcre:split
-                                    ";"
-                                    (cl-ppcre:regex-replace-all
-                                     "{|}"
-                                     (gethash key schedule)
-                                     ""))))
-                      (format
-                       out
-                       "~a"
-                       (apply
-                        #'concatenate
-                        'string
-                        (butlast
-                         (loop for dom in domains
-                           collect (format nil "~a~a" (indent (+ indent 2)) dom)
-                           collect (format nil "~%")))))
-                      (format out ")")))
-                   ((or (string= key "permutable") (string= key "coincident"))
-                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))
-                   ((or (string= key "mark"))
-                    (format out "~amark(~a)" (indent indent) (gethash key schedule)))
-                   (t (warn "pprint: the key ~a is not implemented." key)))))
-        (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
-
-;; [TODO] Everything must be maximimumly optimizeddddd
-
-;; polyhedral.lisp is
-;; - 100 line and heavily optimized isl rewriting tool
-;; BandのDetectionはParse Level?
-;; Or, Keep Polyhedral IR across generations?
-
 (defun get-blueprint-from-polyhedral (polyhedral)
   "Convert ISL polyhedral representation back to blueprint graph"
+  ;; Entry point for:
+  ;; - @directive parsing, getting blueprint from Polyhedral.
+  ;; - 
+  ;;
   ;; This would require parsing the ISL AST and reconstructing the graph
   ;; For now, this is a placeholder that returns the input for compatibility
   (declare (ignore polyhedral))
   (warn "get-blueprint-from-polyhedral: Not fully implemented yet")
   nil);; [TODO] ↓のAccess Relations, ScalarはFissionできるように記述したい
+;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass OptimizationRule ()
+  nil)
+
+(defgeneric optrule-generate-search-space (polyhedral optrule))
+(defgeneric optrule-apply-transform-on-polyhedral (polyhedral optrule)) ;; Insert Directive
+(defgeneric optrule-apply-transform-on-blueprint (polyhedral optrule))  ;; Directive Parse
+
+(defun apply-optimization (polyhedral optrule)
+  (declare (type Polyhedral-IR polyhedral) (type OptimizationRule optrule))
+  (let ((polyhedral (poly-clone-for-next-generation polyhedral)))
+    (push optrule (poly-cmd-history polyhedral))
+    (optrule-apply-transform-on-polyhedral polyhedral optrule)
+    polyhedral))
+;; ~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Reschedule (OptimizationRule)
+  nil)
