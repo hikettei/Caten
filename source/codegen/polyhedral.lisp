@@ -67,13 +67,17 @@
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
-(defmethod debug-render-to-clang ((pg Polyhedral-IR))
+(defmethod pg-dump-into-str ((pg Polyhedral-IR))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
          (ast   (->ast (poly-schedule pg) 0))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
     str))
+
+(defmethod print-object ((pg Polyhedral-IR) stream)
+  (print-unreadable-object (pg stream :type t :identity t)
+    (format stream "~%~a~%  :history ~a" (pg-dump-into-str pg) (poly-cmd-history pg))))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "Context for tracking loop structure during traversal"
@@ -300,6 +304,10 @@
   ;; Reschedule can be placed on the top of commands.
   (when (null (some #'(lambda (x) (typep x 'Reschedule)) (poly-cmd-history poly)))
     (list
+     ;; [TODO] Isn't there more to search configurations?
+     ;; [TODO] proximity/validity/coincidence, what is constraints?
+     ;; [TODO] More Patterns!
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
 
@@ -344,6 +352,8 @@
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
 ;; PPRINTを充実させるか，とっととParser作ってもろて
+;; - poly-ir-schedule-node: これを追加するべきか？
+;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* '(:NoOpt :Reschedule))
 
