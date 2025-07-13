@@ -147,23 +147,27 @@
 (defun extract-buffer-access-info (id blueprint &aux (visited (make-hash-table)) (found))
   (labels ((explore (id &aux (node (id->value blueprint id)))
              (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
-             (when (eql (node-type node) :EXPR) (return-from explore))
+             ;; [TODO] ↓ 0じゃなくて，domainのid listにするべき？
+             (when (eql (node-type node) :BIND)
+               (push (cons (getattr node :value) nil) found)
+               (return-from explore))
+             (when (eql (node-type node) :EXPR)
+               (push (cons (car (node-writes node)) nil) found)
+               (return-from explore))
              (setf (gethash (node-id node) visited) t)
              (when (eql (node-type node) :AREF)
                (let* ((p (id->value blueprint (car (node-reads node))))
                       (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
-                 (push (cons p (second (node-reads node))) found)))
+                 (push (cons p (second (node-reads node))) found)
+                 (return-from explore)))
              (mapc #'explore (node-reads node))))
     (explore id)
     found))
 
 (defun render-access-for-node (node loops buffer index blueprint)
   "Render access relation for a single node"
-  (format nil "~a[~{~a~^, ~}] -> ~a[~a]"
-          (node-id node)
-          (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops))
-          buffer
-          (if index (render-expr-for-isl index blueprint) "0")))
+  (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
+    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) domain))))
 
 (defun extract-accesses (ctx blueprint &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
@@ -395,6 +399,8 @@
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
 ;; https://chatgpt.com/c/6870e59d-2970-8005-abda-1b62c5808111?model=o3-pro
 ;; o3-pro proposed the following:
+;; 1. reduce dependencies are not handled
+;; 2. scalar is not a scalar
 "
 | 名前                             | 意味・対象                          | 主な効果 (GPU 観点)                                     |
 | ------------------------------ | ------------------------------ | ------------------------------------------------- |
