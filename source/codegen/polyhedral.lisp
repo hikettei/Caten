@@ -37,8 +37,14 @@
       pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
-  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg))
-                                :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg)))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg)))
+
+(defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
+  (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
+         (sc (schedule-constraints-set-coincidence sc (poly-dependencies pg)))
+         (sc (schedule-constraints-set-validity sc (poly-dependencies pg)))
+         (sc (schedule-constraints-set-proximity sc (poly-dependencies pg))))
+    sc))
 
 (defun gid (n) (intern (format nil "_gid~a" n)))
 (defun ->ast (schedule rank)
@@ -264,10 +270,9 @@
   (warn "get-blueprint-from-polyhedral: Not fully implemented yet")
   nil);; [TODO] ↓のAccess Relations, ScalarはFissionできるように記述したい
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass OptimizationRule ()
-  nil)
+(defclass OptimizationRule () nil)
 
-(defgeneric optrule-generate-search-space (polyhedral optrule))
+(defgeneric optrule-generate-search-space (polyhedral optrule-trigger))
 (defgeneric optrule-apply-transform-on-polyhedral (polyhedral optrule)) ;; Insert Directive
 (defgeneric optrule-apply-transform-on-blueprint (polyhedral optrule))  ;; Directive Parse
 
@@ -278,14 +283,78 @@
     (optrule-apply-transform-on-polyhedral polyhedral optrule)
     polyhedral))
 ;; ~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Note: This is hackable by users (as intended)
+(defclass NoOpt (OptimizationRule) nil)
+(defmethod optrule-generate-search-space (poly (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
+(defmethod optrule-apply-transform-on-blueprint (poly (optrule NoOpt)) nil)
+
 (defclass Reschedule (OptimizationRule)
+  ((outer-coincidence :initarg :outer-coincidence :initform 0)
+   (maximize-coincidence :initarg :maximize-coincidence :initform 0)
+   (treat-coalescing :initarg :treat-coalescing :initform 0)
+   (maximize-band-depth :initarg :maximize-band-depth :initform 0)
+   (schedule-whole-component :initarg :schedule-whole-component :initform 0)))
+
+(defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
+  ;; Reschedule can be placed on the top of commands.
+  (when (null (some #'(lambda (x) (typep x 'Reschedule)) (poly-cmd-history poly)))
+    (list
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
+  (macrolet ((set-option (name slot)
+	       `(cffi:foreign-funcall
+                 ,(format nil "isl_options_set_~(~a~)" name)
+                 :pointer (isl::context-handle isl::*context*)
+                 :int (slot-value optrule ',slot)
+		 :void)))
+    (set-option "schedule_outer_coincidence" outer-coincidence)
+    (set-option "schedule_maximize_coincidence" maximize-coincidence)
+    (set-option "schedule_treat_coalescing" treat-coalescing)
+    (set-option "schedule_maximize_band_depth" maximize-band-depth)
+    (set-option "schedule_whole_component" schedule-whole-component))
+  (setf (poly-schedule poly) (schedule-constraints-compute-schedule (poly-make-schedule-constraints poly))))
+
+(defmethod optrule-apply-transform-on-blueprint (poly (optrule Reschedule))
   nil)
 
 (defclass FuseWithParent (OptimizationRule)
   nil)
 
+(defclass TensorCore (OptimizationRule)
+  nil)
 
+(defclass Reorder (OptimizationRule)
+  nil)
+
+(defclass Tile (OptimizationRule)
+  nil)
+
+(defclass ParallelTile (OptimizationRule) ;; CPU will use this!
+  nil)
+
+(defclass SplitReduce (OptimizationRule)
+  ;; TODO: Mode = :warp :block
+  nil)
+
+
+;; RootがReschedule->Reorderなら...的な話かも
+;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
+;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
+;; PPRINTを充実させるか，とっととParser作ってもろて
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *search-space* '(:NoOpt :Reschedule))
+
+(defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
+  (loop for space in *search-space*
+        append (optrule-generate-search-space polyhedral space)))
+
+(defmethod polyhedral-ir-mutate-for-children ((polyhedral Polyhedral-IR))
+  (let ((space (get-next-optimization-rules polyhedral)))
+    (loop for opt in space collect (apply-optimization polyhedral opt))))
+
 (defun realize-node-with-autotuning (runtime node args &aux (searched))
   (labels ((evaluate-kernel (kernel &key (n 10) &aux (total 0.0))
              (dotimes (i n)
@@ -294,14 +363,14 @@
            (register-kernel-as-candidate (kernel)
              (push (cons (evaluate-kernel kernel) kernel) searched)))
     (register-kernel-as-candidate (caten/air:getattr node :kernel-info))
-    (caten/codegen/polyhedral:make-polyhedral-from-blueprint
-     (kernel-blueprint (caten/air:getattr node :kernel-info)))
-    (dotimes (i 100))
-    (print searched)
-    ;; [TODO] Apply BEAM Search
-    (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
-    ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
-    (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))
+    (let ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)))))
+      (print "==== Generation 1 =========")
+      (print (polyhedral-ir-mutate-for-children origin))
+      (print searched)
+      ;; [TODO] Apply BEAM Search
+      (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
+      ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
+      (apply #'values (subseq args 0 (length (caten/air:node-writes node)))))))
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
