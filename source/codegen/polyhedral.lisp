@@ -149,7 +149,6 @@
 (defun extract-buffer-access-info (id blueprint &aux (visited (make-hash-table)) (found))
   (labels ((explore (id &aux (node (id->value blueprint id)))
              (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
-             ;; [TODO] ↓ 0じゃなくて，domainのid listにするべき？
              (when (eql (node-type node) :BIND)
                (push (cons (getattr node :value) nil) found)
                (return-from explore))
@@ -638,6 +637,11 @@ for B_i in blockIdx.y parallel tile_block_ij:64  // 0..1
 
 
 "
+
+;; One week is enough to run FlashAttention for me ...
+;; [Workload]
+;; - Polyhedral Modelが正しくない気がする
+;; - SearchSpace
 
 ;; - コストモデル, 測定方法はどうでもいい。
 ;; ASTに対する
