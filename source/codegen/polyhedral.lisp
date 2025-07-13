@@ -9,27 +9,19 @@
 
 (in-package :caten/codegen/polyhedral)
 
-(defun get-blueprint-from-polyhedral (polyhedral)
-  "Convert ISL polyhedral representation back to blueprint graph"
-  ;; This would require parsing the ISL AST and reconstructing the graph
-  ;; For now, this is a placeholder that returns the input for compatibility
-  (declare (ignore polyhedral))
-  (warn "get-blueprint-from-polyhedral: Not fully implemented yet")
-  nil)
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct loop-context ;; [todo] rename scop-context
+(defstruct ctx
   "Context for tracking loop structure during traversal"
   (stack nil :type list)
   (node-to-loops (make-hash-table) :type hash-table)
-  (all-loops nil :type list))
+  (all-loops nil :type list)
+  (exprs nil :type list))
 
-(defun traverse-blueprint-for-loops (graph &aux (exprs))
+(defun make-scop-ctx-from-blueprint (graph)
   "Traverse the blueprint graph to extract loop structure"
-  (let ((ctx (make-loop-context))
-        (visited (make-hash-table)))
+  (let ((ctx (make-ctx)) (visited (make-hash-table)))
     (labels ((traverse (node)
-               (when (or (null node) (gethash (node-id node) visited))
-                 (return-from traverse))
+               (when (or (null node) (gethash (node-id node) visited)) (return-from traverse))
                (setf (gethash (node-id node) visited) t)
                (ecase (node-type node)
                  (:FOR
@@ -42,28 +34,19 @@
                          (mark (getattr node :mark :allow-undefined t)))
                     (when idx
                       (let ((loop-info (list :idx idx :size size :step step :mark (or mark :noopt) :for-node node :range-node range-node)))
-                        (push loop-info (loop-context-all-loops ctx))
-                        (push loop-info (loop-context-stack ctx))))
+                        (push loop-info (ctx-all-loops ctx))
+                        (push loop-info (ctx-stack ctx))))
                     ;; Traverse body
-                    (when (>= (length (node-reads node)) 2)
-                      (traverse (id->value graph (second (node-reads node)))))
+                    (traverse (id->value graph (second (node-reads node))))
                     ;; Pop loop from stack after processing body
-                    (when idx (pop (loop-context-stack ctx)))))
-                 (:PROGN
-                  ;; Process children in order
-                  (dolist (child-id (node-reads node))
-                    (traverse (id->value graph child-id))))
-                 (:IF
-                  ;; Process condition and then branch
-                  (when (>= (length (node-reads node)) 2)
-                    (traverse (id->value graph (second (node-reads node))))))
-                 (:EXPR
-                  (push node exprs)
-                  (setf (gethash (node-id node) (loop-context-node-to-loops ctx)) (copy-list (loop-context-stack ctx)))))))
+                    (when idx (pop (ctx-stack ctx)))))
+                 (:PROGN (dolist (child-id (node-reads node)) (traverse (id->value graph child-id))))
+                 (:IF (when (>= (length (node-reads node)) 2) (traverse (id->value graph (second (node-reads node))))))
+                 (:EXPR (push node (ctx-exprs ctx)) (setf (gethash (node-id node) (ctx-node-to-loops ctx)) (copy-list (ctx-stack ctx)))))))
       ;; Start traversal from output nodes or all nodes
       (assert (= 1 (length (graph-outputs graph))))
       (traverse (id->value graph (car (graph-outputs graph))))
-      (values (loop-context-all-loops ctx) (loop-context-node-to-loops ctx) exprs))))
+      ctx)))
 
 (defun render-expr-for-isl (id graph &aux (node (id->value graph id)))
   "Render an expression in ISL-compatible format"
@@ -84,17 +67,13 @@
                     for step = (getf l :step)
                     if (= step 1)
                       collect (format nil "0 <= ~(~a~) < ~a" (getf l :idx) (r (getf l :size)))
-                    else
-                      ;; [NOTE] Not Tested!
-                      ;; Handle non-unit strides with existential quantifier
+                    else ;; [NOTE] Not Tested!!
                       collect (format nil "exists e : ~(~a~) = ~a*e and 0 <= ~(~a~) < ~a" (getf l :idx) (r step) (getf l :idx) (r (getf l :size))))))
         (format nil "~a[~{~a~^, ~}] ~a ~{~a~^ and ~}" (node-id node) (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)) (if constraints ":" "") constraints)))))
 
-(defun render-domains (blueprint)
+(defun render-domains (ctx blueprint)
   "Create ISL domain representation from blueprint"
-  (multiple-value-bind (loops node-to-loops exprs) (traverse-blueprint-for-loops blueprint)
-    (declare (ignore loops))
-    (format nil "{ ~{~a~^; ~} }" (reverse (map 'list #'(lambda (x) (render-domain-for-node blueprint x node-to-loops)) exprs)))))
+  (format nil "{ ~{~a~^; ~} }" (reverse (map 'list #'(lambda (x) (render-domain-for-node blueprint x (ctx-node-to-loops ctx))) (ctx-exprs ctx)))))
 
 (defun extract-buffer-access-info (id blueprint &aux (visited (make-hash-table)) (found))
   (labels ((explore (id &aux (node (id->value blueprint id)))
@@ -115,10 +94,9 @@
           buffer
           (if index (render-expr-for-isl index blueprint) "0")))
 
-(defun extract-accesses (blueprint &aux (reads) (writes))
+(defun extract-accesses (ctx blueprint &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
-  (multiple-value-bind (loops node-to-loops exprs) (traverse-blueprint-for-loops blueprint)
-    (declare (ignore loops))
+  (with-slots ((node-to-loops node-to-loops) (exprs exprs)) ctx
     (loop for expr in exprs
           for expr-domain = (gethash (node-id expr) node-to-loops)
           for expr-entry-point = (id->value blueprint (car (node-reads expr))) do
@@ -138,9 +116,9 @@
                   (push (render-access-for-node expr expr-domain (car (node-writes expr)) nil blueprint) writes)
                   (dolist (r read-region)
                     (push (render-access-for-node expr expr-domain (car r) (cdr r) blueprint) reads))))))
-      (values 
-       (format nil "{ ~{~a~^; ~} }" (reverse reads))
-       (format nil "{ ~{~a~^; ~} }" (reverse writes))))))
+    (cons
+     (format nil "{ ~{~a~^; ~} }" (reverse reads))
+     (format nil "{ ~{~a~^; ~} }" (reverse writes)))))
 
 (defun render-band-node-in-domain (range-node related-nodes loop-info &aux (idx (getattr range-node :idx)))
   (declare (type node range-node) (type list related-nodes) (type hash-table loop-info))
@@ -153,11 +131,11 @@
             do (format out "~a[~{~a~^, ~}] -> [~(~a~)]" (node-id filter) idxs idx))
     (format out "}]")))
 
-(defun rewrite-blueprint-tree->schedule-tree (blueprint &aux (visited (make-hash-table)))
+(defun rewrite-blueprint-tree->schedule-tree (ctx blueprint &aux (visited (make-hash-table)))
   "Build ISL Schedule Tree directly from blueprint structure following analyze-scop pattern"
   (declare (type Graph blueprint))
   ;; ISL Schedule starts w/ domain
-  (multiple-value-bind (loops node-to-loops) (traverse-blueprint-for-loops blueprint)
+  (with-slots ((loops loops) (node-to-loops node-to-loops)) ctx
     (labels ((rewrite-node (id &key (region nil) &aux (node (id->value blueprint id)))
                (declare (type symbol id))
                (when (or (null node) (gethash (node-id node) visited)) (error "Rendering for multiple times, should we allow it?"))
@@ -174,7 +152,7 @@
                            body-sched
                            (schedule-insert-partial-schedule body-sched (multi-union-pw-aff-from-str band))))))
                   (:IF
-                   ;; HOW
+                   ;; [Not] How to express :IF?
                    (error "not ready"))
                   ;; EXPR ==> Rewrite as a filter, and is a leaf of graph.
                   (:EXPR
@@ -194,17 +172,28 @@
                   (otherwise (error "No handling case for ~a" (node-type node))))
                 region)))
       (assert (= 1 (length (graph-outputs blueprint))))
-      (multiple-value-bind (sched exprs-in-body) (rewrite-node (car (graph-outputs blueprint)))
-        (print "SCHEDULE_TREE")
-        (print sched)
-        (print (pprint-schedule sched))
-        (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-               (ast   (->ast sched 0))
-               (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
-               (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
-               (str   (isl::%isl-printer-get-str q)))
-          (print str))
-        sched))))
+      (rewrite-node (car (graph-outputs blueprint))))))
+
+(defun make-polyhedral-from-blueprint (blueprint)
+  "Constructs Polyhedral IR from blueprint which is a static graph.
+   
+   The blueprint should be a FastGraph containing nodes with the following types:
+   - :RANGE - defines loop bounds
+   - :FOR - marks loop entry with :mark attribute (:coincident, :reduction, :noopt)
+   - :AREF - memory load operations
+   - :SETF - memory store operations
+   - :PROGN - sequence of operations
+   
+   Returns a Polyhedral-IR object."
+  (declare (type Graph blueprint))
+  
+  ;; Extract domain, reads, writes
+  (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
+         (domain (union-set-from-str (render-domains ctx blueprint)))
+         (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
+         (reads/writes (extract-accesses ctx blueprint))
+         (pir (make-polyhedral-ir domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
+    pir))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Polyhedral-IR ()
   ((schedule :accessor poly-schedule)
@@ -350,30 +339,16 @@
         (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
 
 ;; [TODO] Everything must be maximimumly optimizeddddd
-(defun make-polyhedral-from-blueprint (blueprint)
-  "Constructs Polyhedral IR from blueprint which is a static graph.
-   
-   The blueprint should be a FastGraph containing nodes with the following types:
-   - :RANGE - defines loop bounds
-   - :FOR - marks loop entry with :mark attribute (:coincident, :reduction, :noopt)
-   - :AREF - memory load operations
-   - :SETF - memory store operations
-   - :PROGN - sequence of operations
-   
-   Returns a Polyhedral-IR object."
-  (declare (type Graph blueprint))
-  
-  ;; Extract domain, reads, writes
-  (let* ((domain (union-set-from-str (render-domains blueprint)))
-         (schedule (rewrite-blueprint-tree->schedule-tree blueprint)))
-    (multiple-value-bind (read-str write-str) (extract-accesses blueprint)      
-      (let ((reads (union-map-from-str read-str)) (writes (union-map-from-str write-str)))
-        (let ((polyhedral-ir (make-polyhedral-ir domain reads writes schedule)))
-          (format t "[Polyhedral] Generated schedule tree:~%~a~%" 
-                  (debug-render-to-clang polyhedral-ir))
-          polyhedral-ir)))))
+
 ;; polyhedral.lisp is
 ;; - 100 line and heavily optimized isl rewriting tool
 ;; BandのDetectionはParse Level?
 ;; Or, Keep Polyhedral IR across generations?
-;; [TODO] ↓のAccess Relations, ScalarはFissionできるように記述したい
+
+(defun get-blueprint-from-polyhedral (polyhedral)
+  "Convert ISL polyhedral representation back to blueprint graph"
+  ;; This would require parsing the ISL AST and reconstructing the graph
+  ;; For now, this is a placeholder that returns the input for compatibility
+  (declare (ignore polyhedral))
+  (warn "get-blueprint-from-polyhedral: Not fully implemented yet")
+  nil);; [TODO] ↓のAccess Relations, ScalarはFissionできるように記述したい
