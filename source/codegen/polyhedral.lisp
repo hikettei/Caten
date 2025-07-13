@@ -150,7 +150,9 @@
              (when (eql (node-type node) :EXPR) (return-from explore))
              (setf (gethash (node-id node) visited) t)
              (when (eql (node-type node) :AREF)
-               (push (cons (car (node-reads node)) (second (node-reads node))) found))
+               (let* ((p (id->value blueprint (car (node-reads node))))
+                      (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
+                 (push (cons p (second (node-reads node))) found)))
              (mapc #'explore (node-reads node))))
     (explore id)
     found))
@@ -260,6 +262,7 @@
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)))
+    (print reads/writes)
     (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun get-blueprint-from-polyhedral (polyhedral)
@@ -355,15 +358,21 @@
 ;; - poly-ir-schedule-node: これを追加するべきか？
 ;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *search-space* '(:NoOpt :Reschedule))
+(defparameter *search-space*
+  '((0 . (:NoOpt :Reschedule)) ;; (n-generation . Candidates)
+    (1 . (:NoOpt :Reorder))
+    (t . nil)))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
-  (loop for space in *search-space*
-        append (optrule-generate-search-space polyhedral space)))
+  (let ((n-generation (length (poly-cmd-history polyhedral))))
+    (loop for space in (cdr (or (find n-generation *search-space* :key #'car) (find t *search-space* :key #'car) (error "No *search-space* configuration for t")))
+          append (optrule-generate-search-space polyhedral space))))
 
 (defmethod polyhedral-ir-mutate-for-children ((polyhedral Polyhedral-IR))
   (let ((space (get-next-optimization-rules polyhedral)))
-    (loop for opt in space collect (apply-optimization polyhedral opt))))
+    (remove-duplicates
+     (loop for opt in space collect (apply-optimization polyhedral opt))
+     :test #'string= :key #'pg-dump-into-str)))
 
 (defun realize-node-with-autotuning (runtime node args &aux (searched))
   (labels ((evaluate-kernel (kernel &key (n 10) &aux (total 0.0))
