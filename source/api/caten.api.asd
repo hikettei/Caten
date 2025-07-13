@@ -20,5 +20,5 @@
 	       (:file "ahead-of-time")
 	       (:file "initializers")
                (:file "facets")
-               (:file "lang")
+              ;; (:file "lang")
                (:file "documentation")))

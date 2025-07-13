@@ -2,7 +2,7 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc)
-  (:import-from :caten/codegen/renderer #:render-expr #:Default-Renderer)
+  (:import-from :caten/codegen/renderer #:render-node #:Default-Renderer)
   (:export
    #:realize-node-with-autotuning
    #:make-polyhedral-from-blueprint
@@ -12,6 +12,7 @@
 ;; ~~ Polyhedral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Polyhedral-IR ()
   ((schedule :accessor poly-schedule :initarg :schedule)
+   (schedule-node :accessor poly-schedule-node :initarg :schedule-node)
    (domain   :accessor poly-domain :initarg :domain)
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
@@ -56,6 +57,7 @@
     (set-option "ast_build_atomic_upper_bound" 1)
     (set-option "ast_build_detect_min_max" 1)
     (set-option "ast_build_exploit_nested_bounds" 1)
+    (set-option "ast_build_prefer_pdiv" 0)
     (set-option "ast_build_scale_strides" 1)
     (set-option "ast_build_allow_else" 0)
     (set-option "ast_build_allow_or" 0))
@@ -167,7 +169,7 @@
 (defun render-access-for-node (node loops buffer index blueprint)
   "Render access relation for a single node"
   (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
-    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) domain))))
+    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) 0))))
 
 (defun extract-accesses (ctx blueprint &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
@@ -289,10 +291,81 @@
 
 (defun apply-optimization (polyhedral optrule)
   (declare (type Polyhedral-IR polyhedral) (type OptimizationRule optrule))
-  (let ((polyhedral (poly-clone-for-next-generation polyhedral)))
+  (let ((polyhedral (poly-clone-for-next-generation polyhedral))
+        (bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
+    (setf (poly-schedule-node polyhedral) (nth (random (length bands)) bands))
     (push optrule (poly-cmd-history polyhedral))
     (optrule-apply-transform-on-polyhedral polyhedral optrule)
     polyhedral))
+;; ~~ Verifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun map-schedule-node-children (f schedule-node)
+  (declare (type function f) (type isl::schedule-node schedule-node))
+  (let* ((node schedule-node) (next-nodes) (outputs))
+    (loop named map-search
+          for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
+          while (>= n-children 0) do
+            (loop for nth upfrom 0 below n-children
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for band = (schedule-node-get-child node nth)
+                  for type = (schedule-node-get-type band) do
+                    (let ((out (funcall f type band mark))) (when out (push out outputs)))
+                    (push band next-nodes))
+            (when (= (length next-nodes) 0) (return-from map-search))
+            (setf node (pop next-nodes)))
+    (nreverse outputs)))
+
+(defun schedule-node-get-undernearth-bands (schedule-node)
+  (declare (type isl::schedule-node schedule-node))
+  (map-schedule-node-children #'(lambda (type band mark) (declare (ignore mark)) (when (eql type :schedule-node-band) band)) schedule-node))
+
+(defun schedule-node-get-band-from-relative-idx (schedule-node idx)
+  (declare (type isl::schedule-node schedule-node) (type fixnum idx))
+  (nth idx (schedule-node-get-undernearth-bands schedule-node)))
+
+(defun get-zeros-on-union-set (delta-uset)
+  (declare (type isl::union-set delta-uset))
+  (let* ((delta-set (set-from-union-set delta-uset))
+         (ma (multi-aff-zero (set-get-space delta-set))))
+    (union-set-from-set (set-from-multi-aff ma))))
+
+(defun check-legality-parallel (node dep)
+  "
+```
+(check-legality-parallel node dep)
+```
+Returns T if the band node is legal to be parallelized with respect to the dep.
+Reference: https://github.com/hikettei/tadashi/blob/main/src/legality.c#L91-L122"
+  (declare (type isl::schedule-node node) (type isl::union-map dep))
+  (when (union-map-is-empty dep) (return-from check-legality-parallel t))
+  (let* ((map (schedule-node-band-get-partial-schedule-union-map node))
+         (domain (union-map-apply-range (union-map-apply-domain dep map) map))
+         (delta (union-map-deltas domain))
+         (_ (when (union-set-is-empty delta) (return-from check-legality-parallel t)))
+         (zeros (get-zeros-on-union-set delta))
+         (cmp (union-set-lex-lt-union-set delta zeros))
+         (retval (union-set-is-empty cmp))
+         (cmp (union-set-lex-gt-union-set delta zeros)))
+    (declare (ignore _))
+    (and retval (union-set-is-empty cmp))))
+
+(defun check-legality (schedule dep)
+  "
+```
+(check-legality schedule dep)
+```
+Returns T if the current schedule does not break any dependences in dep."
+  (declare (type isl::schedule schedule) (type isl::union-map dep))
+  (when (union-map-is-empty dep) (return-from check-legality t))
+  (let* ((map (schedule-get-map schedule))
+         (domain (union-map-apply-domain dep map))
+         (domain (union-map-apply-range domain map))
+         (delta (union-map-deltas domain))
+         (zeros (get-zeros-on-union-set delta))
+         (le (union-set-lex-le-union-set delta zeros))
+         (retval (union-set-is-empty le)))
+    retval))
+
+(defmethod verify-polyhedral-ir ((pg Polyhedral-IR)) (check-legality (poly-schedule pg) (poly-dependencies pg)))
 ;; ~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: This is hackable by users (as intended)
 (defclass NoOpt (OptimizationRule) nil)
@@ -341,8 +414,31 @@
 (defclass TensorCore (OptimizationRule)
   nil)
 
-(defclass Reorder (OptimizationRule)
-  nil)
+(defclass Interchange (OptimizationRule)
+  ((idx :initarg :idx :accessor interchange-idx)))
+
+(defmethod optrule-generate-search-space (poly (id (eql :Interchange)))
+  (let ((band (poly-schedule-node poly)))
+    (when (eql (schedule-node-get-type band) :schedule-node-band)
+      (loop for n upfrom (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band))
+            unless (= n 0) collect (make-instance 'Interchange :idx n)))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
+  (let* ((mupa (schedule-node-band-get-partial-schedule (poly-schedule-node poly)))
+         (node (schedule-node-delete (poly-schedule-node poly)))
+         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
+         (_ (when (= 0 n-child) (error "cannot apply interchange")))
+         (node (schedule-node-get-band-from-relative-idx node (interchange-idx opt)))
+         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" (interchange-idx opt) (poly-schedule-node poly)))
+         (node (schedule-node-insert-partial-schedule node mupa)))
+    (declare (ignore _ __))
+    (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
+      ;;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
+      node)))
+
+(defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange))
+
+  )
 
 (defclass Tile (OptimizationRule)
   nil)
@@ -364,8 +460,7 @@
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space*
   '((0 . (:NoOpt :Reschedule)) ;; (n-generation . Candidates)
-    (1 . (:NoOpt :Reorder))
-    (t . nil)))
+    (t . (:NoOpt :Interchange))))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral))))
@@ -373,10 +468,13 @@
           append (optrule-generate-search-space polyhedral space))))
 
 (defmethod polyhedral-ir-mutate-for-children ((polyhedral Polyhedral-IR))
-  (let ((space (get-next-optimization-rules polyhedral)))
-    (remove-duplicates
-     (loop for opt in space collect (apply-optimization polyhedral opt))
-     :test #'string= :key #'pg-dump-into-str)))
+  (let* ((space (get-next-optimization-rules polyhedral))
+         (next-generations
+           (remove-duplicates
+            (loop for opt in space collect (apply-optimization polyhedral opt))
+            :test #'string= :key #'pg-dump-into-str)))
+    (loop for gen in next-generations
+          if (verify-polyhedral-ir gen) collect gen)))
 
 (defun realize-node-with-autotuning (runtime node args &aux (searched))
   (labels ((evaluate-kernel (kernel &key (n 10) &aux (total 0.0))
@@ -386,9 +484,15 @@
            (register-kernel-as-candidate (kernel)
              (push (cons (evaluate-kernel kernel) kernel) searched)))
     (register-kernel-as-candidate (caten/air:getattr node :kernel-info))
-    (let ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)))))
+    (let ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
+          (leaves))
       (print "==== Generation 1 =========")
-      (print (polyhedral-ir-mutate-for-children origin))
+      (setf leaves (polyhedral-ir-mutate-for-children origin))
+      (print leaves)
+      (dotimes (n 0)
+        (format t "[Generation ~a]~%" n)
+        (setf leaves (apply #'append (map 'list #'polyhedral-ir-mutate-for-children leaves)))
+        (print leaves))
       (print searched)
       ;; [TODO] Apply BEAM Search
       (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
@@ -585,3 +689,5 @@ for B_i in blockIdx.y parallel tile_block_ij:64  // 0..1
 ;; Workload
 ;; LoopInterchange is actually what we need:
 ;; - Implement Polyhedral
+;; Schedule + RaW Accessing, 同じフォーマットである必要？
+;; - なぜループが0から始まらないのか？

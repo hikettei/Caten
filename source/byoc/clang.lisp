@@ -1,6 +1,6 @@
 (defpackage :caten/byoc/clang
   (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
-        :caten/codegen/byoc :caten/codegen/renderer :caten/air :caten/codegen/runner
+        :caten/codegen/byoc :caten/codegen/renderer :caten/air
         :caten/aasm :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
   (:import-from :caten/byoc/lisp #:LispBuffer)
   (:export #:ClangBuffer #:ClangRuntime #:load-foreign-function))

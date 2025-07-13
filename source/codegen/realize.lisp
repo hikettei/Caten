@@ -29,10 +29,10 @@
           for ir = (nth nth blueprint)
           if (find (node-type ir) `(:TmpRange)) do (incf depth)
             else if (find (node-type ir) `(:TmpEndRange)) do (decf depth)
-                   endn
+                   end
           if (< depth 0) do (return-from memory-access-local-p nil))
     t))
-n
+
 (defun bp-finalize-realize (blueprint node base-graph &aux (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
   "Only the following tensor-relays are needed to be realized (allocated on the device):
 - appeared in either of (node-reads node) or (node-writes node)
