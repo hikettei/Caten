@@ -293,6 +293,224 @@
          (str   (isl::%isl-printer-get-str q)))
     str))
 
+(defun group-nodes-by-loop-structure (blueprint node-to-loops)
+  "Group computation nodes by their loop structure to build nested schedule tree"
+  (let ((loop-groups (make-hash-table :test 'equal)))
+    ;; Group nodes by their loop signature
+    (dolist (node (graph-nodes blueprint))
+      (when (eql (node-type node) :EXPR)
+        (let* ((node-loops (gethash (node-id node) node-to-loops))
+               (loop-signature (map 'list #'(lambda (l) (getf l :idx)) node-loops)))
+          (push node (gethash loop-signature loop-groups)))))
+    loop-groups))
+
+(defun explore-blueprint-schedule-tree (blueprint start-node schedule &aux (visited (make-hash-table)))
+  "Recursively explore blueprint to build schedule tree like analyze-scop"
+  (declare (type graph blueprint) (type symbol start-node))
+  (labels ((explore-node (id &aux (node (id->value blueprint id)))
+             (declare (type symbol id))
+             (when (or (null node) (gethash (node-id node) visited)) (return-from explore-node :nothing))
+             (setf (gethash (node-id node) visited) t)
+             (case (node-type node)
+               (:FOR
+                ;; This is a loop - explore its body and create band node
+                ;; FOR(RANGE(UPFROM, BELOW), BODY)
+                (let* ((range-id (car (node-reads node)))
+                       (body-id (cadr (node-reads node)))
+                       (body-schedule (explore-node body-id)))
+                  (when (>= (ctx:getenv :JIT_DEBUG) 3)
+                    (format t "[Schedule] Processing FOR loop ~a with body ~a~%" (node-id node) body-id))
+                  ;; [BAND_NODE] (= Loop)
+                  ;;     |
+                  ;;  [SEQUENCE]
+                  ;;     |
+                  ;;  [FILTER]
+                  ;; Return the body schedule - the loop structure is handled by partial schedules
+                  ;; INSERT PARTIAL SCHEDULE HERE?
+                  body-schedule))
+               ;; [TODO] IF
+               (:PROGN
+                 ;; PROGN = SEQUENCE_NODE
+                 ;; Sequence of operations
+                 (let ((sequence-schedule :nothing))
+                   (loop for item in (node-reads node)
+                         for sched = (explore-node item)
+                         if (not (eql sched :nothing))
+                           do (setf sequence-schedule (schedule-sequence sequence-schedule sched)))
+                   sequence-schedule))
+               (:EXPR
+                ;; EXPR = FilterNode
+                ;; Computation node - create domain schedule with loop structure
+                (multiple-value-bind (loops node-to-loops) (traverse-blueprint-for-loops blueprint)
+                  (declare (ignore loops))
+                  (let* ((node-loops (gethash (node-id node) node-to-loops))
+                         (node-domain-str (render-domain-for-node blueprint node node-to-loops))
+                         (node-domain (union-set-from-str (format nil "{ ~a }" node-domain-str)))
+                         (node-schedule (schedule-from-domain node-domain)))
+                    
+                    (when (>= (ctx:getenv :JIT_DEBUG) 3)
+                      (format t "[Schedule] Created schedule for EXPR node ~a with domain ~a~%" 
+                              (node-id node) node-domain-str))
+                    
+                    ;; Add partial schedule for loops if any
+                    (when node-loops
+                      (let* ((loop-vars (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse node-loops)))
+                             (partial-sched-str (format nil "{ ~a[~{~a~^, ~}] -> [~{~a~^, ~}] }"
+                                                        (node-id node)
+                                                        loop-vars
+                                                        loop-vars))
+                             (partial-sched (multi-union-pw-aff-from-str (print partial-sched-str))))
+                        
+                        (when (>= (ctx:getenv :JIT_DEBUG) 4)
+                          (format t "[Schedule] Adding partial schedule: ~a~%" partial-sched-str))
+                        
+                        (setf node-schedule 
+                              (schedule-insert-partial-schedule node-schedule partial-sched))))
+                    node-schedule))))))
+    (explore-node schedule start-node)))
+
+(defmethod pprint-schedule ((schedule schedule))
+  (let ((schedule (yaml:parse (schedule-to-str schedule))))
+    (with-output-to-string (out)
+      (format out "~%")
+      (labels ((indent (n)
+                 (make-string n :initial-element #\space))
+               (separate-screen (indent &key (n 120))
+                 (format out "~%~a~a~%" (indent indent) (make-string n :initial-element #\-)))
+               (explore (schedule key &key (indent 0))
+                 (cond
+                   ((string= key "domain")
+                    (format out "~adomain(~%" (indent indent))
+                    (let ((domains (cl-ppcre:split
+                                    ";"
+                                    (cl-ppcre:regex-replace-all
+                                     "{|}"
+                                     (gethash key schedule)
+                                     ""))))
+                      (format out "~a"
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for dom in domains
+                                      collect (format nil "~a~a" (indent (+ indent 2)) dom)
+                                      collect (format nil "~%"))))))
+                    (format out "~a)" (indent indent)))
+                   ((string= key "child")
+                    (format out "~%~achild()" (indent indent))
+                    (separate-screen indent)
+                    (mapc
+                     #'(lambda (x)
+                         (explore (gethash key schedule) x :indent (+ indent 2)))
+                     (reverse (alexandria:hash-table-keys (gethash key schedule)))))
+                   ((string= key "schedule")
+                    (let ((schedules (cl-ppcre:split
+                                      " , "
+                                      (cl-ppcre:regex-replace-all
+                                       "{|}"
+                                       (subseq (gethash key schedule) 1 (1- (length (gethash key schedule))))
+                                       ""))))
+                      (format out "~aschedule()" (indent indent))
+                      (when schedules (format out "~%"))
+                      (format out "~a"
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for s in schedules
+                                      for nth upfrom 0
+                                      for separator = (if (= 1 (length schedules)) "-" (if (zerop nth) "┏" (if (= (length schedules) (1+ nth)) "┗" "┃")))
+                                      collect (format nil "~a  ~a~a" (indent indent) separator s)
+                                      collect (format nil "~%")))))))
+                   ((or (string= key "sequence") (string= key "set"))
+                    (format out "~a~a()" (indent indent) key)
+                    (mapc
+                     #'(lambda (x)
+                         (mapc
+                          #'(lambda (k)
+                              (explore x k :indent (+ 2 indent)))
+                          (alexandria:hash-table-keys x)))
+                     (gethash key schedule)))
+                   ((string= key "filter")
+                    (format out "~%~afilter(~%" (indent indent))
+                    (let ((domains (cl-ppcre:split
+                                    ";"
+                                    (cl-ppcre:regex-replace-all
+                                     "{|}"
+                                     (gethash key schedule)
+                                     ""))))
+                      (format
+                       out
+                       "~a"
+                       (apply
+                        #'concatenate
+                        'string
+                        (butlast
+                         (loop for dom in domains
+                           collect (format nil "~a~a" (indent (+ indent 2)) dom)
+                           collect (format nil "~%")))))
+                      (format out ")")))
+                   ((or (string= key "permutable") (string= key "coincident"))
+                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))
+                   ((or (string= key "mark"))
+                    (format out "~amark(~a)" (indent indent) (gethash key schedule)))
+                   (t (warn "pprint: the key ~a is not implemented." key)))))
+        (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
+
+(defun render-band-node-in-domain (range-node related-nodes loop-info &aux (idx (getattr range-node :idx)))
+  (declare (type node range-node) (type list related-nodes) (type hash-table loop-info))
+  (with-output-to-string (out)
+    (format out "[~%{~%")
+    (loop for filter in related-nodes for nth upfrom 0
+          for idxs = (map 'list #'(lambda (x) (format nil "~(~a~)" (getf x :idx))) (reverse (or (gethash (node-id filter) loop-info) (error ""))))
+          do (assert (eql (node-type filter) :EXPR))
+          if (not (= nth 0)) do (format out "; ")
+            do (format out "~a[~{~a~^, ~}] -> [~(~a~)]" (node-id filter) idxs idx))
+    (format out "~%}~%]")))
+
+(defun rewrite-blueprint-tree->schedule-tree (blueprint &aux (visited (make-hash-table)))
+  "Build ISL Schedule Tree directly from blueprint structure following analyze-scop pattern"
+  (declare (type Graph blueprint))
+  ;; ISL Schedule starts w/ domain
+  (multiple-value-bind (loops node-to-loops) (traverse-blueprint-for-loops blueprint)
+    (labels ((rewrite-node (id &key (region nil) &aux (node (id->value blueprint id)))
+               (declare (type symbol id))
+               (when (or (null node) (gethash (node-id node) visited)) (error "Rendering for multiple times, should we allow it?"))
+               (setf (gethash (node-id node) visited) t)
+               (values
+                (case (node-type node)
+                  (:FOR
+                   ;; FOR(RANGE(UPFROM, BELOW), BODY)
+                   (multiple-value-bind (body-sched exprs-in-body) (rewrite-node (second (node-reads node)) :region region)
+                     (let* ((range (id->value blueprint (car (node-reads node))))
+                            (band (render-band-node-in-domain range exprs-in-body node-to-loops)))
+                       ;; setf region, dont forget it
+                       (schedule-insert-partial-schedule body-sched (multi-union-pw-aff-from-str band)))))
+                  (:IF
+                   ;; HOW
+                   (error "not ready"))
+                  ;; EXPR ==> Rewrite as a filter, and is a leaf of graph.
+                  (:EXPR
+                   (setf region (append region (list node)))
+                   (schedule-from-domain (union-set-from-str (format nil "{ ~a }" (render-domain-for-node blueprint node node-to-loops)))))
+                  (:PROGN
+                    ;; [todo] you can use reduce
+                    (let ((tmp-schedule :nothing))
+                      (loop for item in (node-reads node) do
+                        (multiple-value-bind (sched reg) (rewrite-node item)
+                          (setf region (append region reg))
+                          (if (eql tmp-schedule :nothing)
+                              (setf tmp-schedule sched)
+                              (setf tmp-schedule (schedule-sequence tmp-schedule sched)))))
+                      tmp-schedule))
+                  (otherwise (error "No handling case for ~a" (node-type node))))
+                region)))
+      (assert (= 1 (length (graph-outputs blueprint))))
+      (let ((sched (rewrite-node (car (graph-outputs blueprint)))))
+        (print "SCHEDULE_TREE")
+        (print (pprint-schedule sched))
+        sched))))
+;; [TODO] Everything must be maximimumly optimizeddddd
 (defun make-polyhedral-from-blueprint (blueprint)
   "Constructs Polyhedral IR from blueprint which is a static graph.
    
@@ -303,10 +521,15 @@
    - :SETF - memory store operations
    - :PROGN - sequence of operations
    
-   Returns a plist with :domain, :reads, :writes, and :schedule ISL objects."
+   Returns a Polyhedral-IR object."
   (declare (type Graph blueprint))
+  
+  ;; Extract domain, reads, writes
   (let* ((domain-str (render-domains blueprint))
-         (domain (union-set-from-str domain-str)))
+         (domain (union-set-from-str domain-str))
+         (schedule (rewrite-blueprint-tree->schedule-tree blueprint)))
+    (print schedule)
+    
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Polyhedral] Domain: ~a~%" domain-str))
 
@@ -315,28 +538,14 @@
         (format t "[Polyhedral] Reads: ~a~%" read-str)
         (format t "[Polyhedral] Writes: ~a~%" write-str))
       
-      (let ((reads (union-map-from-str read-str))
-            (writes (union-map-from-str write-str))
-            (schedule-str (render-schedule blueprint))
-            (schedule (schedule-from-domain domain)))
+      (let* ((reads (union-map-from-str read-str))
+             (writes (union-map-from-str write-str)))
         
-        (when (>= (ctx:getenv :JIT_DEBUG) 3)
-          (format t "[Polyhedral] Schedule: ~a~%" schedule-str))
-        
-        ;; Create schedule from domain if we have schedule items
-        ;;(let ((sched-map (multi-union-pw-aff-from-str schedule-str)))
-        ;;  (setf schedule (schedule-insert-partial-schedule schedule sched-map)))
-        
-        ;; Handle band nodes for reduction loops
-        (print schedule)
-        (multiple-value-bind (loops node-to-loops) (traverse-blueprint-for-loops blueprint)
-          (let ((band-str (render-band-schedule loops node-to-loops)))
-            (when (and band-str (>= (ctx:getenv :JIT_DEBUG) 3))
-              (format t "[Polyhedral] Band schedule: ~a~%" band-str))
-            (when band-str
-              (print band-str)
-              (let ((band-map (multi-union-pw-aff-from-str band-str)))
-                (setf schedule (schedule-insert-partial-schedule schedule band-map))))))
-        
-        ;; Return polyhedral IR structure
-        (print (debug-render-to-clang (make-polyhedral-ir domain reads writes schedule)))))))
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (let ((polyhedral-ir (make-polyhedral-ir domain reads writes schedule)))
+            (format t "[Polyhedral] Generated schedule tree:~%~a~%" 
+                    (debug-render-to-clang polyhedral-ir))
+            polyhedral-ir))))))
+
+;; polyhedral.lisp is
+;; - 100 line and heavily optimized isl rewriting tool
