@@ -286,7 +286,73 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
   return attn_output
 ")
 
+(defun llama-attn-impl (x n-heads wq wk wv wo)
+  (let* ((q (!matmul x (!t wq)))
+         (k (!matmul x (!t wk)))
+         (v (!matmul x (!t wv)))
+         (new-x-shape (append (butlast (shape q)) 
+                              (list n-heads (/ (car (last (shape q))) n-heads))))
+         (q (!reshape q new-x-shape))
+         (k (!reshape k new-x-shape))
+         (v (!reshape v new-x-shape))
+         (q (!rope q (floor (/ (car (last (shape q))) 2))))
+         (k (!rope k (floor (/ (car (last (shape k))) 2))))
+         (q (!transpose q 1 2))
+         (k (!transpose k 1 2))
+         (v (!transpose v 1 2))
+         (attn-output (scaled-dot-product-attention q k v))
+         (attn-output (!permute attn-output 0 2 1 3))
+         (attn-output (!reshape attn-output 
+                                (append (butlast (shape attn-output) 2) 
+                                        (list (apply #'* (last (shape attn-output) 2)))))))
+    (!matmul attn-output (!t wo))))
+
 (import-function "attn_impl_torch")
+
+(python-exec
+ "
+def llama_attn_impl_torch(x, n_heads, wq_weight, wk_weight, wv_weight, wo_weight):
+    batch_size, seq_len, _ = x.size()
+    head_dim = x.size(-1) // n_heads
+    
+    q = torch.matmul(x, wq_weight.T)
+    k = torch.matmul(x, wk_weight.T)
+    v = torch.matmul(x, wv_weight.T)
+    
+    new_x_shape = (batch_size, seq_len, n_heads, head_dim)
+    q = q.reshape(new_x_shape)
+    k = k.reshape(new_x_shape)
+    v = v.reshape(new_x_shape)
+    
+    # Apply RoPE to q and k (from test-rope.lisp))
+    q = torch_rope(q)
+    k = torch_rope(k)
+    
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+    
+    attn_output = test_scaled_dot_product_attention(q, k, v)
+   
+    attn_output = attn_output.permute(0, 2, 1, 3)
+    attn_output = attn_output.reshape(batch_size, seq_len, -1)
+    attn_output = torch.matmul(attn_output, wo_weight.T)
+    
+    return attn_output")
+
+(import-function "llama_attn_impl_torch")
+
+(deftest test-llama-attention
+  (let ((x (rand `(10 3 32))) 
+        (wq (rand `(32 32)))
+        (wk (rand `(32 32)))
+        (wv (rand `(32 32)))
+        (wo (rand `(32 32))))
+    (assert-equal
+     (:rtol 1e-4 :atol 1e-4)
+     (with-torch (x wq wk wv wo)
+       (->caten (llama_attn_impl_torch x 4 wq wk wv wo)))
+     (proceed (llama-attn-impl x 4 wq wk wv wo)))))
 
 (deftest test-attention
   (let ((x (rand `(10 3 32)))
