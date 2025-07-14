@@ -10,6 +10,7 @@
 
 (in-package :caten/codegen/polyhedral)
 ;; ~~ Polyhedral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;;; blueprint -> polyhedral
 (defclass Polyhedral-IR ()
   ((schedule :accessor poly-schedule :initarg :schedule)
    (schedule-node :accessor poly-schedule-node :initarg :schedule-node)
@@ -46,6 +47,9 @@
          (sc (schedule-constraints-set-validity sc (poly-dependencies pg)))
          (sc (schedule-constraints-set-proximity sc (poly-dependencies pg))))
     sc))
+
+(defmethod poly-get-rank ((pg Polyhedral-IR))
+  (count :RANGE (graph-nodes (poly-blueprint pg)) :key #'node-type))
 
 (defun gid (n) (intern (format nil "_gid~a" n)))
 (defun ->ast (schedule rank)
@@ -267,20 +271,142 @@
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)))
-    (print reads/writes)
     (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;;; Polyhedral -> Blueprint
+(defun parse-isl-ast (bp ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let ((type (isl::%isl-ast-node-get-type ast)))
+    (ecase type
+      (:ast-node-error (isl::isl-error))
+      (:ast-node-for   (parse-isl-ast-for bp ast))
+      (:ast-node-if    (parse-isl-ast-if bp ast))
+      (:ast-node-block (parse-isl-ast-block bp ast))
+      (:ast-node-mark  (parse-isl-ast-mark bp ast))
+      (:ast-node-user  (parse-isl-ast-user bp ast)))))
+
+(defun parse-isl-ast-block (bp ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((children (isl::%isl-ast-node-block-get-children ast))
+	 (n        (isl::%isl-ast-node-list-n-ast-node children)))
+    (apply
+     #'%progn
+     (loop for i upfrom 0 below n
+           for child = (isl::%isl-ast-node-list-get-at children i)
+	   collect (parse-isl-ast bp child)))))
+
+(defun parse-isl-ast-if (bp ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((condition (parse-isl-expr bp (isl::%isl-ast-node-if-get-cond ast)))
+	 (then-node (parse-isl-ast bp (isl::%isl-ast-node-if-get-then-node ast)))
+	 (else-p (isl::%isl-ast-node-if-has-else-node ast)))
+    (assert (not (eql else-p :bool-true)) () "Else statement is not allowed!")
+    (%if condition then-node)))
+
+(defun parse-isl-ast-for (bp ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((iter (isl::%isl-ast-node-for-get-iterator ast))
+	 (id (isl::%isl-ast-expr-get-id iter))
+	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
+	 (from (parse-isl-expr bp (isl::%isl-ast-node-for-get-init ast) :toplevel-p nil))
+	 (by (parse-isl-expr bp (isl::%isl-ast-node-for-get-inc ast) :toplevel-p nil))
+	 (to (parse-isl-expr bp (isl::%isl-ast-node-for-get-cond ast) :toplevel-p nil))
+	 (body (parse-isl-ast bp (isl::%isl-ast-node-for-get-body ast))))
+    (print body)
+    ;; [TODO]
+    ;; to should be always zero.
+    ;; or allow `to` to be non-zero by introducing %range upfrom
+    ;; - expr-detach-loop-bound is required
+    (%range (intern name) (%sub to from) body :step by)))
+
+(defun parse-isl-expr (bp ast &key (toplevel-p t))
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((type (isl::%isl-ast-expr-get-type ast)))
+    (funcall
+     (if toplevel-p #'(lambda (x) (%expr (node->id x))) #'identity)
+     (ecase type
+       (:ast-expr-error (isl::isl-error))
+       (:ast-expr-id
+        (let* ((id (isl::%isl-ast-expr-id-get-id ast))
+	       (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
+	  (declare (type string name))
+          (%iconst (intern name) :dtype :int64)))
+       (:ast-expr-int
+        (let* ((id (isl::%isl-ast-expr-int-get-val ast))
+	       (num (isl::%isl-val-get-d id)))
+	  (declare (type number num))
+          (%iconst num :dtype :int64)))
+       (:ast-expr-op
+        (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
+	       (args (loop for nth upfrom 0 below n-arg collect (parse-isl-expr bp (isl::%isl-ast-expr-op-get-arg ast nth) :toplevel-p nil)))
+	       (op-type (isl::%isl-ast-expr-op-get-type ast)))
+	  (flet ((->expr (lhs rhs)
+		   (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
+		   (ecase op-type
+		     (:ast-expr-op-and (%and lhs rhs))
+		     (:ast-expr-op-and-then (%and lhs rhs))
+		     (:ast-expr-op-or (%or lhs rhs))
+		     (:ast-expr-op-or-else (%or lhs rhs))
+		     (:ast-expr-op-max (%max lhs rhs))
+		     (:ast-expr-op-min  (%min lhs rhs))
+		     (:ast-expr-op-minus (%neg lhs)) ;; (- a)
+		     (:ast-expr-op-add (%add lhs rhs))
+		     (:ast-expr-op-sub (%sub lhs rhs))
+		     (:ast-expr-op-mul (%mul lhs rhs))
+		     (:ast-expr-op-div (%idiv lhs rhs))		 
+		     (:ast-expr-op-fdiv-q (%idiv lhs rhs))
+		     (:ast-expr-op-pdiv-q (%idiv lhs rhs))
+		     (:ast-expr-op-pdiv-r (%mod lhs rhs))
+		     (:ast-expr-op-zdiv-r (%mod lhs rhs))
+		     ;; (:expr-op-cond)
+		     (:ast-expr-op-eq (%= nil :row lhs rhs))
+                     ;; Rewrite LE to simplify the expression
+		     (:ast-expr-op-le (%< nil :row lhs (%add rhs (%iconst 1 :dtype :int64))));; <=
+		     (:ast-expr-op-lt (%< nil :row lhs rhs)) ;; <
+		     (:ast-expr-op-ge (%not (%< nil :row lhs rhs))) ;; >=
+		     (:ast-expr-op-gt (%> nil :row lhs rhs)) ;; >
+		     ;; (:expr-op-call)
+		     ;; (:expr-op-access)
+		     ;; (:expr-op-member)
+		     ;; (:expr-op-address-of)
+		     (otherwise  (error "~a is not supported by caten" op-type)))))
+	    (if (= (length args) 1)
+	        (->expr (car args) nil)
+	        (case op-type
+		  (:ast-expr-op-select
+		   (assert (= (length args) 3))
+                   (apply #'%where args))
+		  (otherwise
+		   (reduce #'->expr args)))))))))))
+
+(defun parse-isl-ast-user (bp ast &aux (visited (make-hash-table)))
+  (declare (type cffi:foreign-pointer ast))
+  (let ((expr (isl::%isl-ast-node-user-get-expr ast)))
+    (let* ((first-expr (isl::%isl-ast-expr-op-get-arg expr 0))
+	   (n          (isl::%isl-ast-expr-get-op-n-arg expr))
+	   (id         (isl::%isl-ast-expr-id-get-id first-expr))
+	   (name       (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
+	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr bp (isl::%isl-ast-expr-op-get-arg expr i))))
+           (node (find name (graph-nodes bp) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp)))
+      (assert node () "The node ~a is not found from original blueprint." name)
+;      (print args) ;; [todo] how to handle w/ args?
+;      (print node)
+      (labels ((e (id &aux (node (id->value bp id)))
+                 (when (or (null node) (gethash (node-id node) visited)) (return-from e))
+                 (when (eql (node-type node) :EXPR) (return-from e))
+                 ;; [TODO] Replace %RANGE here if exists
+                 (setf (gethash (node-id node) visited) t)
+                 (emit node)
+                 (mapc #'e (node-reads node))))
+        (mapc #'e (node-reads node))
+        (emit node)))))
+
 (defun get-blueprint-from-polyhedral (polyhedral)
   "Convert ISL polyhedral representation back to blueprint graph"
-  ;; Entry point for:
-  ;; - @directive parsing, getting blueprint from Polyhedral.
-  ;; - 
-  ;;
-  ;; This would require parsing the ISL AST and reconstructing the graph
-  ;; For now, this is a placeholder that returns the input for compatibility
-  (declare (ignore polyhedral))
-  (warn "get-blueprint-from-polyhedral: Not fully implemented yet")
-  nil);; [TODO] ↓のAccess Relations, ScalarはFissionできるように記述したい
+  (declare (type Polyhedral-IR polyhedral))
+  (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
+    (declare (type isl::ast-node ast))
+    (with-blueprint (:noopt t) (parse-isl-ast (poly-blueprint polyhedral) (isl::ast-node-handle ast)))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule () nil)
 
@@ -492,6 +618,12 @@ Returns T if the current schedule does not break any dependences in dep."
         (format t "[Generation ~a]~%" n)
         (setf leaves (apply #'append (map 'list #'polyhedral-ir-mutate-for-children leaves)))
         (print leaves))
+      (loop for l in leaves do
+        (print "Polyhedral -> Blueprint")
+        (let ((bp (get-blueprint-from-polyhedral l)))
+          (print bp)
+          (pprint-graph bp)
+          (caten/codegen/blueprint:print-blueprint bp t)))
       (print searched)
       ;; [TODO] Apply BEAM Search
       (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))

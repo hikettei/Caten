@@ -51,7 +51,7 @@
    #:%and
    #:%or
    #:%xor
-   #:%max
+   #:%max #:%min
    #:%gcd
 
    ;; Unary

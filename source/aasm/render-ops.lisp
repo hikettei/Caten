@@ -26,7 +26,7 @@ Constraints:
 "
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
   (when (node-p size) (setf size (%expr (node->id1 size))))
-  (when (node-p step) (setf body (%expr (node->id1 body))))
+  (when (node-p step) (setf step (%expr (node->id1 step))))
   (let ((range (or range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype)))))
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
