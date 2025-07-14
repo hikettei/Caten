@@ -288,18 +288,40 @@
     (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
-(defun parse-isl-ast (bp ast)
+(defstruct (parse-ctx
+            (:constructor make-parse-ctx (blueprint))
+            (:conc-name pctx-))
+  (blueprint blueprint :type Graph)
+  (gid2range (make-hash-table) :type hash-table)
+  (gid2offset (make-hash-table) :type hash-table)
+  (variable-table (make-hash-table) :type hash-table)
+  (scop-ctx (make-scop-ctx-from-blueprint blueprint) :type ctx))
+
+(defun pctx-register-gid (pctx id range offset)
+  (declare (type parse-ctx pctx) (type symbol id))
+  (labels ((find-suite (i cnt)
+             (if (gethash i (pctx-gid2range pctx))
+                 (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
+                 i)))
+    (let ((registered-as (find-suite id 1)) (new-ctx (copy-parse-ctx pctx)))
+      (setf (gethash registered-as (pctx-gid2range new-ctx)) range
+            (gethash registered-as (pctx-gid2offset new-ctx)) offset
+            (pctx-variable-table new-ctx) (alexandria:copy-hash-table (pctx-variable-table new-ctx))
+            (gethash id (pctx-variable-table new-ctx)) registered-as)
+      (values new-ctx registered-as))))
+
+(defun parse-isl-ast (ctx ast)
   (declare (type cffi:foreign-pointer ast))
   (let ((type (isl::%isl-ast-node-get-type ast)))
     (ecase type
       (:ast-node-error (isl::isl-error))
-      (:ast-node-for   (parse-isl-ast-for bp ast))
-      (:ast-node-if    (parse-isl-ast-if bp ast))
-      (:ast-node-block (parse-isl-ast-block bp ast))
-      (:ast-node-mark  (parse-isl-ast-mark bp ast))
-      (:ast-node-user  (parse-isl-ast-user bp ast)))))
+      (:ast-node-for   (parse-isl-ast-for ctx ast))
+      (:ast-node-if    (parse-isl-ast-if ctx ast))
+      (:ast-node-block (parse-isl-ast-block ctx ast))
+      (:ast-node-mark  (parse-isl-ast-mark ctx ast))
+      (:ast-node-user  (parse-isl-ast-user ctx ast)))))
 
-(defun parse-isl-ast-block (bp ast)
+(defun parse-isl-ast-block (ctx ast)
   (declare (type cffi:foreign-pointer ast))
   (let* ((children (isl::%isl-ast-node-block-get-children ast))
 	 (n        (isl::%isl-ast-node-list-n-ast-node children)))
@@ -307,22 +329,22 @@
      #'%progn
      (loop for i upfrom 0 below n
            for child = (isl::%isl-ast-node-list-get-at children i)
-	   collect (parse-isl-ast bp child)))))
+	   collect (parse-isl-ast ctx child)))))
 
-(defun parse-isl-ast-if (bp ast)
+(defun parse-isl-ast-if (ctx ast)
   (declare (type cffi:foreign-pointer ast))
-  (let* ((condition (parse-isl-expr bp (isl::%isl-ast-node-if-get-cond ast) :toplevel-p nil))
-	 (then-node (parse-isl-ast bp (isl::%isl-ast-node-if-get-then-node ast)))
+  (let* ((condition (parse-isl-expr ctx (isl::%isl-ast-node-if-get-cond ast) :toplevel-p nil))
+	 (then-node (parse-isl-ast ctx (isl::%isl-ast-node-if-get-then-node ast)))
 	 (else-p (isl::%isl-ast-node-if-has-else-node ast)))
     (assert (not (eql else-p :bool-true)) () "Else statement is not allowed!")
     (%if condition then-node)))
 
-(defun parse-isl-ast-cond (bp ast idx)
+(defun parse-isl-ast-cond (ctx ast idx)
   (declare (type cffi:foreign-pointer ast))
   (let ((type (isl::%isl-ast-expr-get-type ast)))
     (assert (eql type :ast-expr-op))
     (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
-           (args (loop for nth upfrom 0 below n-arg collect (parse-isl-expr bp (isl::%isl-ast-expr-op-get-arg ast nth) :toplevel-p nil)))
+           (args (loop for nth upfrom 0 below n-arg collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg ast nth) :toplevel-p nil)))
            (op-type (isl::%isl-ast-expr-op-get-type ast)))
       (multiple-value-bind (lhs rhs) (apply #'values args)
         (assert (= 2 (length args)))
@@ -332,21 +354,21 @@
           (:ast-expr-op-le (%add rhs (%iconst 1 :dtype :int64)))
           (:ast-expr-op-lt rhs))))))
 
-(defun parse-isl-ast-for (bp ast)
+(defun parse-isl-ast-for (ctx ast)
   (declare (type cffi:foreign-pointer ast))
   (let* ((iter (isl::%isl-ast-node-for-get-iterator ast))
 	 (id (isl::%isl-ast-expr-get-id iter))
 	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
-	 (from (parse-isl-expr bp (isl::%isl-ast-node-for-get-init ast) :toplevel-p nil))
-	 (by (parse-isl-expr bp (isl::%isl-ast-node-for-get-inc ast) :toplevel-p nil))
-	 (to (parse-isl-ast-cond bp (isl::%isl-ast-node-for-get-cond ast) (intern name)))
-	 (body (parse-isl-ast bp (isl::%isl-ast-node-for-get-body ast))))
-    ;; [TODO]
-    ;; to should be always zero.
-    ;; or allow `to` to be non-zero by introducing %range upfrom
-    (%range (intern name) (%sub to from) body :step by)))
+	 (from (parse-isl-expr ctx (isl::%isl-ast-node-for-get-init ast) :toplevel-p nil))
+	 (by (parse-isl-expr ctx (isl::%isl-ast-node-for-get-inc ast) :toplevel-p nil))
+	 (to (parse-isl-ast-cond ctx (isl::%isl-ast-node-for-get-cond ast) (intern name)))
+         (rid (gensym "R")))
+    (multiple-value-bind (new-ctx gid) (pctx-register-gid ctx (intern name) rid from)
+      ;; [TODO] by >= 1 assertion
+      (let ((body (parse-isl-ast new-ctx (isl::%isl-ast-node-for-get-body ast))))
+        (%range gid (%sub to from) body :step by :rid rid)))))
 
-(defun parse-isl-expr (bp ast &key (toplevel-p t))
+(defun parse-isl-expr (ctx ast &key (toplevel-p t))
   (declare (type cffi:foreign-pointer ast))
   (let* ((type (isl::%isl-ast-expr-get-type ast)))
     (funcall
@@ -355,9 +377,16 @@
        (:ast-expr-error (isl::isl-error))
        (:ast-expr-id
         (let* ((id (isl::%isl-ast-expr-id-get-id ast))
-	       (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
-	  (declare (type string name))
-          (%iconst (intern name) :dtype :int64)))
+	       (name (intern (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
+               (is-gid (gethash name (pctx-variable-table ctx))))
+          (if is-gid
+              (let ((rid (gethash is-gid (pctx-gid2range ctx)))
+                    (offset (gethash is-gid (pctx-gid2offset ctx))))
+                (assert (and rid offset))
+                (if (eql offset 0)
+                    rid
+                    (%add rid (if (numberp offset) (%iconst (- offset) :dtype :int64) (%neg offset)))))
+              (%iconst name :dtype :int64))))
        (:ast-expr-int
         (let* ((id (isl::%isl-ast-expr-int-get-val ast))
 	       (num (isl::%isl-val-get-d id)))
@@ -365,7 +394,7 @@
           (%iconst num :dtype :int64)))
        (:ast-expr-op
         (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
-	       (args (loop for nth upfrom 0 below n-arg collect (parse-isl-expr bp (isl::%isl-ast-expr-op-get-arg ast nth) :toplevel-p nil)))
+	       (args (loop for nth upfrom 0 below n-arg collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg ast nth) :toplevel-p nil)))
 	       (op-type (isl::%isl-ast-expr-op-get-type ast)))
 	  (flet ((->expr (lhs rhs)
 		   (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
@@ -406,24 +435,37 @@
 		  (otherwise
 		   (reduce #'->expr args)))))))))))
 
-(defun parse-isl-ast-user (bp ast &aux (visited (make-hash-table)))
+(defun parse-isl-ast-user (ctx ast &aux (visited (make-hash-table)))
   (declare (type cffi:foreign-pointer ast))
   (let ((expr (isl::%isl-ast-node-user-get-expr ast)))
     (let* ((first-expr (isl::%isl-ast-expr-op-get-arg expr 0))
 	   (n          (isl::%isl-ast-expr-get-op-n-arg expr))
 	   (id         (isl::%isl-ast-expr-id-get-id first-expr))
 	   (name       (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
-	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr bp (isl::%isl-ast-expr-op-get-arg expr i))))
-           (node (find name (graph-nodes bp) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp)))
+	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i) :toplevel-p nil)))
+           (node (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp))
+           (node-to-loops (reverse (gethash (node-id node) (ctx-node-to-loops (pctx-scop-ctx ctx)))))
+           (rewrite-map (make-hash-table)))
       (assert node () "The node ~a is not found from original blueprint." name)
-;      (print args) ;; [todo] how to handle w/ args?
-;      (print node)
-      (labels ((e (id &aux (node (id->value bp id)))
+      (assert (= (length args) (length node-to-loops)) () "Inconsistent domain loop args size")
+      (loop for base-domain in node-to-loops
+            for new-args in args
+            do (setf (gethash (getf base-domain :idx) rewrite-map) new-args))
+      ;; need a base args
+      (labels ((e (id &aux (node (id->value (pctx-blueprint ctx) id)))
                  (when (or (null node) (gethash (node-id node) visited)) (return-from e))
                  (when (eql (node-type node) :EXPR) (return-from e))
+                 (when (eql (node-type node) :RANGE)
+                   (let ((new-space (gethash (getattr node :idx) rewrite-map)))
+                     (assert new-space)
+                     (let ((n (copy-node new-space)))
+                       (assert (= 1 (length (node-writes n))))
+                       (setf (node-writes n) (list id)
+                             (node-id n) (gensym "NID"))
+                       (emit n))
+                     (return-from e)))
                  ;; [TODO] Replace %RANGE here if exists
                  (setf (gethash (node-id node) visited) t)
-;                 (print node)
                  (emit node)
                  (mapc #'e (node-reads node))))
         (mapc #'e (node-reads node))
@@ -434,7 +476,7 @@
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
-    (with-blueprint (:noopt nil) (parse-isl-ast (poly-blueprint polyhedral) (isl::ast-node-handle ast)))))
+    (with-blueprint (:noopt nil) (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast)))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule () nil)
 
@@ -525,6 +567,25 @@ Returns T if the current schedule does not break any dependences in dep."
 (defmethod optrule-generate-search-space (poly (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
 (defmethod optrule-apply-transform-on-blueprint (poly (optrule NoOpt)) nil)
+
+(defclass Rewrite/FuseLoadReduceStore (OptimizationRule) nil)
+(defmethod optrule-generate-search-space (poly (id (eql :Rewrite/FuseLoadReduceStore)))
+  ;; [TODO] If there's reduction
+  ;; [TODO] Rewrite the base blueprint to have:
+  ;; - Remove LOAD (Separated Loop)
+  ;; - Add extra buffer
+  ;; - e.g.:
+  ;; val = 0.0
+  ;;   val += ...
+  ;; out[...] = val
+  ;; is rewrittern as
+  ;; for ...
+  ;;   out[...] = initial_value
+  ;; OUT[...] += ...
+  ;; separate activation
+  ;; OR, MAKE Post-Tile-Fusion DOABLE!!!
+  ;; [Original] -> [NoOpt, FuseLoadReduceStore] -> [Reschedule1, Reschedule2, Reschedule3] ... -> {SKETCH!}
+  nil)
 
 (defclass Reschedule (OptimizationRule)
   ((outer-coincidence :initarg :outer-coincidence :initform 0)
