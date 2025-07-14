@@ -476,7 +476,7 @@
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
-    (with-blueprint (:noopt nil) (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast)))))
+    (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast)))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule () nil)
 
@@ -708,10 +708,10 @@ Returns T if the current schedule does not break any dependences in dep."
         (setf leaves (apply #'append (map 'list #'polyhedral-ir-mutate-for-children leaves)))
         (print leaves))
       (loop for l in leaves do
-        (print "Polyhedral -> Blueprint")
+        (format t "Polyhedral -> Blueprint~%~%")
         (let ((bp (get-blueprint-from-polyhedral l)))
-          (print bp)
-          (pprint-graph bp)
+;          (print bp)
+;          (pprint-graph bp)
           (caten/codegen/blueprint:print-blueprint bp t)))
       (print searched)
       ;; [TODO] Apply BEAM Search

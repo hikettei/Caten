@@ -157,6 +157,8 @@
                   (simplify-arithmetic-code (format nil "(~a~a~a)" lhs ,op rhs))))))
   (def :ADD "+")
   (def :MUL "*")
+  (def :MOD "%")
+  (def :IDIV "/")
   (def :AND " and ")
   (def :OR " or ")
   (def :XOR " xor "))
