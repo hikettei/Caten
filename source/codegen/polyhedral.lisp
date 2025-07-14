@@ -52,20 +52,34 @@
   (count :RANGE (graph-nodes (poly-blueprint pg)) :key #'node-type))
 
 (defun gid (n) (intern (format nil "_gid_p~a" n)))
+
+(cffi:defcallback apply-set-separate-loop :pointer
+    ((schedule-node :pointer) (user :pointer))
+  (declare (ignore user))
+  (if (eql (isl::%isl-schedule-node-get-type schedule-node) :schedule-node-band)
+      (let ((n (isl::%isl-schedule-node-band-n-member schedule-node)))
+        (dotimes (i n) (setf schedule-node (isl::%isl-schedule-node-band-member-set-ast-loop-type schedule-node i 1)))
+        schedule-node)
+      schedule-node))
+
+(defun schedule-set-separate (schedule)
+  (isl::%%make-schedule
+   (isl::%isl-schedule-map-schedule-node-bottom-up (isl::schedule-handle schedule) (cffi:callback apply-set-separate-loop) (cffi:null-pointer))))
+
 (defun ->ast (schedule rank)
   (macrolet ((set-option (name level)
 	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl::context-handle isl::*context*)
 				 :int ,level
 				 :void)))
-    (set-option "ast_build_atomic_upper_bound" 0)
+    (set-option "ast_build_atomic_upper_bound" 1)
     (set-option "ast_build_detect_min_max" 1)
     (set-option "ast_build_exploit_nested_bounds" 1)
-    (set-option "ast_build_prefer_pdiv" 1)
-    (set-option "ast_build_scale_strides" 0)
+    (set-option "ast_build_prefer_pdiv" 0)
+    (set-option "ast_build_scale_strides" 1)
     (set-option "ast_build_allow_else" 0)
     (set-option "ast_build_allow_or" 0))
-  (let* ((schedule (isl:copy schedule))
+  (let* ((schedule (schedule-set-separate (isl:copy schedule)))
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
@@ -646,8 +660,12 @@ Returns T if the current schedule does not break any dependences in dep."
 
 ;; [TODO]
 ;; - Two Things I should fix:
-;;  - 1. Schedule, won't zero start.
+;;  - 1. Schedule, won't zero start. (... Arefの話はこのままでいい気がしてきた。)
 ;;  - 2. Indexing is flatten, should we allow it?
+;; - 1. Replace IDX
+;; - 2. Simplifier, More Powerful Symbolic Simplification Patterns
+;; - 3. Flexible reduction accumlator
+;; - 4. fix a bug in threefry2x32
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
