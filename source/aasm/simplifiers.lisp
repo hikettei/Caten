@@ -146,7 +146,11 @@
     ((:Add ((:Add (c Z)) (:Neg ((:Add ((guard x (eql x Z)) d)))))) -> ((node graph) (with-context-nodes (out (%add c (%neg d))))))
     ;; (c+Z)+-(d+Z) = c-d
     ((:Add ((:Add (c Z)) (:Neg ((:Add (d (guard x (eql x Z)))))))) -> ((node graph) (with-context-nodes (out (%add c (%neg d))))))
-    
+    ;; ((c1*p)+(M+c2*p)) = M+((c1+c2)*p)
+    ((:Add ((:Mul ((Const c1 dtype1) P))
+            (:Add (M (:Mul ((Const c2 dtype2) (guard x (eql x P))))))))
+     ->
+     ((node graph) (when (eql dtype1 dtype2) (with-context-nodes (out (%add M (%mul (%load (%salloc :dtype dtype1) (+ c1 c2)) P)))))))
     
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
     ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
