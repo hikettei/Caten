@@ -455,9 +455,21 @@
       (labels ((e (id &aux (node (id->value (pctx-blueprint ctx) id)))
                  (when (or (null node) (gethash (node-id node) visited)) (return-from e))
                  (when (eql (node-type node) :EXPR) (return-from e))
+                 ;; 3 case using gid:
+                 ;; - Reference to RANGE
+                 ;; - LOAD(value)
+                 ;; - MUL(GID0, ...) (<- this should be deprecated)
                  (when (eql (node-type node) :RANGE)
                    (let ((new-space (gethash (getattr node :idx) rewrite-map)))
                      (assert new-space)
+                     (let ((n (copy-node new-space)))
+                       (assert (= 1 (length (node-writes n))))
+                       (setf (node-writes n) (list id)
+                             (node-id n) (gensym "NID"))
+                       (emit n))
+                     (return-from e)))
+                 (when (and (eql (node-type node) :LOAD) (gethash (getattr node :value) rewrite-map))
+                   (let ((new-space (gethash (getattr node :value) rewrite-map)))
                      (let ((n (copy-node new-space)))
                        (assert (= 1 (length (node-writes n))))
                        (setf (node-writes n) (list id)
@@ -710,6 +722,7 @@ Returns T if the current schedule does not break any dependences in dep."
       (loop for l in leaves do
         (format t "Polyhedral -> Blueprint~%~%")
         (let ((bp (get-blueprint-from-polyhedral l)))
+;;          (optimize-aasm bp :heavy-opt-threshold 0)
 ;          (print bp)
 ;          (pprint-graph bp)
           (caten/codegen/blueprint:print-blueprint bp t)))
@@ -727,6 +740,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - 2. Simplifier, More Powerful Symbolic Simplification Patterns
 ;; - 3. Flexible reduction accumlator
 ;; - 4. fix a bug in threefry2x32
+;; - 5. ループの途中でincf挿入するやつやりたい?
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
