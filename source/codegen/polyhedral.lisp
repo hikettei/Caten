@@ -385,7 +385,7 @@
                 (assert (and rid offset))
                 (if (eql offset 0)
                     rid
-                    (%add rid (if (numberp offset) (%iconst (- offset) :dtype :int64) (%neg offset)))))
+                    (%add rid (if (numberp offset) (%iconst offset :dtype :int64) offset))))
               (%iconst name :dtype :int64))))
        (:ast-expr-int
         (let* ((id (isl::%isl-ast-expr-int-get-val ast))
