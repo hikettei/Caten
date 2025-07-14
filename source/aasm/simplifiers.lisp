@@ -21,6 +21,13 @@
 	  (with-context-nodes
 	    (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
 	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
+
+;; [TODO] Cache by hash-table
+(defun symbol-lexiographical-idx (symbol &aux (total 0) (inc 100))
+  (loop for s across (symbol-name symbol)
+        for nth upfrom 0 do
+          (incf total (* (char-code s) (expt inc nth))))
+  total)
 ;; :Cast Instead of :Load
 (defpattern Const (x dtype)
   `(or
@@ -28,11 +35,19 @@
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value (number ,x))
     (and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))
 
-(defpattern Var (x dtype)
+(defpattern Var (x dtype &key (allow-range nil))
   `(or
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value ,x)
+    ,@(when allow-range `((<Rule> :RANGE (_ _) :dtype ,dtype :idx ,x)))
     ,@(when (equal x `(= 0))
         `((<Rule> :Allocate () :nrank 0 :dtype ,dtype)))))
+
+(defpattern Term (coeff var order)
+  `(or
+    ;; 1 * A
+    (and (Var (guard ,var (symbolp ,var)) :int64 :allow-range t) (<> ,coeff 1) (<> ,order (when (symbolp ,var) (symbol-lexiographical-idx ,var))))
+    ;; Constant * A
+    (and (<Rule> :MUL ((Const ,coeff :int64) (Var (guard ,var (symbolp ,var)) :int64 :allow-range t))) (<> ,order (when (symbolp ,var) (symbol-lexiographical-idx ,var))))))
 
 (defun Const (x dtype) (with-context-nodes (_ (%load (%salloc :dtype dtype) x))))
 (defpattern Bool (x) `(<Rule> :Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean ,x)))
@@ -107,8 +122,30 @@
 
 (defun c1pmc2p=mc1c2p (dtype1 dtype2 m c1 c2 p) (when (eql dtype1 dtype2) (with-context-nodes (out (%add M (%mul (%load (%salloc :dtype dtype1) (+ c1 c2)) P))))))
 ;; [TODO] Logical AND/XOR/OR for threefry2x32
+;; [TODO] Simplify index computation (esp when extracted from polyhedral ir)
+;; Add(Neg(...,(Mul(3, A)), Mul(3, A)))
+;;          ^ N order nested
+
 (defsimplifier
     (apply-fold-constant :speed 1)
+    ;; A*2 -> 2*A
+    ((:Mul ((Var x dtype1) (Const y dtype2))) ->
+     ((node graph) (when (and (symbolp x)) (with-context-nodes (out (%mul y x))))))
+    ;; (2*B)+(2*A) -> (2*A)+(2*B)
+    ((:Add ((Term c1 v1 order1) (Term c2 v2 order2)))
+     -> ((node graph)
+         (when (> order1 order2)
+           (with-context-nodes (out (apply #'%add (reverse (node-reads node))))))))
+    ;; A+(B+C)
+    ((:Add ((Term c1 v1 order1) (:Add ((Term c2 v2 order2) (Term c3 v3 order3)))))
+     ->
+     ((node graph)
+      (when (not (< order1 order2 order3))
+        (let* ((a (car (node-reads node)))
+               (bc (id->value graph (second (node-reads node))))
+               (b (car (node-reads bc)))
+               (c (second (node-reads bc))))
+          (with-context-nodes (out (reduce #'%add (map 'list #'car (sort (map 'list #'cons `(,a ,b ,c) `(,order1 ,order2, order3)) #'< :key #'cdr)))))))))
     ;; (-(a)+(a+c)) -> c
     ((:Add ((:Neg ((Var x dtype1))) (:Add ((Var y dtype2) (Var z dtype3)))))
      ->
@@ -193,7 +230,11 @@
     ((:Mul ((:Add (a b)) (Const C dtype)))
      ->
      ((node grpah) (when (eql dtype :int64) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul a z) (%mul b z)))))))
-
+    ;; (C1*x)-(C2*x+Z) = ((C1-C2)*x)-Z
+    ;;((:Add ((:Mul ((Const x dtype1) P))
+    ;;        (:Neg ((:Add ((Const y dtype2) (guard m (eql m p)))) Z))))
+    ;; ->
+    ;; ((node graph) (when (eql dtype1 dtype2) (with-context-nodes (out (%add (%mul (%load (%salloc :dtype dtype1) (- x y)) P) (%neg Z)))))))
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
     ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
@@ -217,7 +258,6 @@
     ((:Mul ((Var (= 1) _) x)) -> x)
     ((:Add (x (Var (= 0) _))) -> x)
     ((:Add ((Var (= 0) _) x)) -> x)
-    ;; [TODO] ↓multi termな単語は若い順番で並べるのではダメ？ (TODO: Cache lexi order)
     ;; Always move constant terms to left to utilize the rule below. (2+a) -> (A+2)
     ((:Add (a (Const b _)))
      ->
