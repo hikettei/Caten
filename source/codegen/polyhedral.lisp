@@ -498,9 +498,7 @@
 
 (defun apply-optimization (polyhedral optrule)
   (declare (type Polyhedral-IR polyhedral) (type OptimizationRule optrule))
-  (let ((polyhedral (poly-clone-for-next-generation polyhedral))
-        (bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
-    (setf (poly-schedule-node polyhedral) (nth (random (length bands)) bands))
+  (let ((polyhedral (poly-clone-for-next-generation polyhedral)))
     (push optrule (poly-cmd-history polyhedral))
     (optrule-apply-transform-on-polyhedral polyhedral optrule)
     polyhedral))
@@ -686,7 +684,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space*
   '((0 . (:NoOpt :Reschedule)) ;; (n-generation . Candidates)
-    (t . (:NoOpt :Interchange))))
+    (t . (:NoOpt ))))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral))))
