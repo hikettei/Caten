@@ -51,31 +51,31 @@
 (defmethod poly-get-rank ((pg Polyhedral-IR))
   (count :RANGE (graph-nodes (poly-blueprint pg)) :key #'node-type))
 
-(defun gid (n) (intern (format nil "_gid~a" n)))
+(defun gid (n) (intern (format nil "_gid_p~a" n)))
 (defun ->ast (schedule rank)
   (macrolet ((set-option (name level)
 	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl::context-handle isl::*context*)
 				 :int ,level
 				 :void)))
-    (set-option "ast_build_atomic_upper_bound" 1)
+    (set-option "ast_build_atomic_upper_bound" 0)
     (set-option "ast_build_detect_min_max" 1)
     (set-option "ast_build_exploit_nested_bounds" 1)
-    (set-option "ast_build_prefer_pdiv" 0)
-    (set-option "ast_build_scale_strides" 1)
+    (set-option "ast_build_prefer_pdiv" 1)
+    (set-option "ast_build_scale_strides" 0)
     (set-option "ast_build_allow_else" 0)
     (set-option "ast_build_allow_or" 0))
   (let* ((schedule (isl:copy schedule))
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
+;;         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
 (defmethod pg-dump-into-str ((pg Polyhedral-IR))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (->ast (poly-schedule pg) 0))
+         (ast   (->ast (poly-schedule pg) (poly-get-rank pg)))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
@@ -409,6 +409,7 @@
                  (when (eql (node-type node) :EXPR) (return-from e))
                  ;; [TODO] Replace %RANGE here if exists
                  (setf (gethash (node-id node) visited) t)
+;                 (print node)
                  (emit node)
                  (mapc #'e (node-reads node))))
         (mapc #'e (node-reads node))
@@ -419,7 +420,7 @@
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
-    (with-blueprint (:noopt t) (parse-isl-ast (poly-blueprint polyhedral) (isl::ast-node-handle ast)))))
+    (with-blueprint (:noopt nil) (parse-isl-ast (poly-blueprint polyhedral) (isl::ast-node-handle ast)))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule () nil)
 
@@ -642,6 +643,11 @@ Returns T if the current schedule does not break any dependences in dep."
       (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
       ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
       (apply #'values (subseq args 0 (length (caten/air:node-writes node)))))))
+
+;; [TODO]
+;; - Two Things I should fix:
+;;  - 1. Schedule, won't zero start.
+;;  - 2. Indexing is flatten, should we allow it?
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
