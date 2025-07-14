@@ -24,6 +24,7 @@
 ;; :Cast Instead of :Load
 (defpattern Const (x dtype)
   `(or
+    ;; (<Rule> :Move ((:Allocate () :nrank 0 :dtype ,dtype) (:Load ((:Allocate () :nrank 0 :dtype _)) :value (number ,x))))
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value (number ,x))
     (and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))
 
@@ -103,6 +104,8 @@
 	    :Buffer :View
 	    (node-writes node) new-views
 	    :nrank nrank :broadcast broadcast :permute permute :tr tr)))))))
+
+(defun c1pmc2p=mc1c2p (dtype1 dtype2 m c1 c2 p) (when (eql dtype1 dtype2) (with-context-nodes (out (%add M (%mul (%load (%salloc :dtype dtype1) (+ c1 c2)) P))))))
 ;; [TODO] Logical AND/XOR/OR for threefry2x32
 (defsimplifier
     (apply-fold-constant :speed 1)
@@ -134,6 +137,11 @@
      ((node graph)
       (when (eql dtype1 dtype2)
         (with-context-nodes (out (%add a (%load (%salloc :dtype dtype1) (+ x y))))))))
+    ;; c1+(c2+A) -> (c1+c2)+A
+    ((:Add ((Const x dtype1) (:Add ((Const y dtype2) z))))
+     ->
+     ((node graph)
+      (when (eql dtype1 dtype2) (with-context-nodes (out (%add (%load (%salloc :dtype dtype1) (+ x y)) z))))))
     ;; (Z+m)+-Z = m
     ((:Add ((:Add (Z1 m)) (:Neg ((guard x (eql x Z1)))))) -> m)
     ;; (m+Z)+-Z = m
@@ -146,12 +154,46 @@
     ((:Add ((:Add (c Z)) (:Neg ((:Add ((guard x (eql x Z)) d)))))) -> ((node graph) (with-context-nodes (out (%add c (%neg d))))))
     ;; (c+Z)+-(d+Z) = c-d
     ((:Add ((:Add (c Z)) (:Neg ((:Add (d (guard x (eql x Z)))))))) -> ((node graph) (with-context-nodes (out (%add c (%neg d))))))
+    ;; (c1*p)+(c2*p) = ((c1+c2)*p)
+    ((:Add ((:Mul ((Const c1 dtype1) P)) (:Mul ((Const c2 dtype2) (guard x (eql x P))))))
+     ->
+     ((node graph) (when (eql dtype1 dtype2) (with-context-nodes (out (%mul (%load (%salloc :dtype dtype1) (+ c1 c2)) P))))))    
+    ;; This pattern is named: c1pmc2p=mc1c2p (TODO: Refactor to keep readability)
     ;; ((c1*p)+(M+c2*p)) = M+((c1+c2)*p)
     ((:Add ((:Mul ((Const c1 dtype1) P))
             (:Add (M (:Mul ((Const c2 dtype2) (guard x (eql x P))))))))
+     -> ((node graph) (c1pmc2p=mc1c2p dtype1 dtype2 m c1 c2 p)))
+    ;; ((c1*p)+(M+p*c2)) = M+((c1+c2)*p)
+    ((:Add ((:Mul ((Const c1 dtype1) P))
+            (:Add (M (:Mul ((guard x (eql x P)) (Const c2 dtype2)))))))
      ->
-     ((node graph) (when (eql dtype1 dtype2) (with-context-nodes (out (%add M (%mul (%load (%salloc :dtype dtype1) (+ c1 c2)) P)))))))
-    
+     ((node graph) (c1pmc2p=mc1c2p dtype1 dtype2 m c1 c2 p)))
+    ;; ((p*c1)+(M+c2*p)) = M+((c1+c2)*p)
+    ((:Add ((:Mul (P (Const c1 dtype1)))
+            (:Add (M (:Mul ((Const c2 dtype2) (guard x (eql x P))))))))
+     -> ((node graph) (c1pmc2p=mc1c2p dtype1 dtype2 m c1 c2 p)))
+    ;; ((p*c1)+(M+p*c2)) = M+((c1+c2)*p)
+    ((:Add ((:Mul (P (Const c1 dtype1)))
+            (:Add (M (:Mul ((guard x (eql x P)) (Const c2 dtype2)))))))
+     ->
+     ((node graph) (c1pmc2p=mc1c2p dtype1 dtype2 m c1 c2 p)))
+    ;; C(A*B) -> CA*B (should be applied to only scalar graph)
+    ((:Mul ((Const C dtype1) (:Mul ((Const A dtype2) b))))
+     ->
+     ((node grpah) (when (eql dtype1 dtype2) (with-context-nodes (out (%mul (%load (%salloc :dtype dtype1) (* a c)) b))))))
+    ;; C(A*B) -> A*CB (should be applied to only scalar graph)
+    ((:Mul ((Const C dtype1) (:Mul (b (Const A dtype2)))))
+     ->
+     ((node grpah) (when (eql dtype1 dtype2) (with-context-nodes (out (%mul (%load (%salloc :dtype dtype1) (* a c)) b))))))
+    ;; C(A+B) -> CA+CB (this will produce one extra multiplication but gains more chance to simplified)
+    ((:Mul ((Const C dtype) (:Add (a b))))
+     ->
+     ((node grpah) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul z a) (%mul z b))))))
+    ;; (A+B)C -> AC+BC
+    ((:Mul ((:Add (a b)) (Const C dtype)))
+     ->
+     ((node grpah) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul a z) (%mul b z))))))
+
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
     ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
@@ -174,7 +216,23 @@
     ((:Mul (x (Var (= 1) _))) -> x)
     ((:Mul ((Var (= 1) _) x)) -> x)
     ((:Add (x (Var (= 0) _))) -> x)
-    ((:Add ((Var (= 0) _) x)) -> x))
+    ((:Add ((Var (= 0) _) x)) -> x)
+    ;; [TODO] ↓multi termな単語は若い順番で並べるのではダメ？ (TODO: Cache lexi order)
+    ;; Always move constant terms to left to utilize the rule below. (2+a) -> (A+2)
+    ((:Add (a (Const b _)))
+     ->
+     ((node graph)
+      (let ((an (id->value graph a)))
+        (when (and an (or (eql (node-type an) :ADD) (eql (node-type an) :MUL)))
+          (with-context-nodes (out (apply #'%add (reverse (node-reads node)))))))))
+    ;; Move Constant terms to root: A+(2+B) -> 2+(A+B)
+    ((:Add (a (:Add ((Const b dtype) c))))
+     ->
+     ((node graph)
+      (let ((an (id->value graph a))
+            (cn (id->value graph c)))
+        (when (and an cn (and (find (node-type an) `(:ADD :MUL :RANGE)) (find (node-type cn) `(:ADD :MUL :RANGE))))
+          (with-context-nodes (out (%add (%load (%salloc :dtype dtype) b) (%add a c)))))))))
 
 (defsimplifier
     (fuse-vmops :speed 1)

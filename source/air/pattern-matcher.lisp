@@ -58,7 +58,7 @@
        `((and
 	  (<> *matched-bind* nil)
 	  ,(find/replace-rules from graph-bind))
-         (values
+         (cons
 	  ,@(match to
 	      ((<>Node type reads attrs)
                (let ((class (attribute->instance type)))
@@ -122,10 +122,13 @@
                            ;; (when fixed-writes-to (return-from ,simplifier-bind))
 		           (when (null ,node-top) (return-from ,simplifier-bind))
 	                   (incf ,counter)
-		           (multiple-value-bind (replace-rule matched)
-		               (match ,node-top
-			         ,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
-			         (_ nil))
+		           (let* ((result
+                                    (or
+                                     ,@(loop for rule in rules collect
+                                             `(let ((result (match ,node-top ,(parse-rule rule node-top graph))))
+                                                (when (car result) result)))))
+                                  (replace-rule (car result))
+                                  (matched (cdr result)))
 		             (when (and replace-rule matched)
 		               (when (node-p replace-rule) (setf replace-rule (list replace-rule)))
 		               ;; reject the replace-rule only when:
