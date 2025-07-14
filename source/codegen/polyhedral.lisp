@@ -631,44 +631,65 @@ Returns T if the current schedule does not break any dependences in dep."
     (set-option "schedule_whole_component" schedule-whole-component))
   (setf (poly-schedule poly) (schedule-constraints-compute-schedule (poly-make-schedule-constraints poly))))
 
-(defmethod optrule-apply-transform-on-blueprint (poly (optrule Reschedule))
-  nil)
-
-(defclass FuseWithParent (OptimizationRule)
-  nil)
-
-(defclass TensorCore (OptimizationRule)
-  nil)
+(defmethod optrule-apply-transform-on-blueprint (poly (optrule Reschedule)) nil)
 
 (defclass Interchange (OptimizationRule)
   ((idx :initarg :idx :accessor interchange-idx)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Interchange)))
-  ;(let ((band (poly-schedule-node poly)))
-  ;  (when (eql (schedule-node-get-type band) :schedule-node-band)
-  ;    (loop for n upfrom (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band))
-  ;          unless (= n 0) collect (make-instance 'Interchange :idx n))))
-  )
+  (loop for band in bands for nth upfrom 0
+        append
+        (loop for c upfrom 1 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band))
+              collect (make-instance 'Interchange :axis nth :band band :idx c))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
-  (let* ((mupa (schedule-node-band-get-partial-schedule (poly-schedule-node poly)))
-         (node (schedule-node-delete (poly-schedule-node poly)))
+  (let* ((mupa (schedule-node-band-get-partial-schedule (optrule-band opt)))
+         (node (schedule-node-delete (optrule-band opt)))
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
          (_ (when (= 0 n-child) (error "cannot apply interchange")))
          (node (schedule-node-get-band-from-relative-idx node (interchange-idx opt)))
-         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" (interchange-idx opt) (poly-schedule-node poly)))
+         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" (interchange-idx opt) (optrule-band opt)))
          (node (schedule-node-insert-partial-schedule node mupa)))
     (declare (ignore _ __))
     (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
       ;;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
-      node)))
+      (setf (poly-schedule poly) (schedule-node-get-schedule node)))))
 
 (defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange))
 
   )
+;; [TODO] FlashAttention
+(defclass FuseWithParent (OptimizationRule)
+  nil)
+;; [TODO] SIMD
+(defclass TensorCore (OptimizationRule)
+  nil)
+
+(defun tiling-sizes (band &key (size-default 32) (dims))
+  (declare (type list dims) (type fixnum size-default))
+  (let* ((band-space (schedule-node-band-get-space band))
+         (dim (space-dim band-space 3)))
+    (multi-val-from-val-list
+     band-space
+     (apply #'make-value-list (loop for i upfrom 0 below dim collect (or (nth i dims) size-default))))))
 
 (defclass Tile (OptimizationRule)
-  nil)
+  ((size :initarg :size :accessor tile-size)))
+
+(defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
+  (loop for band in bands for nth upfrom 0
+        append
+        (loop for size in `(2 4 8 16 32)
+              collect
+              (make-instance 'Tile :size size :band band :axis nth))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Tile))
+  (setf
+   (poly-schedule poly)
+   (schedule-node-get-schedule
+    (schedule-node-band-tile (optrule-band opt) (tiling-sizes (optrule-band opt) :size-default (tile-size opt))))))
+
+(defmethod optrule-apply-transform-on-blueprint (poly (opt Tile)))
 
 (defclass ParallelTile (OptimizationRule) ;; CPU will use this!
   nil)
@@ -687,8 +708,8 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy
-    (1 . (:NoOpt )) ;; Change memory order?
-    (t . (:NoOpt))))           ;; Recursively optimize things ...
+    (1 . (:NoOpt :Interchange)) ;; Change memory order? Loop Interchange or Loop Fission (at early stage)
+    (t . (:NoOpt ))))           ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -709,7 +730,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;; [TODO] Recompile it and run as an kernel
   (* n (random 1.0)))
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 3) (max-iters 5) (n 10) (threshold 1e-5))
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 5) (n 10) (threshold 1e-5))
   ;; BEAM Search
   ;; Parameters:
   ;;  - n
@@ -721,17 +742,18 @@ Returns T if the current schedule does not break any dependences in dep."
     (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
            (beam (list (cons origin (expt 2 32)))))
       (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
-        (format t "= [~ath BEAM] ==~%" iter)
+        (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
         (loop for (kernel . score) in beam do
           (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
-            (push (make-candidate new-kernel) candidates))
-          (when (null candidates) (return-from beam))
-          (setf candidates(sort candidates #'< :key #'cdr))
-          (let ((new-beam (subseq candidates  0 (min (length beam) beam-width))))
-            (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
-              (setf beam new-beam)
-              (return-from beam))
-            (setf beam new-beam))))
+            (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral new-kernel) t)
+            (push (make-candidate new-kernel) candidates)))
+        (when (null candidates) (return-from beam))
+        (setf candidates (sort candidates #'< :key #'cdr))
+        (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
+          (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
+            (setf beam new-beam)
+            (return-from beam))
+          (setf beam new-beam)))
       (let ((best-kernel (car beam)))
         (print "BEST KERNEL IS")
         (print best-kernel)
