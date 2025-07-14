@@ -297,11 +297,26 @@
 
 (defun parse-isl-ast-if (bp ast)
   (declare (type cffi:foreign-pointer ast))
-  (let* ((condition (parse-isl-expr bp (isl::%isl-ast-node-if-get-cond ast)))
+  (let* ((condition (parse-isl-expr bp (isl::%isl-ast-node-if-get-cond ast) :toplevel-p nil))
 	 (then-node (parse-isl-ast bp (isl::%isl-ast-node-if-get-then-node ast)))
 	 (else-p (isl::%isl-ast-node-if-has-else-node ast)))
     (assert (not (eql else-p :bool-true)) () "Else statement is not allowed!")
     (%if condition then-node)))
+
+(defun parse-isl-ast-cond (bp ast idx)
+  (declare (type cffi:foreign-pointer ast))
+  (let ((type (isl::%isl-ast-expr-get-type ast)))
+    (assert (eql type :ast-expr-op))
+    (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
+           (args (loop for nth upfrom 0 below n-arg collect (parse-isl-expr bp (isl::%isl-ast-expr-op-get-arg ast nth) :toplevel-p nil)))
+           (op-type (isl::%isl-ast-expr-op-get-type ast)))
+      (multiple-value-bind (lhs rhs) (apply #'values args)
+        (assert (= 2 (length args)))
+        (assert (and (eql (node-type lhs) :LOAD) (eql (getattr lhs :value) idx)))
+        ;; Assuming: gid < size
+        (ecase op-type
+          (:ast-expr-op-le (%add rhs (%iconst 1 :dtype :int64)))
+          (:ast-expr-op-lt rhs))))))
 
 (defun parse-isl-ast-for (bp ast)
   (declare (type cffi:foreign-pointer ast))
@@ -310,13 +325,11 @@
 	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
 	 (from (parse-isl-expr bp (isl::%isl-ast-node-for-get-init ast) :toplevel-p nil))
 	 (by (parse-isl-expr bp (isl::%isl-ast-node-for-get-inc ast) :toplevel-p nil))
-	 (to (parse-isl-expr bp (isl::%isl-ast-node-for-get-cond ast) :toplevel-p nil))
+	 (to (parse-isl-ast-cond bp (isl::%isl-ast-node-for-get-cond ast) (intern name)))
 	 (body (parse-isl-ast bp (isl::%isl-ast-node-for-get-body ast))))
-    (print body)
     ;; [TODO]
     ;; to should be always zero.
     ;; or allow `to` to be non-zero by introducing %range upfrom
-    ;; - expr-detach-loop-bound is required
     (%range (intern name) (%sub to from) body :step by)))
 
 (defun parse-isl-expr (bp ast &key (toplevel-p t))
