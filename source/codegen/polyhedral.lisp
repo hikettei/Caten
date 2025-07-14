@@ -13,7 +13,6 @@
 ;;;; blueprint -> polyhedral
 (defclass Polyhedral-IR ()
   ((schedule :accessor poly-schedule :initarg :schedule)
-   (schedule-node :accessor poly-schedule-node :initarg :schedule-node)
    (domain   :accessor poly-domain :initarg :domain)
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
@@ -488,11 +487,14 @@
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
-    (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast)))))
+    (caten/aasm::ast-simplify-expr-subgraph
+     (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass OptimizationRule () nil)
+(defclass OptimizationRule ()
+  ((axis :initarg :axis :accessor optrule-axis)
+   (band :initarg :band :accessor optrule-band)))
 
-(defgeneric optrule-generate-search-space (polyhedral optrule-trigger))
+(defgeneric optrule-generate-search-space (polyhedral bands optrule-trigger))
 (defgeneric optrule-apply-transform-on-polyhedral (polyhedral optrule)) ;; Insert Directive
 (defgeneric optrule-apply-transform-on-blueprint (polyhedral optrule))  ;; Directive Parse
 
@@ -574,12 +576,12 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: This is hackable by users (as intended)
 (defclass NoOpt (OptimizationRule) nil)
-(defmethod optrule-generate-search-space (poly (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
+(defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
 (defmethod optrule-apply-transform-on-blueprint (poly (optrule NoOpt)) nil)
 
 (defclass Rewrite/FuseLoadReduceStore (OptimizationRule) nil)
-(defmethod optrule-generate-search-space (poly (id (eql :Rewrite/FuseLoadReduceStore)))
+(defmethod optrule-generate-search-space (poly bands (id (eql :Rewrite/FuseLoadReduceStore)))
   ;; [TODO] If there's reduction
   ;; [TODO] Rewrite the base blueprint to have:
   ;; - Remove LOAD (Separated Loop)
@@ -604,7 +606,7 @@ Returns T if the current schedule does not break any dependences in dep."
    (maximize-band-depth :initarg :maximize-band-depth :initform 0)
    (schedule-whole-component :initarg :schedule-whole-component :initform 0)))
 
-(defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
+(defmethod optrule-generate-search-space (poly bands (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of commands.
   (when (null (some #'(lambda (x) (typep x 'Reschedule)) (poly-cmd-history poly)))
     (list
@@ -641,11 +643,12 @@ Returns T if the current schedule does not break any dependences in dep."
 (defclass Interchange (OptimizationRule)
   ((idx :initarg :idx :accessor interchange-idx)))
 
-(defmethod optrule-generate-search-space (poly (id (eql :Interchange)))
-  (let ((band (poly-schedule-node poly)))
-    (when (eql (schedule-node-get-type band) :schedule-node-band)
-      (loop for n upfrom (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band))
-            unless (= n 0) collect (make-instance 'Interchange :idx n)))))
+(defmethod optrule-generate-search-space (poly bands (id (eql :Interchange)))
+  ;(let ((band (poly-schedule-node poly)))
+  ;  (when (eql (schedule-node-get-type band) :schedule-node-band)
+  ;    (loop for n upfrom (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band))
+  ;          unless (= n 0) collect (make-instance 'Interchange :idx n))))
+  )
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
   (let* ((mupa (schedule-node-band-get-partial-schedule (poly-schedule-node poly)))
@@ -682,14 +685,16 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - poly-ir-schedule-node: これを追加するべきか？
 ;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *search-space*
-  '((0 . (:NoOpt :Reschedule)) ;; (n-generation . Candidates)
-    (t . (:NoOpt ))))
+(defparameter *search-space* ;; (n-generation . Candidates)
+  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy
+    (1 . (:NoOpt )) ;; Change memory order?
+    (t . (:NoOpt))))           ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
-  (let ((n-generation (length (poly-cmd-history polyhedral))))
+  (let ((n-generation (length (poly-cmd-history polyhedral)))
+        (bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
     (loop for space in (cdr (or (find n-generation *search-space* :key #'car) (find t *search-space* :key #'car) (error "No *search-space* configuration for t")))
-          append (optrule-generate-search-space polyhedral space))))
+          append (optrule-generate-search-space polyhedral bands space))))
 
 (defmethod polyhedral-ir-mutate-for-children ((polyhedral Polyhedral-IR))
   (let* ((space (get-next-optimization-rules polyhedral))
@@ -700,35 +705,39 @@ Returns T if the current schedule does not break any dependences in dep."
     (loop for gen in next-generations
           if (verify-polyhedral-ir gen) collect gen)))
 
-(defun realize-node-with-autotuning (runtime node args &aux (searched))
-  (labels ((evaluate-kernel (kernel &key (n 10) &aux (total 0.0))
-             (dotimes (i n)
-               (incf total (caten/codegen/byoc:kernel-call kernel runtime node args)))
-             total)
-           (register-kernel-as-candidate (kernel)
-             (push (cons (evaluate-kernel kernel) kernel) searched)))
-    (register-kernel-as-candidate (caten/air:getattr node :kernel-info))
-    (let ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
-          (leaves))
-      (print "==== Generation 1 =========")
-      (setf leaves (polyhedral-ir-mutate-for-children origin))
-      (print leaves)
-      (dotimes (n 0)
-        (format t "[Generation ~a]~%" n)
-        (setf leaves (apply #'append (map 'list #'polyhedral-ir-mutate-for-children leaves)))
-        (print leaves))
-      (loop for l in leaves do
-        (format t "Polyhedral -> Blueprint~%~%")
-        (let ((bp (get-blueprint-from-polyhedral l)))
-          (caten/aasm::ast-simplify-expr-subgraph bp)
-;          (print bp)
-;          (pprint-graph bp)
-          (caten/codegen/blueprint:print-blueprint bp t)))
-      (print searched)
-      ;; [TODO] Apply BEAM Search
-      (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
-      ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
-      (apply #'values (subseq args 0 (length (caten/air:node-writes node)))))))
+(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) abstract-kernel args n)
+  ;; [TODO] Recompile it and run as an kernel
+  (* n (random 1.0)))
+
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 3) (max-iters 5) (n 10) (threshold 1e-5))
+  ;; BEAM Search
+  ;; Parameters:
+  ;;  - n
+  ;;  - beam_width
+  ;;  - max_iters
+  (labels ((make-candidate (polyhedral-ir)
+             (declare (type Polyhedral-IR polyhedral-ir))
+             (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir (caten/air:getattr node :kernel-info) args n))))
+    (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
+           (beam (list (cons origin (expt 2 32)))))
+      (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
+        (format t "= [~ath BEAM] ==~%" iter)
+        (loop for (kernel . score) in beam do
+          (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
+            (push (make-candidate new-kernel) candidates))
+          (when (null candidates) (return-from beam))
+          (setf candidates(sort candidates #'< :key #'cdr))
+          (let ((new-beam (subseq candidates  0 (min (length beam) beam-width))))
+            (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
+              (setf beam new-beam)
+              (return-from beam))
+            (setf beam new-beam))))
+      (let ((best-kernel (car beam)))
+        (print "BEST KERNEL IS")
+        (print best-kernel)
+        ;; (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
+        ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
+        (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))
 
 ;; [TODO]
 ;; - Two Things I should fix:
