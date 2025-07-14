@@ -122,6 +122,25 @@
           (z (%load (%salloc :dtype dtype3) z))
           (w (%load (%salloc :dtype dtype4) w))
           (out (%add z w))))))
+    ;; (a+1)+2 -> (a+3)
+    ((:Add ((:Add (a (Const x dtype1))) (Const y dtype2)))
+     ->
+     ((node graph)
+      (when (eql dtype1 dtype2)
+        (with-context-nodes (out (%add a (%load (%salloc :dtype dtype1) (+ x y))))))))
+    ;; (1+a)+2 -> (a+3)
+    ((:Add ((:Add ((Const x dtype1) a)) (Const y dtype2)))
+     ->
+     ((node graph)
+      (when (eql dtype1 dtype2)
+        (with-context-nodes (out (%add a (%load (%salloc :dtype dtype1) (+ x y))))))))
+    ;; (Z+m)+-Z = m
+    ((:Add ((:Add (Z1 m)) (:Neg ((guard x (eql x Z1)))))) -> m)
+    ;; (m+Z)+-Z = m
+    ((:Add ((:Add (m Z1)) (:Neg ((guard x (eql x Z1)))))) -> m)
+    ;; (Z+c)+-(Z+d) = c-d
+    ((:Add ((:Add (Z c)) (:Neg ((:Add ((guard x (eql x Z)) d)))))) -> ((node graph) (with-context-nodes (out (%add c (%neg d))))))
+    
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
     ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
@@ -184,7 +203,7 @@ D = Z
 ```
 "
   (declare (type Graph graph) (optimize (speed 3)))
-  (let ((replaceable-map (make-hash-table)) (users-map (make-hash-table)) (defined) (id->node (make-hash-table)))
+  (let ((replaceable-map (make-hash-table)) (users-map (make-hash-table)) (defined) (id->node (make-hash-table)) (range-map (make-hash-table)))
     (labels ((invalid-load-p (from node)
                (if (eql (node-type node) :VIEW)
                    (eql from (the symbol (car (node-reads node))))
@@ -214,7 +233,17 @@ D = Z
                   (when (gethash (car (node-reads node)) replaceable-map)
                     (when (not (member node defined :test #'load-eql-p))
                       (push node defined))))
+                 (:RANGE
+                     (when (null (gethash (getattr node :idx) range-map))
+                       (setf (gethash (getattr node :idx) range-map) node)))
                  (otherwise)))
+             (unique-range (sym)
+               (let ((node (gethash sym id->node)))
+                 (when (or (null node) (not (eql (node-type node) :RANGE))) (return-from unique-range sym))
+                 (let ((replacement (gethash (getattr node :idx) range-map)))
+                   (when (or (null replacement) (not (equal (node-reads replacement) (node-reads node))))
+                     (return-from unique-range sym))
+                   (car (node-writes replacement)))))
              (newid (sym)
                (when (not (symbolp sym)) (return-from newid sym))
                (let ((node (gethash sym id->node)))
@@ -222,7 +251,7 @@ D = Z
                  (let ((c (find node defined :test #'load-eql-p)))
                    (if c
                        (car (node-writes c))
-                       sym))))
+                       (unique-range sym)))))
              (r (node)
                (let ((node (copy-node node)))
                  (setf (node-reads node) (map 'list #'newid (node-reads node)))

@@ -722,7 +722,7 @@ Returns T if the current schedule does not break any dependences in dep."
       (loop for l in leaves do
         (format t "Polyhedral -> Blueprint~%~%")
         (let ((bp (get-blueprint-from-polyhedral l)))
-;;          (optimize-aasm bp :heavy-opt-threshold 0)
+          (caten/aasm::ast-simplify-expr-subgraph bp)
 ;          (print bp)
 ;          (pprint-graph bp)
           (caten/codegen/blueprint:print-blueprint bp t)))

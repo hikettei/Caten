@@ -360,3 +360,14 @@ Constraints:
 
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'(lambda (x) (graph-infer-type-relay x) x))))
+
+(defun ast-simplify-expr-subgraph (graph &aux (simplified-subgraphs))
+  (loop for node in (graph-nodes graph)
+        if (eql (node-type node) :EXPR) do
+          (let ((expr-graph (ast-expr-graph graph node)))
+            (setf expr-graph (fold-constant (optimize-aasm expr-graph :heavy-opt-threshold 0)))
+            ;;(print expr-graph)
+            (push expr-graph simplified-subgraphs)))
+  (loop for sb in simplified-subgraphs do
+    (insert-nodes graph (graph-nodes sb)))
+  graph)
