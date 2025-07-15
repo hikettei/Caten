@@ -507,8 +507,12 @@
      (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
-  ((axis :initarg :axis :accessor optrule-axis)
-   (band :initarg :band :accessor optrule-band)))
+  ((axis :initarg :axis :accessor optrule-axis :initform nil)
+   (band :initarg :band :accessor optrule-band :initform nil)))
+
+(defmethod print-object ((obj OptimizationRule) stream)
+  (print-unreadable-object (obj stream :type t)
+    (format stream ":axis ~a" (optrule-axis obj))))
 
 (defgeneric optrule-generate-search-space (polyhedral bands optrule-trigger))
 (defgeneric optrule-apply-transform-on-polyhedral (polyhedral optrule)) ;; Insert Directive
@@ -613,6 +617,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;; separate activation
   ;; OR, MAKE Post-Tile-Fusion DOABLE!!!
   ;; [Original] -> [NoOpt, FuseLoadReduceStore] -> [Reschedule1, Reschedule2, Reschedule3] ... -> {SKETCH!}
+  ;; No Need to add this right?
   nil)
 
 (defclass Reschedule (OptimizationRule)
@@ -676,8 +681,7 @@ Returns T if the current schedule does not break any dependences in dep."
     (declare (ignore _ __))
     (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
       ;;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
-      (setf (poly-schedule poly) (schedule-node-get-schedule node))
-      )))
+      (setf (poly-schedule poly) (schedule-node-get-schedule node)))))
 
 (defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange))
 
@@ -731,9 +735,9 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* ;; (n-generation . Candidates)
-  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy
-    (1 . (:NoOpt :Interchange)) ;; Change memory order? Loop Interchange or Loop Fission (at early stage)
-    (t . (:NoOpt :Tile))))           ;; Recursively optimize things ...
+  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
+    (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
+    (t . (:NoOpt :Tile))))      ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -800,6 +804,9 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - 5. ループの途中でincf挿入するやつやりたい?
 ;; - 6. BEAM Cacheを実装する
 ;; - 7. Symbolic Kernelに対して，探索したSchedule Commandsを適用する？
+;; - 8. val_2がSeparateされたとき，追加も一時領域Bufferを作成する (そんな難しくないという認識)
+;;  - 1. DetectSeparateScheduledを実装
+;;  - 2. Extractするときに，ISLに登録した通りにBufferを登録する。Argsは増えることになる。
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
