@@ -9,6 +9,94 @@
    #:get-blueprint-from-polyhedral))
 
 (in-package :caten/codegen/polyhedral)
+(defmethod pprint-schedule ((schedule schedule))
+  (let ((schedule (yaml:parse (schedule-to-str schedule))))
+    (with-output-to-string (out)
+      (format out "~%")
+      (labels ((indent (n)
+                 (make-string n :initial-element #\space))
+               (separate-screen (indent &key (n 120))
+                 (format out "~%~a~a~%" (indent indent) (make-string n :initial-element #\-)))
+               (explore (schedule key &key (indent 0))
+                 (cond
+                   ((string= key "domain")
+                    (format out "~adomain(~%" (indent indent))
+                    (let ((domains (cl-ppcre:split
+                                    ";"
+                                    (cl-ppcre:regex-replace-all
+                                     "{|}"
+                                     (gethash key schedule)
+                                     ""))))
+                      (format out "~a"
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for dom in domains
+                                      collect (format nil "~a~a" (indent (+ indent 2)) dom)
+                                      collect (format nil "~%"))))))
+                    (format out "~a)" (indent indent)))
+                   ((string= key "child")
+                    (format out "~%~achild()" (indent indent))
+                    (separate-screen indent)
+                    (mapc
+                     #'(lambda (x)
+                         (explore (gethash key schedule) x :indent (+ indent 2)))
+                     (reverse (alexandria:hash-table-keys (gethash key schedule)))))
+                   ((string= key "schedule")
+                    (let ((schedules (cl-ppcre:split
+                                      " , "
+                                      (cl-ppcre:regex-replace-all
+                                       "{|}"
+                                       (subseq (gethash key schedule) 1 (1- (length (gethash key schedule))))
+                                       ""))))
+                      (format out "~aschedule()" (indent indent))
+                      (when schedules (format out "~%"))
+                      (format out "~a"
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for s in schedules
+                                      for nth upfrom 0
+                                      for separator = (if (= 1 (length schedules)) "-" (if (zerop nth) "┏" (if (= (length schedules) (1+ nth)) "┗" "┃")))
+                                      collect (format nil "~a  ~a~a" (indent indent) separator s)
+                                      collect (format nil "~%")))))))
+                   ((or (string= key "sequence") (string= key "set"))
+                    (format out "~a~a()" (indent indent) key)
+                    (mapc
+                     #'(lambda (x)
+                         (mapc
+                          #'(lambda (k)
+                              (explore x k :indent (+ 2 indent)))
+                          (alexandria:hash-table-keys x)))
+                     (gethash key schedule)))
+                   ((string= key "filter")
+                    (format out "~%~afilter(~%" (indent indent))
+                    (let ((domains (cl-ppcre:split
+                                    ";"
+                                    (cl-ppcre:regex-replace-all
+                                     "{|}"
+                                     (gethash key schedule)
+                                     ""))))
+                      (format
+                       out
+                       "~a"
+                       (apply
+                        #'concatenate
+                        'string
+                        (butlast
+                         (loop for dom in domains
+                           collect (format nil "~a~a" (indent (+ indent 2)) dom)
+                           collect (format nil "~%")))))
+                      (format out ")")))
+                   ((or (string= key "permutable") (string= key "coincident"))
+                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))
+                   ((or (string= key "mark"))
+                    (format out "~amark(~a)" (indent indent) (gethash key schedule)))
+                   (t (warn "pprint: the key ~a is not implemented." key)))))
+        (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
+
 ;; ~~ Polyhedral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; blueprint -> polyhedral
 (defclass Polyhedral-IR ()
@@ -245,7 +333,7 @@
                            body-sched
                            (schedule-insert-partial-schedule body-sched (multi-union-pw-aff-from-str band))))))
                   (:IF
-                   ;; [Not] How to express :IF?
+                   ;; [Note] How to dump :IF Node?
                    (error "not ready"))
                   ;; EXPR ==> Rewrite as a filter, and is a leaf of graph.
                   (:EXPR
@@ -284,6 +372,7 @@
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)))
+    (print reads/writes)
     (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
@@ -604,7 +693,9 @@ Returns T if the current schedule does not break any dependences in dep."
    (maximize-coincidence :initarg :maximize-coincidence :initform 0)
    (treat-coalescing :initarg :treat-coalescing :initform 0)
    (maximize-band-depth :initarg :maximize-band-depth :initform 0)
-   (schedule-whole-component :initarg :schedule-whole-component :initform 0)))
+   (schedule-whole-component :initarg :schedule-whole-component :initform 0)
+   (max-coefficient :initarg :max-coefficient :initform 1)
+   (max-constant-term :initarg :max-constant-term :initform 0)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of commands.
@@ -613,7 +704,7 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
      ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
      ;(make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0)
      )))
@@ -625,12 +716,16 @@ Returns T if the current schedule does not break any dependences in dep."
                  :pointer (isl::context-handle isl::*context*)
                  :int (slot-value optrule ',slot)
 		 :void)))
+    (set-option "schedule_max_constant_term" max-constant-term)
+    (set-option "schedule_max_coefficient" max-coefficient)
     (set-option "schedule_outer_coincidence" outer-coincidence)
     (set-option "schedule_maximize_coincidence" maximize-coincidence)
     (set-option "schedule_treat_coalescing" treat-coalescing)
     (set-option "schedule_maximize_band_depth" maximize-band-depth)
     (set-option "schedule_whole_component" schedule-whole-component))
-  (setf (poly-schedule poly) (schedule-constraints-compute-schedule (poly-make-schedule-constraints poly))))
+  (print (pprint-schedule (poly-schedule poly)))
+  (setf (poly-schedule poly) (schedule-constraints-compute-schedule (poly-make-schedule-constraints poly)))
+  (print (pprint-schedule (poly-schedule poly))))
 
 (defmethod optrule-apply-transform-on-blueprint (poly (optrule Reschedule)) nil)
 
@@ -731,7 +826,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;; [TODO] Recompile it and run as an kernel
   (* n (random 1.0)))
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 3) (n 10) (threshold 1e-5))
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 1) (n 10) (threshold 1e-5))
   ;; BEAM Search
   ;; Parameters:
   ;;  - n
@@ -774,6 +869,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - 3. Flexible reduction accumlator
 ;; - 4. fix a bug in threefry2x32
 ;; - 5. ループの途中でincf挿入するやつやりたい?
+;; - 6. BEAM Cacheを実装する
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
