@@ -18,11 +18,11 @@
    (domain   :accessor poly-domain :initarg :domain)
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
-   (blueprint :accessor poly-blueprint :initarg :blueprint)))
+   (blueprint :accessor poly-blueprint :initarg :blueprint)
+   (ctx :accessor poly-ctx :initarg :ctx)))
 
-(defun make-polyhedral-ir (blueprint domain read write schedule)
-  (let ((pg (make-instance 'Polyhedral-IR)))
-    (setf (poly-schedule pg) schedule (poly-domain pg) domain (poly-blueprint pg) blueprint)
+(defun make-polyhedral-ir (blueprint domain read write schedule ctx)
+  (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint)))
     (let* ((access (union-access-info-from-sink read))
            (access (union-access-info-set-must-source access write))
            (access (union-access-info-set-schedule access schedule))
@@ -40,7 +40,7 @@
       pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
-  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg)))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg)))
 
 (defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
   (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
@@ -189,13 +189,13 @@
   ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
   ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
   (when (gethash idx (ctx-scal->access ctx))
-    (return-from render-default-isl-access (gethash idx (ctx-scal->access ctx))))
+    (return-from render-default-isl-access (getf (gethash idx (ctx-scal->access ctx)) :access)))
   (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
                       ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
                       collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
          (strides (caten/codegen/helpers:row-major-calc-strides shape))
          (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
-    (setf (gethash idx (ctx-scal->access ctx)) access)
+    (setf (gethash idx (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
     access))
 
 (defun render-access-for-node (ctx node loops buffer index blueprint)
@@ -300,7 +300,7 @@
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)))
-    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
+    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule ctx)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
@@ -498,13 +498,106 @@
         (mapc #'e (node-reads node))
         (emit node)))))
 
+(defun verify-ast-with-context (ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0))
+  ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
+  (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
+    (let* ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
+      (labels ((lookup (node) (reverse (or (gethash (node-id node) node-to-loops) (error "The node ~a is not found in the new blueprint?" node))))
+               (find-expr-from-user (user)
+                 (loop for expr in expr-subgraphs
+                       if (find (node-id user) (graph-nodes (cdr expr)) :key #'node-id)
+                         do (return-from find-expr-from-user (car expr))))
+               (get-users (id)
+                 (nconc
+                  (id->users blueprint id)
+                  (loop for node in (graph-nodes blueprint) if (and (eql (node-type node) :BIND) (eql id (getattr node :value))) collect node)))
+               (invalid-scope-p (acc-scope expr-scope)
+                 (when (> (length acc-scope) (length expr-scope)) (return-from invalid-scope-p t))
+                 ;; grid id is unique in the blueprint, we can use it.
+                 (loop for acc in acc-scope for expr in expr-scope
+                       when (not (eql (getf acc :idx) (getf expr :idx))) do (return-from invalid-scope-p t))
+                 nil)
+               (mutate-to-tensor-p (id &aux (acc (id->value blueprint id)) (users (get-users id)) (visited (make-hash-table)))
+                 ;; All users must be placed in the possible scope where acc is firstly defined.
+                 ;; Otherwise, we have to allocate extra.
+                 (assert (eql :EXPR (node-type acc)))
+                 (loop with acc-scope = (lookup acc)
+                       for user in users for expr = (find-expr-from-user user)
+                       if (and expr (null (gethash (node-id expr) visited))) do
+                         (setf (gethash (node-id expr) visited) t)
+                         ;; Compare the scope of (lookup acc) and (lookup expr)
+                         (when (invalid-scope-p acc-scope (lookup expr))
+                           (return-from mutate-to-tensor-p t))) ;; if theres at least one violation
+                 nil)
+               (id->tensor-info (id &aux (acc (id->value blueprint id)) (node (id->value blueprint (car (node-reads acc)))))
+                 (assert (eql :EXPR (node-type acc)))
+                 (values (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) (lookup acc) acc))
+               (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
+               (compute-idx (loops stride)
+                 (reduce
+                  #'%add
+                  (loop for l in loops for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car (node-writes (getf l :range-node)))))))
+               (make-new-aref (write-to scal-id stride loops)
+                 (with-context (out (%aref scal-id (compute-idx loops stride) :out write-to))))
+               (make-new-aref-bind (write-to scal-id stride loops base-read)
+                 (with-context (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value scal-id)) (compute-idx loops stride) :out write-to))))
+               (make-new-initializer (write-to argname stride loops dtype form)
+                 ;; [TODO] %global w/ :tmp
+                 (with-context
+                     (out
+                      (%expr
+                       (node->id
+                        (%setf (%aref (%global argname dtype t) (compute-idx loops stride)) form))
+                       :out write-to)))))
+        (maphash
+         #'(lambda (previously-scalar rewrite-context)
+             (when (mutate-to-tensor-p previously-scalar)
+               (let ((shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
+                     (argname (swpid previously-scalar "tmp")))
+                 ;; WHen it further tiled?
+                 ;; [TODO] Update the computation of stride!!!!!
+                 ;; ^ Need to update it depending
+                 (multiple-value-bind (dtype loops acc) (id->tensor-info previously-scalar)
+                   (assert (= (length shape) (length stride) (length loops)))
+                   (print "Detected rewriting")
+                   (print previously-scalar)
+                   (print shape)
+                   (print stride)
+                   (print dtype)
+                   (print loops)
+                   ;; Rewrite the definition
+                   (insert-nodes blueprint (graph-nodes (make-new-initializer previously-scalar argname stride loops dtype (car (node-reads acc)))))
+                   ;; Rewrite the users of val_2
+                   (labels ((newid (x)
+                              (if (eql x previously-scalar)
+                                  (let ((id (swpid previously-scalar count)))
+                                    (incf count)
+                                    (insert-nodes blueprint (graph-nodes (make-new-aref id argname stride loops)))
+                                    id)
+                                  (let ((node (id->value blueprint x))) ;; handling bind
+                                    (if (or (null node) (not (eql (node-type node) :BIND)) (not (eql (getattr node :value) previously-scalar)))
+                                        x
+                                        (let ((id (swpid previously-scalar count)))
+                                          (incf count)
+                                          (insert-nodes blueprint (graph-nodes (make-new-aref-bind id argname stride loops (car (node-reads node)))))
+                                          id))))))
+                     (loop for node in (graph-nodes blueprint)
+                           ;; Rewrite the user/incl bind
+                           if (or (eql (node-type node) :EXPR) (not (eql (node-class node) :Render))) do
+                             (setf (node-reads node) (map 'list #'newid (node-reads node)))))))))
+         (ctx-scal->access ctx))
+        (simplify-ast blueprint)
+        blueprint))))
+
 (defun get-blueprint-from-polyhedral (polyhedral)
   "Convert ISL polyhedral representation back to blueprint graph"
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
-    (caten/aasm::ast-simplify-expr-subgraph
-     (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast))))))
+    (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
+     (poly-ctx polyhedral)
+     (caten/aasm::ast-simplify-expr-subgraph
+      (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast)))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -756,7 +849,8 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) abstract-kernel args n)
   ;; [TODO] Recompile it and run as an kernel
-  (format t "~%[Kernel]:~%==========~%~a~%" (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral polyhedral) nil))
+  (format t "~%[Kernel]:~%==========~%")
+  (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral polyhedral) t)
   (print (reverse (poly-cmd-history polyhedral)))
   (format t "~%===========~%")
   (* n (random 1.0)))
@@ -807,6 +901,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - 8. val_2がSeparateされたとき，追加も一時領域Bufferを作成する (そんな難しくないという認識)
 ;;  - 1. DetectSeparateScheduledを実装
 ;;  - 2. Extractするときに，ISLに登録した通りにBufferを登録する。Argsは増えることになる。
+;; - 9. Support Symbolics. I think it is doable.
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
