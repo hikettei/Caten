@@ -613,9 +613,10 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
+     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
+     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
+     ;(make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0)
+     )))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
@@ -709,7 +710,7 @@ Returns T if the current schedule does not break any dependences in dep."
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy
     (1 . (:NoOpt :Interchange)) ;; Change memory order? Loop Interchange or Loop Fission (at early stage)
-    (t . (:NoOpt ))))           ;; Recursively optimize things ...
+    (t . (:NoOpt :Tile))))           ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -730,7 +731,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;; [TODO] Recompile it and run as an kernel
   (* n (random 1.0)))
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 5) (n 10) (threshold 1e-5))
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 3) (n 10) (threshold 1e-5))
   ;; BEAM Search
   ;; Parameters:
   ;;  - n
@@ -745,7 +746,8 @@ Returns T if the current schedule does not break any dependences in dep."
         (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
         (loop for (kernel . score) in beam do
           (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
-            (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral new-kernel) t)
+            (print new-kernel)
+;            (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral new-kernel) t)
             (push (make-candidate new-kernel) candidates)))
         (when (null candidates) (return-from beam))
         (setf candidates (sort candidates #'< :key #'cdr))
@@ -762,6 +764,8 @@ Returns T if the current schedule does not break any dependences in dep."
         (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))
 
 ;; [TODO]
+;; Band, Interchange is REQUIREDDD
+;; - Why the indexing is so messed around? We have to fix this FIRST.
 ;; - Two Things I should fix:
 ;;  - 1. Schedule, won't zero start. (... Arefの話はこのままでいい気がしてきた。)
 ;;  - 2. Indexing is flatten, should we allow it?

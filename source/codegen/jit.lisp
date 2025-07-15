@@ -114,10 +114,11 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
           (mapc
            #'(lambda (x) (when (eql (node-type x) :KERNEL) (caten/codegen/byoc:%render-kernel renderer (getattr x :kernel-info))))
            (graph-nodes runtime-graph))
-          (caten/codegen/byoc:%compile-kernel
-           renderer
-           (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :KERNEL) collect (getattr node :kernel-info))
-           nil)
+          (when (= (ctx:getenv :BEAM) 0) ;; If BEAM >= 1, the blueprint is further optimized and then compiled.
+            (caten/codegen/byoc:%compile-kernel
+             renderer
+             (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :KERNEL) collect (getattr node :kernel-info))
+             nil))
            (make-runtime runtime-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-type :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-type :params (runtime-params runtime) :renderer renderer))))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))
@@ -130,8 +131,8 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   (let ((runtime (codegen runtime :backend backend)))
    ;;  (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Compiling ~a kernels ..." (count-if #'(lambda (x) (eql (node-type x) :JIT_KERNEL)) (graph-nodes graph))))
     ;; [TODO] Use Runtime instead of renderer when doing %compile-kernel
-    (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Completed"))
-    (autotune runtime)
+    (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "Completed"))
+    (when (>= (ctx:getenv :BEAM) 1) (autotune runtime))
     runtime))
 
 (defun autotune (runtime)
