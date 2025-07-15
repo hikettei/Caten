@@ -9,6 +9,8 @@
    #:get-blueprint-from-polyhedral))
 
 (in-package :caten/codegen/polyhedral)
+
+(defparameter *+inf* (expt 2 32))
 ;; ~~ Polyhedral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; blueprint -> polyhedral
 (defclass Polyhedral-IR ()
@@ -103,7 +105,8 @@
   (stack nil :type list)
   (node-to-loops (make-hash-table) :type hash-table)
   (all-loops nil :type list)
-  (exprs nil :type list))
+  (exprs nil :type list)
+  (scal->access (make-hash-table) :type hash-table))
 
 (defun make-scop-ctx-from-blueprint (graph)
   "Traverse the blueprint graph to extract loop structure"
@@ -182,33 +185,46 @@
     (explore id)
     found))
 
-(defun render-access-for-node (node loops buffer index blueprint)
+(defun render-default-isl-access (ctx bp idx loops)
+  ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
+  ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
+  (when (gethash idx (ctx-scal->access ctx))
+    (return-from render-default-isl-access (gethash idx (ctx-scal->access ctx))))
+  (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
+                      ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
+                      collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
+         (strides (caten/codegen/helpers:row-major-calc-strides shape))
+         (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
+    (setf (gethash idx (ctx-scal->access ctx)) access)
+    access))
+
+(defun render-access-for-node (ctx node loops buffer index blueprint)
   "Render access relation for a single node"
   (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
-    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) 0))))
+    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffer (reverse loops))))))
 
 (defun extract-accesses (ctx blueprint &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) ctx
-    (loop for expr in exprs
+    (loop for expr in (reverse exprs) ;; found earlier -> later
           for expr-domain = (gethash (node-id expr) node-to-loops)
           for expr-entry-point = (id->value blueprint (car (node-reads expr))) do
             (assert expr-entry-point)
             (case (node-type expr-entry-point)
-              (:SETF
+              (:SETF ;; // EXPR(STORE)
                ;; SETF(AREF, EXPR)
                ;;       ^W    ^R
                (let ((write-region (extract-buffer-access-info (car (node-reads expr-entry-point)) blueprint))
                      (read-region  (extract-buffer-access-info (second (node-reads expr-entry-point)) blueprint)))
                  (dolist (w write-region)
-                   (push (render-access-for-node expr expr-domain (car w) (cdr w) blueprint) writes))
+                   (push (render-access-for-node ctx expr expr-domain (car w) (cdr w) blueprint) writes))
                  (dolist (r read-region)
-                   (push (render-access-for-node expr expr-domain (car r) (cdr r) blueprint) reads))))
-               (otherwise
+                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))
+               (otherwise ;; // EXPR
                 (let ((read-region (extract-buffer-access-info (car (node-reads expr)) blueprint)))
-                  (push (render-access-for-node expr expr-domain (car (node-writes expr)) nil blueprint) writes)
+                  (push (render-access-for-node ctx expr expr-domain (car (node-writes expr)) nil blueprint) writes)
                   (dolist (r read-region)
-                    (push (render-access-for-node expr expr-domain (car r) (cdr r) blueprint) reads))))))
+                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))))
     (cons
      (format nil "{ ~{~a~^; ~} }" (reverse reads))
      (format nil "{ ~{~a~^; ~} }" (reverse writes)))))
@@ -284,7 +300,6 @@
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)))
-    (print reads/writes)
     (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
@@ -606,8 +621,9 @@ Returns T if the current schedule does not break any dependences in dep."
    (treat-coalescing :initarg :treat-coalescing :initform 0)
    (maximize-band-depth :initarg :maximize-band-depth :initform 0)
    (schedule-whole-component :initarg :schedule-whole-component :initform 0)
-   (max-coefficient :initarg :max-coefficient :initform 1)
-   (max-constant-term :initarg :max-constant-term :initform 0)))
+   (serialize-sccs :initarg :serialize-sccs :initform 0)
+   (max-coefficient :initarg :max-coefficient :initform 1) ;; always set to 1 to keep simplicy!
+   (max-constant-term :initarg :max-constant-term :initform 0))) ;; always set to 0 to keep simplicity!
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of commands.
@@ -616,12 +632,10 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     
+     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 1)
-     )))
+     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
@@ -630,6 +644,7 @@ Returns T if the current schedule does not break any dependences in dep."
                  :pointer (isl::context-handle isl::*context*)
                  :int (slot-value optrule ',slot)
 		 :void)))
+    (set-option "schedule_serialize_sccs" serialize-sccs)
     (set-option "schedule_max_constant_term" max-constant-term)
     (set-option "schedule_max_coefficient" max-coefficient)
     (set-option "schedule_outer_coincidence" outer-coincidence)
@@ -661,7 +676,8 @@ Returns T if the current schedule does not break any dependences in dep."
     (declare (ignore _ __))
     (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
       ;;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
-      (setf (poly-schedule poly) (schedule-node-get-schedule node)))))
+      (setf (poly-schedule poly) (schedule-node-get-schedule node))
+      )))
 
 (defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange))
 
@@ -736,6 +752,9 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) abstract-kernel args n)
   ;; [TODO] Recompile it and run as an kernel
+  (format t "~%[Kernel]:~%==========~%~a~%" (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral polyhedral) nil))
+  (print (reverse (poly-cmd-history polyhedral)))
+  (format t "~%===========~%")
   (* n (random 1.0)))
 
 (defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 1) (n 10) (threshold 1e-5))
@@ -748,15 +767,13 @@ Returns T if the current schedule does not break any dependences in dep."
              (declare (type Polyhedral-IR polyhedral-ir))
              (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir (caten/air:getattr node :kernel-info) args n))))
     (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
-           (beam (list (cons origin (expt 2 32)))))
+           (beam (list (cons origin *+inf*))))
       (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
         (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
         (loop for (kernel . score) in beam do
           (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
-            (print new-kernel)
-;            (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral new-kernel) t)
             (push (make-candidate new-kernel) candidates)))
-        (when (null candidates) (return-from beam))
+        (when (null candidates) (return-from beam)) ;; no new candidates -> exit
         (setf candidates (sort candidates #'< :key #'cdr))
         (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
           (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
@@ -782,6 +799,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - 4. fix a bug in threefry2x32
 ;; - 5. ループの途中でincf挿入するやつやりたい?
 ;; - 6. BEAM Cacheを実装する
+;; - 7. Symbolic Kernelに対して，探索したSchedule Commandsを適用する？
 
 ;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine

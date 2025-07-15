@@ -604,7 +604,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
   (princ
    (with-output-to-string (out)
-     (format out "kernel ")
      (labels ((indent () (make-string indent :initial-element #\space))
               (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
               (r (s &aux (val (id->value graph s)))
