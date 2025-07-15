@@ -605,7 +605,11 @@
 
 (defmethod print-object ((obj OptimizationRule) stream)
   (print-unreadable-object (obj stream :type t)
-    (format stream ":axis ~a" (optrule-axis obj))))
+    (dolist (slot-def (closer-mop:class-slots (class-of obj)))
+      (let ((name  (closer-mop:slot-definition-name slot-def))
+            (value (slot-value obj (closer-mop:slot-definition-name slot-def))))
+        (when (null (find name `(band)))
+          (format stream " :~a ~S" name value))))))
 
 (defgeneric optrule-generate-search-space (polyhedral bands optrule-trigger))
 (defgeneric optrule-apply-transform-on-polyhedral (polyhedral optrule)) ;; Insert Directive
@@ -810,13 +814,12 @@ Returns T if the current schedule does not break any dependences in dep."
      band-space
      (apply #'make-value-list (loop for i upfrom 0 below dim collect (or (nth i dims) size-default))))))
 
-(defclass Tile (OptimizationRule)
-  ((size :initarg :size :accessor tile-size)))
+(defclass Tile (OptimizationRule) ((size :initarg :size :accessor tile-size)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   (loop for band in bands for nth upfrom 0
         append
-        (loop for size in `(2 4 8 16 32)
+        (loop for size in `(2 4 8 16 32) ;; TODO: get loop size, is that larger than tile size?
               collect
               (make-instance 'Tile :size size :band band :axis nth))))
 
