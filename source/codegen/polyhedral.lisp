@@ -819,7 +819,7 @@ Returns T if the current schedule does not break any dependences in dep."
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   (loop for band in bands for nth upfrom 0
         append
-        (loop for size in `(2 4 8 16 32) ;; TODO: get loop size, is that larger than tile size?
+        (loop for size in `(2 4 8 16 32 64) ;; TODO: Only tile when it is not tiled.
               collect
               (make-instance 'Tile :size size :band band :axis nth))))
 
