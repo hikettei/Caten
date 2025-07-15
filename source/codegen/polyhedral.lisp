@@ -541,9 +541,12 @@
                  (assert (eql :EXPR (node-type acc)))
                  (values (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) (lookup acc) acc))
                (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
-               (compute-idx (acc loops stride &aux (args (gethash (node-id acc) (pctx-expr2args parse-ctx))))
+               (compute-idx (acc loops stride
+                             &aux
+                               (acc (or (find-expr-from-user acc) acc))
+                               (args (gethash (node-id acc) (pctx-expr2args parse-ctx))))
                  (declare (ignore loops))
-                 (assert (= (length args) (length stride)))
+                 ;; (assert (= (length args) (length stride)))
                  (dolist (arg args) (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
                  (reduce
                   #'%add
@@ -572,23 +575,23 @@
                    ;; Rewrite the definition
                    (insert-nodes blueprint (graph-nodes (make-new-initializer acc previously-scalar argname stride loops dtype (car (node-reads acc)))))
                    ;; Rewrite the users of val_2
-                   (labels ((newid (x)
+                   (labels ((newid (base-node x)
                               (if (eql x previously-scalar)
                                   (let ((id (swpid previously-scalar count)))
                                     (incf count)
-                                    (insert-nodes blueprint (graph-nodes (make-new-aref acc id argname stride loops)))
+                                    (insert-nodes blueprint (graph-nodes (make-new-aref base-node id argname stride loops)))
                                     id)
                                   (let ((node (id->value blueprint x))) ;; handling bind
                                     (if (or (null node) (not (eql (node-type node) :BIND)) (not (eql (getattr node :value) previously-scalar)))
                                         x
                                         (let ((id (swpid previously-scalar count)))
                                           (incf count)
-                                          (insert-nodes blueprint (graph-nodes (make-new-aref-bind acc id argname stride loops (car (node-reads node)))))
+                                          (insert-nodes blueprint (graph-nodes (make-new-aref-bind base-node id argname stride loops (car (node-reads node)))))
                                           id))))))
                      (loop for node in (graph-nodes blueprint)
                            ;; Rewrite the user/incl bind
                            if (or (eql (node-type node) :EXPR) (not (eql (node-class node) :Render))) do
-                             (setf (node-reads node) (map 'list #'newid (node-reads node)))))))))
+                             (setf (node-reads node) (map 'list #'(lambda (x) (newid node x)) (node-reads node)))))))))
          (ctx-scal->access ctx))
         (simplify-ast blueprint)
         (values blueprint extra-allocs extra-args)))))
@@ -937,9 +940,9 @@ Returns T if the current schedule does not break any dependences in dep."
          (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))
          (poly-bp-cache (car best-kernel))
          base-name base-args)
-        (loop for extra-arg in (poly-extra-kernel-args (car best-kernel))
+        (loop for extra-arg in (poly-extra-allocs (car best-kernel))
               do (insert-nodes (uiop:symbol-call :caten/runtime/runtime :runtime-graph runtime) (list extra-arg)))
-        (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-kernel-args (car best-kernel)) collect (car (node-writes extra-arg)))))
+        (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
         ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
         (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))
 
