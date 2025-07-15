@@ -19,7 +19,9 @@
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
    (blueprint :accessor poly-blueprint :initarg :blueprint)
-   (ctx :accessor poly-ctx :initarg :ctx)))
+   (ctx :accessor poly-ctx :initarg :ctx)
+   (extra-kernel-args :accessor poly-extra-kernel-args :initform nil)
+   (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)))
 
 (defun make-polyhedral-ir (blueprint domain read write schedule ctx)
   (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint)))
@@ -502,7 +504,7 @@
               (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
         node))))
 
-(defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0))
+(defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0) (extra-allocs) (extra-args))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
     (let* ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
@@ -541,9 +543,11 @@
                  (declare (ignore loops))
                  (assert (= (length args) (length stride)))
                  (dolist (arg args) (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
+                 (print loops)
                  (reduce
                   #'%add
                   (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg)))))
+               (reg-alloc (node) (push node extra-args) node)
                (make-new-aref (acc write-to scal-id stride loops)
                  (with-context (out (%aref scal-id (compute-idx acc loops stride) :out write-to))))
                (make-new-aref-bind (acc write-to scal-id stride loops base-read)
@@ -554,7 +558,7 @@
                      (out
                       (%expr
                        (node->id
-                        (%setf (%aref (%global argname dtype t) (compute-idx acc loops stride)) form))
+                        (%setf (%aref (reg-alloc (%global argname dtype t)) (compute-idx acc loops stride)) form))
                        :out write-to)))))
         (maphash
          #'(lambda (previously-scalar rewrite-context)
@@ -563,6 +567,7 @@
                      (argname (swpid previously-scalar "tmp")))
                  (multiple-value-bind (dtype loops acc) (id->tensor-info previously-scalar)
                    (assert (= (length shape) (length stride)))
+                   (push (%alloc (length shape) shape stride :dtype dtype :id argname) extra-allocs)
                    ;; Rewrite the definition
                    (insert-nodes blueprint (graph-nodes (make-new-initializer acc previously-scalar argname stride loops dtype (car (node-reads acc)))))
                    ;; Rewrite the users of val_2
@@ -585,7 +590,7 @@
                              (setf (node-reads node) (map 'list #'newid (node-reads node)))))))))
          (ctx-scal->access ctx))
         (simplify-ast blueprint)
-        blueprint))))
+        (values blueprint extra-allocs extra-args)))))
 
 (defun get-blueprint-from-polyhedral (polyhedral)
   "Convert ISL polyhedral representation back to blueprint graph"
@@ -597,7 +602,7 @@
        pctx
        (poly-ctx polyhedral)
        (caten/aasm::ast-simplify-expr-subgraph
-        (with-blueprint () (parse-isl-ast pctx (isl::ast-node-handle ast))))))))
+        (with-blueprint () (%progn (parse-isl-ast pctx (isl::ast-node-handle ast)))))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -866,15 +871,29 @@ Returns T if the current schedule does not break any dependences in dep."
     (loop for gen in next-generations
           if (verify-polyhedral-ir gen) collect gen)))
 
-(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) abstract-kernel args n)
-  ;; [TODO] Recompile it and run as an kernel
-  (format t "~%[Kernel]:~%==========~%")
-  (caten/codegen/blueprint::print-blueprint (get-blueprint-from-polyhedral polyhedral) t)
-  (print (reverse (poly-cmd-history polyhedral)))
-  (format t "~%===========~%")
-  (* n (random 1.0)))
+(defun kernel-employ-blueprint (poly node renderer blueprint base-kernel-name base-kernel-args)
+  (setf (kernel-blueprint (getattr node :kernel-info)) blueprint
+        (kernel-args (getattr node :kernel-info)) (append (poly-extra-kernel-args poly) base-kernel-args)
+        (kernel-name (getattr node :kernel-info)) (intern (format nil "~a_BEAM_~a" base-kernel-name (gensym))))
+  (caten/codegen/byoc:%render-kernel renderer (getattr node :kernel-info))
+  (caten/codegen/byoc:%compile-kernel renderer (list (getattr node :kernel-info)) nil)
+  node)
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 2) (n 10) (threshold 1e-5))
+(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) node abstract-kernel args n base-name base-args)
+  (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
+    (multiple-value-bind (blueprint extra-allocs extra-args) (get-blueprint-from-polyhedral polyhedral)
+      (setf (poly-extra-allocs polyhedral) extra-allocs
+            (poly-extra-kernel-args polyhedral) extra-args)
+      (kernel-employ-blueprint polyhedral node renderer blueprint base-name base-args)
+      (format t "~%[Kernel]:~%==========~%")
+      ;; (caten/codegen/blueprint::print-blueprint blueprint t)
+      (print (reverse (poly-cmd-history polyhedral)))
+      (format t "~%===========~%")
+      (* n (random 1.0)))))
+
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 2) (n 10) (threshold 1e-5)
+                                                         (base-args (kernel-args (getattr node :kernel-info)))
+                                                         (base-name (kernel-name (getattr node :kernel-info))))
   ;; BEAM Search
   ;; Parameters:
   ;;  - n
@@ -882,7 +901,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;;  - max_iters
   (labels ((make-candidate (polyhedral-ir)
              (declare (type Polyhedral-IR polyhedral-ir))
-             (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir (caten/air:getattr node :kernel-info) args n))))
+             (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir node (caten/air:getattr node :kernel-info) args n base-name base-args))))
     (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
            (beam (list (cons origin *+inf*))))
       (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
