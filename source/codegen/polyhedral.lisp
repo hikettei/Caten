@@ -538,7 +538,8 @@
                  (values (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) (lookup acc) acc))
                (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
                (compute-idx (acc loops stride &aux (args (gethash (node-id acc) (pctx-expr2args parse-ctx))))
-                 (assert (= (length args) (length loops) (length stride)))
+                 (declare (ignore loops))
+                 (assert (= (length args) (length stride)))
                  (dolist (arg args) (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
                  (reduce
                   #'%add
@@ -561,7 +562,7 @@
                (let ((shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
                      (argname (swpid previously-scalar "tmp")))
                  (multiple-value-bind (dtype loops acc) (id->tensor-info previously-scalar)
-                   (assert (= (length shape) (length stride) (length loops)))
+                   (assert (= (length shape) (length stride)))
                    ;; Rewrite the definition
                    (insert-nodes blueprint (graph-nodes (make-new-initializer acc previously-scalar argname stride loops dtype (car (node-reads acc)))))
                    ;; Rewrite the users of val_2
@@ -753,37 +754,53 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defmethod optrule-apply-transform-on-blueprint (poly (optrule Reschedule)) nil)
 
+(defun schedule-node-get-band-depth (band) (space-dim (schedule-node-band-get-space band) 3))
+
+(defun permutations (lst)
+  (if (null lst) (list nil)
+      (mapcan (lambda (x) (mapcar (lambda (y) (cons x y)) (permutations (remove x lst :count 1)))) lst)))
+
 (defclass Interchange (OptimizationRule)
-  ((idx :initarg :idx :accessor interchange-idx)))
+  ((order :initarg :order :accessor interchange-order :type list)))
+
+(defun reorder-mupa-string (mupa-str order)
+  (declare (type string mupa-str) (type list order))
+  (assert (and (>= (length mupa-str) 4)
+               (string= (subseq mupa-str 0 2) "[{")
+               (string= (subseq mupa-str (- (length mupa-str) 2) (length mupa-str)) "}]")))
+  (let* ((inner (subseq mupa-str 2 (1- (length mupa-str))))
+         (raw-chunks (cl-ppcre:split "\\}, *\\{" inner))
+         (parts (mapcar (lambda (s) (string-trim " {}" s)) raw-chunks)))
+    (assert (= (length parts) (length order)))
+    (with-output-to-string (out)
+      (format out "[")
+      (loop for i from 0 below (length order)
+            for idx = (nth i order)
+            do (format out "{ ~a }" (nth idx parts))
+               (when (< i (1- (length order)))
+                 (format out ", ")))
+      (format out "]"))))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Interchange)))
+  (when nil ;; unable to run
   (loop for band in bands for nth upfrom 0
-        append
-        (loop for c upfrom 1 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band))
-              collect (make-instance 'Interchange :axis nth :band band :idx c))))
+        if (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+          append
+          (loop with default-perm = (caten/codegen/helpers:range 0 (schedule-node-get-band-depth band))
+                with permutations = (permutations default-perm)
+                for perm in permutations
+                when (not (equal perm default-perm))
+                  collect (make-instance 'Interchange :axis nth :band band :order perm)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
-  (let* ((mupa (schedule-node-band-get-partial-schedule (optrule-band opt)))
-         (node (schedule-node-delete (optrule-band opt)))
-         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
-         (_ (when (= 0 n-child) (error "cannot apply interchange")))
-         (node (schedule-node-get-band-from-relative-idx node (interchange-idx opt)))
-         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" (interchange-idx opt) (optrule-band opt)))
-         (node (schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _ __))
-    (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
-      ;;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
-      (setf (poly-schedule poly) (schedule-node-get-schedule node)))))
+  ;; Not Ready
+  nil)
 
-(defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange))
-
-  )
+(defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange)))
 ;; [TODO] FlashAttention
-(defclass FuseWithParent (OptimizationRule)
-  nil)
+(defclass FuseWithParent (OptimizationRule) nil)
 ;; [TODO] SIMD
-(defclass TensorCore (OptimizationRule)
-  nil)
+(defclass TensorCore (OptimizationRule) nil)
 
 (defun tiling-sizes (band &key (size-default 32) (dims))
   (declare (type list dims) (type fixnum size-default))
@@ -828,7 +845,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
-    (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
+    ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (t . (:NoOpt :Tile))))      ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
@@ -854,7 +871,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (format t "~%===========~%")
   (* n (random 1.0)))
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 1) (n 10) (threshold 1e-5))
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 2) (n 10) (threshold 1e-5))
   ;; BEAM Search
   ;; Parameters:
   ;;  - n

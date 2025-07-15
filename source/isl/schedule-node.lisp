@@ -147,3 +147,7 @@
 (defun schedule-node-get-schedule-depth (node)
   (declare (type schedule-node node))
   (%isl-schedule-node-get-schedule-depth (schedule-node-handle node)))
+
+(defun schedule-node-band-split (node pos)
+  (declare (type schedule-node node))
+  (%make-schedule-node (%isl-schedule-node-band-split (schedule-node-handle (copy node)) pos)))
