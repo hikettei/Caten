@@ -21,7 +21,8 @@
    (blueprint :accessor poly-blueprint :initarg :blueprint)
    (ctx :accessor poly-ctx :initarg :ctx)
    (extra-kernel-args :accessor poly-extra-kernel-args :initform nil)
-   (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)))
+   (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)
+   (bp-cache :accessor poly-bp-cache)))
 
 (defun make-polyhedral-ir (blueprint domain read write schedule ctx)
   (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint)))
@@ -318,9 +319,10 @@
 (defun pctx-register-gid (pctx id range offset)
   (declare (type parse-ctx pctx) (type symbol id))
   (labels ((find-suite (i cnt)
-             (if (gethash i (pctx-gid2range pctx))
-                 (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
-                 i)))
+             i))
+;             (if (gethash i (pctx-gid2range pctx))
+ ;                (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
+  ;               i)))
     (let ((registered-as (find-suite id 1)) (new-ctx (copy-parse-ctx pctx)))
       (setf (gethash registered-as (pctx-gid2range new-ctx)) range
             (gethash registered-as (pctx-gid2offset new-ctx)) offset
@@ -521,7 +523,7 @@
                  (when (> (length acc-scope) (length expr-scope)) (return-from invalid-scope-p t))
                  ;; grid id is unique in the blueprint, we can use it.
                  (loop for acc in acc-scope for expr in expr-scope
-                       when (not (eql (getf acc :idx) (getf expr :idx))) do (return-from invalid-scope-p t))
+                       when (not (eql (node-id (getf acc :range-node)) (node-id (getf expr :range-node)))) do (return-from invalid-scope-p t))
                  nil)
                (mutate-to-tensor-p (id &aux (acc (id->value blueprint id)) (users (get-users id)) (visited (make-hash-table)))
                  ;; All users must be placed in the possible scope where acc is firstly defined.
@@ -543,7 +545,6 @@
                  (declare (ignore loops))
                  (assert (= (length args) (length stride)))
                  (dolist (arg args) (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
-                 (print loops)
                  (reduce
                   #'%add
                   (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg)))))
@@ -873,23 +874,35 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defun kernel-employ-blueprint (poly node renderer blueprint base-kernel-name base-kernel-args)
   (setf (kernel-blueprint (getattr node :kernel-info)) blueprint
-        (kernel-args (getattr node :kernel-info)) (append (poly-extra-kernel-args poly) base-kernel-args)
+        (kernel-args (getattr node :kernel-info)) (append base-kernel-args (poly-extra-kernel-args poly))
         (kernel-name (getattr node :kernel-info)) (intern (format nil "~a_BEAM_~a" base-kernel-name (gensym))))
   (caten/codegen/byoc:%render-kernel renderer (getattr node :kernel-info))
   (caten/codegen/byoc:%compile-kernel renderer (list (getattr node :kernel-info)) nil)
   node)
 
-(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) node abstract-kernel args n base-name base-args)
+(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
     (multiple-value-bind (blueprint extra-allocs extra-args) (get-blueprint-from-polyhedral polyhedral)
       (setf (poly-extra-allocs polyhedral) extra-allocs
-            (poly-extra-kernel-args polyhedral) extra-args)
-      (kernel-employ-blueprint polyhedral node renderer blueprint base-name base-args)
+            (poly-extra-kernel-args polyhedral) extra-args
+            (poly-bp-cache polyhedral) blueprint)
+      (handler-case (kernel-employ-blueprint polyhedral node renderer blueprint base-name base-args)
+        ;; 99% of compilation failing is due to scalar -> tensor mutation.
+        ;; but 99% of failing case is worthless so we can ignore it.
+        (error (c) (warn "Failed compilation due to ~a" c) (return-from polyhedral-ir-evaluate *+inf*)))
       (format t "~%[Kernel]:~%==========~%")
       ;; (caten/codegen/blueprint::print-blueprint blueprint t)
       (print (reverse (poly-cmd-history polyhedral)))
       (format t "~%===========~%")
-      (* n (random 1.0)))))
+      (let* ((extra-args
+              (loop for arg in (poly-extra-allocs polyhedral)
+                    collect (uiop:symbol-call :caten/runtime/runtime :realize-node :Allocate runtime arg (node-reads arg))))
+             (kernel-args (append args extra-args))
+             (total 0.0))
+          (dotimes (i n)
+            (incf total (kernel-call (getattr node :kernel-info) runtime node kernel-args)))
+        (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime x)) extra-args)
+        total))))
 
 (defun realize-node-with-autotuning (runtime node args &aux (beam-width 10) (max-iters 2) (n 10) (threshold 1e-5)
                                                          (base-args (kernel-args (getattr node :kernel-info)))
@@ -901,7 +914,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;;  - max_iters
   (labels ((make-candidate (polyhedral-ir)
              (declare (type Polyhedral-IR polyhedral-ir))
-             (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir node (caten/air:getattr node :kernel-info) args n base-name base-args))))
+             (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) args n base-name base-args))))
     (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
            (beam (list (cons origin *+inf*))))
       (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
@@ -919,7 +932,14 @@ Returns T if the current schedule does not break any dependences in dep."
       (let ((best-kernel (car beam)))
         (print "BEST KERNEL IS")
         (print best-kernel)
-        ;; (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
+        (kernel-employ-blueprint
+         (car best-kernel) node
+         (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))
+         (poly-bp-cache (car best-kernel))
+         base-name base-args)
+        (loop for extra-arg in (poly-extra-kernel-args (car best-kernel))
+              do (insert-nodes (uiop:symbol-call :caten/runtime/runtime :runtime-graph runtime) (list extra-arg)))
+        (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-kernel-args (car best-kernel)) collect (car (node-writes extra-arg)))))
         ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
         (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))
 
