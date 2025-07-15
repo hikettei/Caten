@@ -293,7 +293,7 @@ Constraints:
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
-  (assert (eql (node-type expr) :EXPR))
+  (assert (eql :EXPR (node-type expr)))
   (labels ((explore (id &aux (node (id->value graph id)))
              (when (or (null node) (find id seen)) (return-from explore))
              (when (eql (node-type node) :EXPR) (return-from explore))
@@ -302,6 +302,18 @@ Constraints:
     (explore (car (node-reads expr))))
   (let ((g (apply #'make-graph nodes)))
     (setf (graph-outputs g) (node-reads expr))
+    (->fast-graph g)))
+
+(defun ast-make-subgraph (graph id &aux (seen nil) (nodes))
+  (declare (type Graph graph) (type symbol id))
+  (labels ((explore (id &aux (node (id->value graph id)))
+             (when (or (null node) (find id seen)) (return-from explore))
+             (when (eql (node-type node) :EXPR) (return-from explore))
+             (push node nodes)
+             (mapc #'explore (node-reads node))))
+    (explore id))
+  (let ((g (apply #'make-graph nodes)))
+    (setf (graph-outputs g) (list id))
     (->fast-graph g)))
 
 (defun ast-simplify-expr (graph &aux (seen1) (seen2))

@@ -310,7 +310,8 @@
   (gid2range (make-hash-table) :type hash-table)
   (gid2offset (make-hash-table) :type hash-table)
   (variable-table (make-hash-table) :type hash-table)
-  (scop-ctx (make-scop-ctx-from-blueprint blueprint) :type ctx))
+  (scop-ctx (make-scop-ctx-from-blueprint blueprint) :type ctx)
+  (expr2args (make-hash-table) :type hash-table))
 
 (defun pctx-register-gid (pctx id range offset)
   (declare (type parse-ctx pctx) (type symbol id))
@@ -496,9 +497,12 @@
                  (emit node)
                  (mapc #'e (node-reads node))))
         (mapc #'e (node-reads node))
-        (emit node)))))
+        (emit node)
+        (setf (gethash (node-id node) (pctx-expr2args ctx))
+              (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
+        node))))
 
-(defun verify-ast-with-context (ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0))
+(defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
     (let* ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
@@ -533,53 +537,46 @@
                  (assert (eql :EXPR (node-type acc)))
                  (values (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) (lookup acc) acc))
                (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
-               (compute-idx (loops stride)
+               (compute-idx (acc loops stride &aux (args (gethash (node-id acc) (pctx-expr2args parse-ctx))))
+                 (assert (= (length args) (length loops) (length stride)))
+                 (dolist (arg args) (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
                  (reduce
                   #'%add
-                  (loop for l in loops for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car (node-writes (getf l :range-node)))))))
-               (make-new-aref (write-to scal-id stride loops)
-                 (with-context (out (%aref scal-id (compute-idx loops stride) :out write-to))))
-               (make-new-aref-bind (write-to scal-id stride loops base-read)
-                 (with-context (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value scal-id)) (compute-idx loops stride) :out write-to))))
-               (make-new-initializer (write-to argname stride loops dtype form)
+                  (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg)))))
+               (make-new-aref (acc write-to scal-id stride loops)
+                 (with-context (out (%aref scal-id (compute-idx acc loops stride) :out write-to))))
+               (make-new-aref-bind (acc write-to scal-id stride loops base-read)
+                 (with-context (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value scal-id)) (compute-idx acc loops stride) :out write-to))))
+               (make-new-initializer (acc write-to argname stride loops dtype form)
                  ;; [TODO] %global w/ :tmp
                  (with-context
                      (out
                       (%expr
                        (node->id
-                        (%setf (%aref (%global argname dtype t) (compute-idx loops stride)) form))
+                        (%setf (%aref (%global argname dtype t) (compute-idx acc loops stride)) form))
                        :out write-to)))))
         (maphash
          #'(lambda (previously-scalar rewrite-context)
              (when (mutate-to-tensor-p previously-scalar)
                (let ((shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
                      (argname (swpid previously-scalar "tmp")))
-                 ;; WHen it further tiled?
-                 ;; [TODO] Update the computation of stride!!!!!
-                 ;; ^ Need to update it depending
                  (multiple-value-bind (dtype loops acc) (id->tensor-info previously-scalar)
                    (assert (= (length shape) (length stride) (length loops)))
-                   (print "Detected rewriting")
-                   (print previously-scalar)
-                   (print shape)
-                   (print stride)
-                   (print dtype)
-                   (print loops)
                    ;; Rewrite the definition
-                   (insert-nodes blueprint (graph-nodes (make-new-initializer previously-scalar argname stride loops dtype (car (node-reads acc)))))
+                   (insert-nodes blueprint (graph-nodes (make-new-initializer acc previously-scalar argname stride loops dtype (car (node-reads acc)))))
                    ;; Rewrite the users of val_2
                    (labels ((newid (x)
                               (if (eql x previously-scalar)
                                   (let ((id (swpid previously-scalar count)))
                                     (incf count)
-                                    (insert-nodes blueprint (graph-nodes (make-new-aref id argname stride loops)))
+                                    (insert-nodes blueprint (graph-nodes (make-new-aref acc id argname stride loops)))
                                     id)
                                   (let ((node (id->value blueprint x))) ;; handling bind
                                     (if (or (null node) (not (eql (node-type node) :BIND)) (not (eql (getattr node :value) previously-scalar)))
                                         x
                                         (let ((id (swpid previously-scalar count)))
                                           (incf count)
-                                          (insert-nodes blueprint (graph-nodes (make-new-aref-bind id argname stride loops (car (node-reads node)))))
+                                          (insert-nodes blueprint (graph-nodes (make-new-aref-bind acc id argname stride loops (car (node-reads node)))))
                                           id))))))
                      (loop for node in (graph-nodes blueprint)
                            ;; Rewrite the user/incl bind
@@ -594,10 +591,12 @@
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
-    (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
-     (poly-ctx polyhedral)
-     (caten/aasm::ast-simplify-expr-subgraph
-      (with-blueprint () (parse-isl-ast (make-parse-ctx (poly-blueprint polyhedral)) (isl::ast-node-handle ast)))))))
+    (let ((pctx (make-parse-ctx (poly-blueprint polyhedral))))
+      (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
+       pctx
+       (poly-ctx polyhedral)
+       (caten/aasm::ast-simplify-expr-subgraph
+        (with-blueprint () (parse-isl-ast pctx (isl::ast-node-handle ast))))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
