@@ -15,12 +15,13 @@
 (defclass Directive ()
   ((type :initarg :type :accessor directive-type)
    (amount :initarg :amount :accessor directive-amount)
+   (depth :initarg :depth :accessor directive-depth)
    (visible :initarg :visible :accessor directive-visible))
   (:documentation "Directive is an instruction to schedule-node-band. This class is dumpable as a string to interoperate with ISL."))
 
-(defun directive (type amount visible)
+(defun directive (type amount depth visible)
   (declare (type string type) (type fixnum amount) (type boolean visible))
-  (make-instance 'Directive :type type :amount amount :visible visible))
+  (make-instance 'Directive :type type :amount amount :depth depth :visible visible))
 
 (defmethod print-object ((directive Directive) stream)
   (print-unreadable-object (directive stream)
@@ -49,7 +50,7 @@
        key
        (case key
          (:TYPE value)
-         (:AMOUNT (parse-integer value))
+         ((:AMOUNT :DEPTH) (parse-integer value))
          (:VISIBLE (string= (string-upcase value) "T"))
          (otherwise value))))))
 
@@ -379,9 +380,9 @@
   (declare (type parse-ctx pctx) (type symbol id))
   (labels ((find-suite (i cnt)
              i))
-;             (if (gethash i (pctx-gid2range pctx))
- ;                (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
-  ;               i)))
+;;             (if (gethash i (pctx-gid2range pctx))
+ ;;                (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
+  ;;               i)))
     (let ((registered-as (find-suite id 1)) (new-ctx (copy-parse-ctx pctx)))
       (setf (gethash registered-as (pctx-gid2range new-ctx)) range
             (gethash registered-as (pctx-gid2offset new-ctx)) offset
@@ -400,6 +401,13 @@
       (:ast-node-mark  (parse-isl-ast-mark ctx ast))
       (:ast-node-user  (parse-isl-ast-user ctx ast)))))
 
+(defun parse-isl-ast-mark (ctx ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
+         (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast))))
+    (print directive)
+    user))
+  
 (defun parse-isl-ast-block (ctx ast)
   (declare (type cffi:foreign-pointer ast))
   (let* ((children (isl::%isl-ast-node-block-get-children ast))
@@ -697,7 +705,11 @@
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
-                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark)
+                               (cffi:foreign-string-to-lisp
+                                (isl::%isl-id-get-name
+                                 (isl::%isl-schedule-node-mark-get-id
+                                  (isl::schedule-node-handle node)))))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
                     (let ((out (funcall f type band mark))) (when out (push out outputs)))
@@ -708,7 +720,12 @@
 
 (defun schedule-node-get-undernearth-bands (schedule-node)
   (declare (type isl::schedule-node schedule-node))
-  (map-schedule-node-children #'(lambda (type band mark) (declare (ignore mark)) (when (eql type :schedule-node-band) band)) schedule-node))
+  (map-schedule-node-children
+   #'(lambda (type band mark)
+       (when (eql type :schedule-node-band)
+         (when (or (null mark) (directive-visible (str->directive mark))) ;; Only visible bands are gathered
+           band)))
+   schedule-node))
 
 (defun schedule-node-get-band-from-relative-idx (schedule-node idx)
   (declare (type isl::schedule-node schedule-node) (type fixnum idx))
@@ -885,13 +902,13 @@ Returns T if the current schedule does not break any dependences in dep."
         if (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle band) i))
           collect 1 else collect 0))
 
-(defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
+(defmethod optrule-generate-search-space (poly bands (id (eql :TileGPU)))
   ;; TileGPU Can be applied at once
   (when (and
          (null (some #'(lambda (x) (typep x 'TileGPU)) (poly-cmd-history poly)))
          (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2))
     (loop for band in bands for nth upfrom 0
-          for coincident = (print (schedule-node-band-get-coincident band))
+          for coincident = (schedule-node-band-get-coincident band)
           for split-at-base = (or (position 0 coincident) (length coincident))
           for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
           if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident split-at (length coincident))))
@@ -902,7 +919,10 @@ Returns T if the current schedule does not break any dependences in dep."
                   (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
-  (let* ((band (schedule-node-insert-mark (optrule-band opt) (directive->id (directive "TILE_GPU" (tile-gpu-local-size opt) t))))
+  (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
+         (band (schedule-node-insert-mark
+                (optrule-band opt)
+                (directive->id (directive "TileGPU" (tile-gpu-local-size opt) depth nil))))
          (band (if (tile-gpu-band-split-at opt)
                    (schedule-node-band-split band (tile-gpu-band-split-at opt))
                    band)))
@@ -913,15 +933,12 @@ Returns T if the current schedule does not break any dependences in dep."
     ;; - Implement Parse AST Mark
     ;; - Implement TileGPU as a render-ops.lisp level rewriting rule.
     ;; - Is it ok to parse coincident? there's no wrong thing right?
-    (print opt)
-    (print poly)
+    ;; - Once the optimization is applied on the gpu; delete them from an rewritable band
     ))
 
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
   nil)
-
-
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
@@ -932,6 +949,7 @@ Returns T if the current schedule does not break any dependences in dep."
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
+    (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
     (t . (:NoOpt :Tile))))      ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))

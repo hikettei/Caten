@@ -76,6 +76,7 @@ Also, once the ASTGraph is constructed the compiler will try to maximize the ban
 If the `parallel` attribute is set to a positive integer, the compiler will try to parallelize the loop with the specified number of band depth.
 "
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
+                 (directive :initform nil)
                  (band :initform nil)
                  (parallel :initform 0 :type (integer 0)))
          :type-relay (ast-type-map :FOR '(:EXPR) '(:PROGN :FOR :IF :EXPR :BARRIER)))
