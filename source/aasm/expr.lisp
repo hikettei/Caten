@@ -41,7 +41,8 @@
    #:with-expr-cache
    #:expr-detach-loop-bound
    #:expr-flops
-   #:expr-realize))
+   #:expr-realize
+   #:expr-realize-as-value))
 
 (in-package :caten/aasm/expr)
 
@@ -330,3 +331,9 @@ Runs the expr with given params.
       :caten/runtime :make-runtime
       (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
      params)))
+
+(defun expr-realize-as-value (expr &optional params)
+  (declare (type Expr expr))
+  (let ((val (apply #'expr-realize expr params)))
+    (assert (numberp (caten/runtime:buffer-value val)))
+    (caten/runtime:buffer-value val)))

@@ -194,7 +194,7 @@ Corresponds to:
 [blockIdx|threadIdx].[rank]
 ```
 "
-         :slots ((level :type (member :block :thread))
+         :slots ((level :type (member :block :thread)) ;; [TODO] Any level is ok
                  (rank  :type (integer 0 3))
                  (dtype :type keyword)
                  (size))

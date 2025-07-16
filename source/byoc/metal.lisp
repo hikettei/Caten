@@ -292,8 +292,11 @@ using namespace metal;
 
 (defmethod invoke ((mp Metal-Program) node &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
-  (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
-    (when (> (apply #'* (mp-grid-size mp)) total-max-threads)
+  (let* ((params (map 'list #'cons (node-reads node) buffers)) ;; e.g.: (A . 10)
+         (total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int))
+         (global-size (map 'list #'(lambda (x) (expr-realize-as-value (nth 0 x) params)) (mp-grid-size mp)))
+         (local-size (map 'list #'(lambda (x) (expr-realize-as-value (nth 1 x) params)) (mp-grid-size mp))))
+    (when (> (apply #'* local-size) total-max-threads)
       (error "Error: TODO"))
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
@@ -315,8 +318,8 @@ using namespace metal;
                           (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
       (assert (= (length (mp-grid-size mp)) 3) () "Metal only supports for 3d parallelism!")
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
-        (apply #'load-size gs (mp-grid-size mp))
-        (apply #'load-size ls (mp-grid-size mp))
+        (apply #'load-size gs global-size)
+        (apply #'load-size ls local-size)
         (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
       (msg encoder "endEncoding" :void)
       (msg command-buffer "setLabel:" :void :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp)))))
@@ -342,7 +345,7 @@ using namespace metal;
               do (let* ((argtypes (map 'list #'(lambda (x) (getattr x :dtype)) (kernel-args item)))
                         (caller (make-instance
                                  'Metal-Program :lib lib :name (kernel-name item) :device device :mtl-queue mtl-queue :argtypes argtypes
-                                                :grid-size `(1 1 1)))) ;; [TODO]
+                                                :grid-size (caten/codegen/blueprint:blueprint-gather-grids (kernel-blueprint item)))))
                    (setf (metal-caller item) #'(lambda (node &rest args) (apply #'invoke caller node args)))))))))
 
 (defmethod kernel-call ((kernel MetalKernel) (runtime MetalRuntime) node args) (apply (metal-caller kernel) node args))

@@ -708,3 +708,18 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
   (let ((ops (reduce #'expr-add total-flops)))
     (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
     (make-gflops-measurer :ops ops :succeed-p t)))
+;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun blueprint-gather-grids (blueprint &key (format `(:block :thread)) (max-dimensions 3) (dtype :int64))
+  (declare (type Graph blueprint))
+  (let ((grids (make-hash-table)))
+    (loop for bp in (graph-nodes blueprint)
+          if (eql (node-type bp) :SPACE) do
+            (push bp (gethash (getattr bp :rank) grids)))
+    (loop for i upfrom 0 below max-dimensions
+          for item = (gethash i grids)
+          if item
+            collect (loop for f in format
+                          for val = (find f (gethash i grids) :key #'(lambda (x) (getattr x :level)))
+                          if val collect (getattr val :size) else collect (expr-const 1 dtype))
+          else
+            collect (loop for f in format collect (expr-const 1 dtype)))))
