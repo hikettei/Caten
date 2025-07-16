@@ -1,14 +1,8 @@
 (defpackage :caten/byoc/metal
-  (:use
-   :cl :caten/air :caten/aasm/expr :caten/aasm :caten/codegen/renderer :caten/codegen/iteration
-   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint :caten/codegen/runner
-   :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
-  (:import-from
-   :caten/codegen/search
-   #:define-auto-scheduler)
-  (:export
-   #:mtl-compile-source
-   #:Metal-Program))
+  (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
+        :caten/codegen/byoc :caten/codegen/renderer :caten/air
+        :caten/aasm :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
+  (:export #:mtl-compile-source #:Metal-Program))
 
 (in-package :caten/byoc/metal)
 ;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -20,6 +14,7 @@
   (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
   (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
   (load-foreign-library "/usr/lib/libSystem.dylib"))
+(ensure-foreign-library)
 
 (defcfun "MTLCreateSystemDefaultDevice" :pointer)
 (defcfun "sel_registerName" :pointer (name :pointer))
@@ -113,7 +108,7 @@
 
 (defmethod initialize-instance :after ((runtime MetalRuntime) &key)
   (ensure-foreign-library)
-  (with-float-traps-masked t
+  (float-features:with-float-traps-masked t
     (setf (metal-runtime-device runtime)
           (if (runtime-renderer runtime)
               (metal-renderer-device (runtime-renderer runtime))
@@ -158,7 +153,9 @@
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
-(defclass MetalKernel (AbstractKernel) nil)
+(defclass MetalKernel (AbstractKernel)
+  ((caller :accessor metal-caller)
+   (program :accessor metal-program)))
 (define-auto-scheduler Metal-Auto-Scheduler :use-tile-gpu 3 :shared-max 32768)
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer MetalKernel Metal-Auto-Scheduler t)
 
@@ -177,80 +174,75 @@
     (:uint8 'uint8_t)
     (:int8 'int8_t)))
 
-(defvar *indent*)
-
 (defmethod %render-node ((renderer Metal-Renderer) (id (eql :SPACE)) node)
   (let ((lv (ecase (getattr node :level) (:block "gid") (:thread "lid")))
         (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
     (format nil "~a.~a" lv dim)))
 
-(defmethod %render-kernel ((renderer Metal-Renderer) si)
-  (let ((args (schedule-item-args si)))
-    (with-output-to-string (out)
-      (format out "kernel void ~(~a~)(" (getattr si :name))
-      (dolist (item args)
-        (format out "device~a ~(~a~) ~a~(~a~), " (if (eql (getattr item :type) :output) "" " const") (dtype->mtype (getattr item :dtype))
-                (if (getattr item :pointer-p) "*" "&") (car (node-writes item))))
-      (format out "uint3 gid [[threadgroup_position_in_grid]], uint3 lid [[thread_position_in_threadgroup]]) {~%")
-      (let ((*indent* 2))
-        (dolist (node (getattr si :blueprint))
-          (render-bp node out)))
-      (format out "}~%~%"))))
+(defmethod %render-kernel ((renderer Metal-Renderer) kernel)
+  (let ((args (kernel-args kernel)))
+    (setf (metal-program kernel)
+          (with-output-to-string (out)
+            (format out "kernel void ~(~a~)(" (kernel-name kernel))
+            (dolist (item args)
+              (format out "device~a ~(~a~) ~a~(~a~), " (if (find (getattr item :mode) `(:io :write)) "" " const") (dtype->mtype (getattr item :dtype))
+                      (if (getattr item :pointer-p) "*" "&") (car (node-writes item))))
+            (format out "uint3 gid [[threadgroup_position_in_grid]], uint3 lid [[thread_position_in_threadgroup]]) {~%")
+            (render-bp (kernel-blueprint kernel) out)
+            (format out "}~%~%")))))
 
-(defun render-bp (bp stream)
-  (flet ((indent () (make-string *indent* :initial-element #\space)))
-    (ecase (node-type bp)
-      (:FOR
-       (format stream "~afor(int ~(~a~)=~a;~a;~(~a~)+=~a) {~%" (indent)
-               (getattr bp :idx)
-               (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-               (render-expr 'CStyle-Renderer (getattr bp :below))
-               (getattr bp :idx)
-               (render-expr 'CStyle-Renderer (getattr bp :by)))
-       (incf *indent* 2))
-      (:ENDFOR
-       (progn (decf *indent* 2) (format stream "~a}~%" (indent))))
-      (:IF
-       (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
-       (incf *indent* 2))
-      (:ENDIF
-       (decf *indent* 2)
-       (format stream "~a}~%" (indent)))
-      (:EXPR
-       (let ((pre-iterations (getattr bp :iterations)))
-         (labels ((print-aref (name b is &key iterations)
-                    (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                        (format nil "(*(~(~a~)+~(~a~)))" name
-                                (render-expr
-                                 'CStyle-Renderer
-                                 (apply
-                                  #'expr-add
-                                  (map
-                                   'list
-                                   #'(lambda (view stride i)
-                                       (if view
-                                           (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
-                                           (expr-mul stride i)))
-                                   (iteration-space-views is)
-                                   (iteration-space-strides is)
-                                   iterations))))
-                        (format nil "~(~a~)" name))))
-           (format stream "~a~a~a = ~a;~a~%"
-                   (indent)
-                   (if (car (getattr bp :declare-type))
-                       (format nil "~(~a~) " (dtype->mtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
-                       "")
-                   (render-list
-                    (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
-                         (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'Metal-Renderer (getattr bp :EXPR) :index-space pre-iterations)
-                   (if (typep (getattr bp :meta :allow-undefined t) 'ExprMeta)
-                       (format nil " /* ~a */" (exprmeta-comment (getattr bp :meta)))
-                       "")))))
-      (:BARRIER (format stream "~athreadgroup_barrier(mem_flags::mem_threadgroup);~%" (indent)))
-      (:DEFINE-SHARED-MEMORY
-       (format stream "~athreadgroup ~(~a~) ~(~a~)[~a];~%" (indent) (dtype->mtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
-      (:DEFINE-GLOBAL))))
+(defun render-bp (graph out &aux (indent 0) (seen))
+  (labels ((indent () (make-string indent :initial-element #\space))
+           (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
+           (r (s &aux (val (id->value graph s)))
+             (when (and val (null (find (node-id val) seen)))
+               (f val) (push (node-id val) seen))
+             s)
+           (e (id)
+             (let ((renderer (make-instance 'CStyle-Renderer :graph graph)))
+               (render-node renderer id)))
+           (f (node)
+             (case (node-type node)
+               (:PROGN
+                 (fmt "{")
+                 (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                 (fmt "}"))
+               (:EXPR
+                (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                    (fmt "~a;" (e (car (node-reads node))))
+                    (let ((type (car (relay-writes (read-type-relay node)))))
+                      (assert type () "The node ~a must be shape inferred." node)
+                      (fmt "~a ~(~a~) = ~a;" (->cdtype (tensor-relay-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
+               (:DEFINE-GLOBAL) (:RANGE) (:ALLOCATE) ;; [TODO] Add a simplifier which removes :DEFINE-GLOBAL, RANGE, ALLOCATE from :PROGN.reads
+               (:FOR
+                (multiple-value-bind (range body) (apply #'values (node-reads node))
+                  (setf range (id->value graph range))
+                  (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
+                  (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
+                    (when (symbolp size)
+                      (let ((val (id->value graph size)))
+                        (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
+                        (setf size (car (node-reads val)))))
+                    (when (symbolp step)
+                      (let ((val (id->value graph step)))
+                        (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
+                        (setf step (car (node-reads val)))))
+                    (fmt "for (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a)"
+                         bind bind (e size) bind (e step)))
+                  (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
+                  (r body)
+                  (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
+               (:IF
+                (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                  (setf cond (id->value graph cond))
+                  (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                  (fmt "if (~(~a~)) {" (e (car (node-reads cond))))
+                  (incf indent 2) (r body) (decf indent)
+                  (fmt "}")))
+               (:BARRIER (fmt "~athreadgroup_barrier(mem_flags::mem_threadgroup);~%" (indent)))
+               (:DEFINE-SHARED-MEMORY (fmt "~athreadgroup ~(~a~) ~(~a~)[~a];~%" (indent) (dtype->mtype (getattr node :dtype)) (car (node-writes node)) (getattr node :size)))
+               (otherwise (error "The node ~a is not a supported renderop by Metal" node)))))
+    (f (id->value graph (car (graph-outputs graph))))))
 
 (defun header ()
   (format nil "
@@ -295,18 +287,14 @@ using namespace metal;
         (foreign-slot-value mtl-size '(:struct mtlsize) 'height) height
         (foreign-slot-value mtl-size '(:struct mtlsize) 'depth) depth))
 
-(defmethod runtime-invoke-jit-kernel ((runtime MetalRuntime) kernel-info node args)
-  (apply (caten/codegen/jit:compiled-kernel-caller kernel-info) node args))
-
 (defun cmdbuf-start-time (cmdbuf) (msg cmdbuf "GPUStartTime" :double))
 (defun cmdbuf-end-time (cmdbuf) (msg cmdbuf "GPUEndTime" :double))
 (defun cmdbuf-elapsed-time (cmdbuf) (- (cmdbuf-end-time cmdbuf) (cmdbuf-start-time cmdbuf)))
 
 (defmethod invoke ((mp Metal-Program) node &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
-  (let ((params (map 'list #'cons (node-reads node) buffers)) ;; e.g.: (A . 10)
-        (total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
-    (when (> (apply #'* (map 'list #'exprgrid-local-size-int (mp-grid-size mp))) total-max-threads)
+  (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
+    (when (> (apply #'* (mp-grid-size mp)) total-max-threads)
       (error "Error: TODO"))
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
@@ -328,8 +316,8 @@ using namespace metal;
                           (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
       (assert (= (length (mp-grid-size mp)) 3) () "Metal only supports for 3d parallelism!")
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
-        (apply #'load-size gs (map 'list #'(lambda (x) (exprgrid-global-size-int x params)) (mp-grid-size mp)))
-        (apply #'load-size ls (map 'list #'exprgrid-local-size-int (mp-grid-size mp)))
+        (apply #'load-size gs (mp-grid-size mp))
+        (apply #'load-size ls (mp-grid-size mp))
         (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
       (msg encoder "endEncoding" :void)
       (msg command-buffer "setLabel:" :void :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp)))))
@@ -342,12 +330,9 @@ using namespace metal;
 (defun make-metal-caller (mp) `(lambda (node &rest args) (apply #'invoke ,mp node args)))
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
-  (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
-  (with-float-traps-masked t
-    (let* ((code (apply #'concatenate 'string
-                        (append (list (header))
-                                (loop for item in items
-                                      if (getattr item :rendered-object) collect (getattr item :rendered-object))))))
+  ;; (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
+  (float-features:with-float-traps-masked t
+    (let* ((code (apply #'concatenate 'string (append (list (header)) (map 'list #'metal-program items)))))
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[Final Code]:~%~a~%" code))
       (let* ((lib (mtl-compile-source code))
@@ -355,9 +340,10 @@ using namespace metal;
              (mtl-queue (msg device "newCommandQueueWithMaxCommandBufferCount:" :pointer :int 1024)))
         (setf (metal-renderer-device renderer) device)
         (loop for item in items
-              if (getattr item :rendered-object)
-                do (let* ((argtypes (map 'list #'(lambda (x) (getattr x :dtype)) (schedule-item-args item)))
-                          (caller (make-instance
-                                   'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue :argtypes argtypes
-                                   :grid-size (blueprint-gather-grids (getattr item :blueprint) :max-dimension 3))))
-                     (setf (getattr item :compiled-object) (make-metal-caller caller))))))))
+              do (let* ((argtypes (map 'list #'(lambda (x) (getattr x :dtype)) (kernel-args item)))
+                        (caller (make-instance
+                                 'Metal-Program :lib lib :name (kernel-name item) :device device :mtl-queue mtl-queue :argtypes argtypes
+                                                :grid-size `(1 1 1)))) ;; [TODO]
+                   (setf (metal-caller item) #'(lambda (node &rest args) (apply #'invoke caller node args)))))))))
+
+(defmethod kernel-call ((kernel MetalKernel) (runtime MetalRuntime) node args) (apply (metal-caller kernel) node args))

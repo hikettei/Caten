@@ -8,7 +8,7 @@
                (:file "native")
                (:file "clang")
                (:cffi-wrapper-file "helpers/callback" :soname "callback_helper")
-               ;(:file "metal")
+               (:file "metal")
                (:file "cuda")
                (:file "llvm")
                (:file "webgpu")))
