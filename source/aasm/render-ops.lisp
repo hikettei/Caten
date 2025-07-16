@@ -383,3 +383,138 @@ Constraints:
   (loop for sb in simplified-subgraphs do
     (insert-nodes graph (graph-nodes sb)))
   graph)
+;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ngid (gid suffix) (intern (format nil "~a~a" gid suffix)))
+(defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
+  "Tiles the band:
+```
+for (int i=0; i<M; i++) Instance(i)
+```
+===>
+```
+for (int i=0; i<M; i+=32)
+  for (int ii=0; ii<min(M - i, 32); ii++)
+    Instance(i + ii)
+```"
+  (declare (type FastGraph graph) (type node band) (type list tile-sizes))
+  (assert (eql (node-type band) :FOR) () "%ast-tile-band: band must be :FOR, getting ~a" band)
+  (assert (>= (length tile-sizes) 1) () "TileSizes must be larger than 1.")
+  (when (null (getattr band :band)) (assert (= 1 (length tile-sizes)) () "tile-size must be one for non-coincidence band."))
+  (push band bands)
+  (labels ((explore (id band-depth)
+             (when (>= band-depth (length tile-sizes))
+               (return-from explore))
+             (let ((node (id->value graph id)))
+               (assert (and node (eql (node-type node) :FOR)) () "%ast-tile-band: The given tile-sizes ~a is too large (<= ~a)" tile-sizes band-depth)
+               (assert (eql (getattr node :band) (getattr (car bands) :band)) () "%ast-tile-band: ~a and ~a are not coincident." node (car bands))
+               (push node bands)
+               (explore (second (node-reads band)) (1+ band-depth)))))
+    (explore (second (node-reads band)) 1))
+  (assert (= (length bands) (length tile-sizes)) () "tile-sizes and band-depth should correspond.")
+  (setf bands (nreverse bands))
+  (flet ((g (obj)
+           (if (numberp obj)
+               (%iconst obj :dtype :int64)
+               (let ((val (id->value graph obj)))
+                 (if (and val (eql (node-type val) :EXPR))
+                     (car (node-reads val))
+                     obj)))))
+    ;; 1. Create (and supercede w/) new tiled range.
+    (loop for band in bands
+          for tile-size in tile-sizes
+          for idx = (car (node-reads band))
+          for range = (id->value graph idx)
+          for gid = (getattr range :idx)
+          for dtype = (getattr range :dtype)
+          for new-step-id = (gensym "NEWSTEP")
+          for new-step-graph = (with-context (_ (%mul (g tile-size) (g (second (node-reads range))) :id new-step-id)))
+          for new-step-expr = (%expr new-step-id)
+          for range-size-id = (gensym "TILEBOUND")
+          for range-size-graph = (with-context (out (%expr (node->id1 (%min (%sub (g (car (node-reads range))) (ngid idx sp)) (g tile-size))) :out range-size-id)))
+          for range-parent = (make-node :Render :Range (list (ngid idx sp)) (list (car (node-reads range)) (node->id1 new-step-expr)) :idx (ngid gid sp) :dtype dtype)
+          for range-child = (make-node :Render :Range (list (ngid idx sc)) (list range-size-id 1) :idx (ngid gid sc) :dtype dtype)
+          do (insert-nodes graph (list new-step-expr range-parent range-child))
+             (insert-nodes graph (graph-nodes new-step-graph))
+             (insert-nodes graph (graph-nodes range-size-graph)))
+    ;; 2. Create new FOR
+    (let ((next-write-to (car (node-writes (car bands)))))
+      ;; Insert Parents, and then children
+      (dolist (prefix (list sp sc))
+        (loop for band in bands
+              for idx = (car (node-reads band))
+              for range = (id->value graph idx)
+              for prev-body = (gensym "T")
+              for new-band = (if (equal prefix sp) (getattr band :band) (ngid (getattr band :band) cid))
+              for new-for = (make-node :Render :FOR (list next-write-to) (list (ngid idx prefix) prev-body)
+                                       :mark (getattr band :mark) :band new-band)
+              do (insert-nodes graph (list new-for))
+                 (if (eql prefix sp) (push new-for globals) (push new-for locals))
+                 (setf next-write-to prev-body)))
+      ;; Finally insert the body to next-write-to
+      (let* ((innermost (car (last bands)))
+             (body (copy-node (id->value graph (second (node-reads innermost))))))
+        (assert (= (length (node-writes body)) 1))
+        (setf (node-writes body) (copy-list (node-writes body))
+              (node-writes body) (list next-write-to))
+        (insert-nodes graph (list body))))
+    ;; 3. Replace the access to i -> i + ii
+    (loop for band in bands
+          for rng-old = (print (id->value graph (car (node-reads band))))
+          for idx = (car (node-reads band))
+          for idx-new = (%add (ngid idx sp) (ngid idx sc) :id idx)
+          do (insert-nodes graph (list idx-new))
+             (loop for node in (graph-nodes graph)
+                   if (or
+                       (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx))
+                       (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr rng-old :idx)))
+                       (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr rng-old :idx))))
+                     do (let ((idx-new (%add (ngid idx sp) (ngid idx sc) :id (car (node-writes node)))))
+                          (insert-nodes graph (list idx-new)))))
+    (values graph (nreverse globals) (nreverse locals))))
+
+(defun ast-band-tile-gpu (graph band local-sizes)
+  "Tiles the given band and map them into gpu with local-sizes."
+  (flet ((reveal-expr (x)
+           (if (numberp x)
+               x
+               (let ((expr (id->value graph x)))
+                 (assert (and expr (eql (node-type expr) :EXPR)))
+                 (car (node-reads expr))))))
+    (let ((loop-sizes))
+      (multiple-value-bind (graph block-bands thread-bands) (%ast-band-tile graph band local-sizes)
+        (loop for block-band in block-bands
+              for thread-band in thread-bands
+              for size in local-sizes
+              for level upfrom 0
+              for range = (id->value graph (car (node-reads block-band)))
+              for trange = (id->value graph (car (node-reads thread-band)))
+              for body = (id->value graph (second (node-reads block-band)))
+              do (push range loop-sizes)
+                 (insert-nodes
+                  graph
+                  (with-context-nodes
+                      (out
+                       (%bind
+                        (car (node-writes block-band))
+                        (%progn
+                         (%bind
+                          (car (node-writes range))
+                          (%expr (node->id1 (%mul (reveal-expr (second (node-reads range))) (%gid level graph range size)))))
+                         (%bind (car (node-writes trange)) (%expr (node->id1 (%lid level size))))
+                         body))))))
+        (loop for grid-band in thread-bands
+              for band-size in (reverse loop-sizes)
+              for block-band in block-bands
+              for range = (id->value graph (car (node-reads grid-band)))
+              for body = (id->value graph (second (node-reads grid-band)))
+              for level upfrom 0
+              for size in local-sizes
+              do (insert-nodes
+                  graph
+                  (with-context-nodes
+                      (out
+                       (%bind
+                        (car (node-writes grid-band))
+                        (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size)))) body))))))
+        (verify-graph graph)
+        graph))))

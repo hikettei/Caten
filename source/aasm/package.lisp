@@ -90,4 +90,6 @@
   ;; AST
   (:export #:with-blueprint #:simplify-ast)
   ;; ASTOps
-  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%function))
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%function)
+  ;; ScheduleOps
+  (:export #:%ast-band-tile #:ast-band-tile-gpu))

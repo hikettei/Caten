@@ -640,8 +640,9 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                            (setf step (car (node-reads val)))))
                        (fmt "~a~a for (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a~a"
                             (with-output-to-string (out)
-                              (dolist (d (getattr node :directive))
-                                (format out "@~a(~a) " (caten/codegen/polyhedral::directive-type d) (caten/codegen/polyhedral::directive-amount d))))
+                              (let ((d (getattr node :directive)))
+                                (when d
+                                  (format out "@~a(~a) " (caten/codegen/polyhedral::directive-type d) (caten/codegen/polyhedral::directive-amount d)))))
                             (if (eql :noopt (getattr node :mark)) "" (format nil "~(~a~)" (getattr node :mark)))
                             bind bind (e size) bind (e step)
                             (if (getattr node :is-empty) "/* empty */" "")
