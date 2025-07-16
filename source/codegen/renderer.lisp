@@ -341,8 +341,9 @@
   (%render-const renderer (getattr node :idx)))
 
 (defmethod %render-node ((renderer CStyle-Renderer) id node)
-  (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
-
+  (if (next-method-p)
+      (call-next-method)
+      (format nil "[Error Rendering(Not Defined): ~a~a]" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node)))))
 ;; ~~ Common behaviours ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod %render-node ((renderer Renderer) (id (eql :EXPR)) node)
   (%render-const renderer (car (node-writes node))))

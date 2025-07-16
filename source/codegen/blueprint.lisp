@@ -642,7 +642,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                             (with-output-to-string (out)
                               (let ((d (getattr node :directive)))
                                 (when d
-                                  (format out "@~a(~a) " (caten/codegen/polyhedral::directive-type d) (caten/codegen/polyhedral::directive-amount d)))))
+                                  (format out "@~a(~a) " (uiop:symbol-call :caten/codegen/polyhedral :directive-type d) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount d)))))
                             (if (eql :noopt (getattr node :mark)) "" (format nil "~(~a~)" (getattr node :mark)))
                             bind bind (e size) bind (e step)
                             (if (getattr node :is-empty) "/* empty */" "")

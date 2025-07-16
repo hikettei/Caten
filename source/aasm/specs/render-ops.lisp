@@ -198,7 +198,9 @@ Corresponds to:
                  (rank  :type (integer 0 3))
                  (dtype :type keyword)
                  (size))
-         :type-relay (ast-type-map :SPACE))
+         :type-relay #'(lambda (id->type node)
+                         (declare (ignore id->type))
+                         (list (make-tensor-relay nil nil (getattr node :dtype) nil))))
          
 (defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
          :slots ((dtype :type keyword) (size :type integer))

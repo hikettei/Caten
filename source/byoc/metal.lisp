@@ -198,7 +198,7 @@
                (f val) (push (node-id val) seen))
              s)
            (e (id)
-             (let ((renderer (make-instance 'CStyle-Renderer :graph graph)))
+             (let ((renderer (make-instance 'Metal-Renderer :graph graph)))
                (render-node renderer id)))
            (f (node)
              (case (node-type node)

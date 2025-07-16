@@ -10,6 +10,7 @@
 
 (in-package :caten/codegen/polyhedral)
 
+(defparameter *allow-compilation-during-beam* t)
 (defparameter *+inf* (expt 2 32))
 ;; ~~ Directive ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Directive ()
@@ -959,9 +960,7 @@ Returns T if the current schedule does not break any dependences in dep."
     ))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :TileGPU)) bands blueprint)
-  (print "On Rewriting")
-  (print bands)
-  (%ast-band-tile blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
+  (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
 
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
@@ -1012,7 +1011,9 @@ Returns T if the current schedule does not break any dependences in dep."
       (handler-case (kernel-employ-blueprint polyhedral node renderer blueprint base-name base-args)
         ;; 99% of compilation failing is due to scalar -> tensor mutation.
         ;; but 99% of failing case is worthless so we can ignore it.
-        (error (c) (warn "Failed compilation due to ~a" c) (return-from polyhedral-ir-evaluate *+inf*)))
+        (error (c)
+          (funcall (if *allow-compilation-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
+          (return-from polyhedral-ir-evaluate *+inf*)))
       (format t "~%[Kernel]:~%==========~%")
       ;; (caten/codegen/blueprint::print-blueprint blueprint t)
       (print (reverse (poly-cmd-history polyhedral)))
