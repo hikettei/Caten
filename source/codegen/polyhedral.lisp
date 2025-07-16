@@ -412,8 +412,8 @@
     (labels ((rec (node count)
                (declare (type node node node) (type fixnum count))
                (assert (eql (node-type node) :FOR))
-               (setf (getattr node :band) band-id)
-               (push directive (getattr node :directive)) ;; multiple directives can be applied
+               (setf (getattr node :band) band-id
+                     (getattr node :directive) directive) ;; multiple directives can be applied
                (when (< count depth) (rec (id->value *ctx* (second (node-reads node))) (1+ count)))))
       (rec user 1))
     user))
@@ -673,17 +673,35 @@
         (simplify-ast blueprint)
         (values blueprint extra-allocs extra-args)))))
 
+(defun apply-directives (blueprint)
+  (let ((bands (make-hash-table)))
+    (loop for node in (tpsort-graph blueprint)
+          if (and (eql (node-type node) :FOR) (getattr node :band) (getattr node :directive))
+            do (if (gethash (getattr node :band) bands)
+                   (push node (gethash (getattr node :band) bands))
+                   (setf (gethash (getattr node :band) bands) (list node))))
+    ;; Rewrite by each directive
+    (maphash
+     #'(lambda (band-id bands)
+         (let ((new-bp (optrule-apply-transform-on-blueprint (intern (directive-type (getattr (car bands) :directive)) "KEYWORD") (reverse bands) blueprint)))
+           (assert (graph-p new-bp) () "optrule-apply-transform-on-blueprint must return a Graph, when processing ~a, ~a" (getattr (car bands) :directive) band-id)
+           (setf blueprint new-bp)))
+     bands)
+    (simplify-ast blueprint)
+    blueprint))
+
 (defun get-blueprint-from-polyhedral (polyhedral)
   "Convert ISL polyhedral representation back to blueprint graph"
   (declare (type Polyhedral-IR polyhedral))
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
     (let ((pctx (make-parse-ctx (poly-blueprint polyhedral))))
-      (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
-       pctx
-       (poly-ctx polyhedral)
-       (caten/aasm::ast-simplify-expr-subgraph
-        (with-blueprint () (%progn (parse-isl-ast pctx (isl::ast-node-handle ast)))))))))
+      (apply-directives
+       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
+        pctx
+        (poly-ctx polyhedral)
+        (caten/aasm::ast-simplify-expr-subgraph
+         (with-blueprint () (%progn (parse-isl-ast pctx (isl::ast-node-handle ast))))))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -699,7 +717,7 @@
 
 (defgeneric optrule-generate-search-space (polyhedral bands optrule-trigger))
 (defgeneric optrule-apply-transform-on-polyhedral (polyhedral optrule)) ;; Insert Directive
-(defgeneric optrule-apply-transform-on-blueprint (polyhedral optrule))  ;; Directive Parse
+(defgeneric optrule-apply-transform-on-blueprint (directive-id bands blueprint))  ;; Directive Parse
 
 (defun apply-optimization (polyhedral optrule)
   (declare (type Polyhedral-IR polyhedral) (type OptimizationRule optrule))
@@ -790,7 +808,6 @@ Returns T if the current schedule does not break any dependences in dep."
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
-(defmethod optrule-apply-transform-on-blueprint (poly (optrule NoOpt)) nil)
 
 (defclass Reschedule (OptimizationRule)
   ((outer-coincidence :initarg :outer-coincidence :initform 0)
@@ -831,8 +848,6 @@ Returns T if the current schedule does not break any dependences in dep."
     (set-option "schedule_whole_component" schedule-whole-component))
   (setf (poly-schedule poly) (schedule-constraints-compute-schedule (poly-make-schedule-constraints poly))))
 
-(defmethod optrule-apply-transform-on-blueprint (poly (optrule Reschedule)) nil)
-
 (defun schedule-node-get-band-depth (band) (space-dim (schedule-node-band-get-space band) 3))
 
 (defun permutations (lst)
@@ -872,7 +887,6 @@ Returns T if the current schedule does not break any dependences in dep."
                   collect (make-instance 'Interchange :axis nth :band band :order perm)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange)) nil) ;; [TODO]
-(defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange)) nil)
 ;; [TODO] FlashAttention, This will rewrite a graph
 (defclass FuseWithParent (OptimizationRule) nil)
 
@@ -900,8 +914,6 @@ Returns T if the current schedule does not break any dependences in dep."
    (poly-schedule poly)
    (schedule-node-get-schedule
     (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt))))))
-
-(defmethod optrule-apply-transform-on-blueprint (poly (opt Tile)))
 
 (defclass TileGPU (OptimizationRule)
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)
@@ -932,7 +944,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
          (band (schedule-node-insert-mark
                 (optrule-band opt)
-                (directive->id (directive "TileGPU" (tile-gpu-local-size opt) depth nil))))
+                (directive->id (directive "TILEGPU" (tile-gpu-local-size opt) depth nil))))
          (band (if (tile-gpu-band-split-at opt)
                    (schedule-node-band-split band (tile-gpu-band-split-at opt))
                    band)))
@@ -945,6 +957,11 @@ Returns T if the current schedule does not break any dependences in dep."
     ;; - Is it ok to parse coincident? there's no wrong thing right?
     ;; - Once the optimization is applied on the gpu; delete them from an rewritable band
     ))
+
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :TileGPU)) bands blueprint)
+  (print "On Rewriting")
+  (print bands)
+  (%ast-band-tile blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
 
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
