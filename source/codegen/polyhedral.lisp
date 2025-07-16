@@ -374,7 +374,8 @@
   (gid2offset (make-hash-table) :type hash-table)
   (variable-table (make-hash-table) :type hash-table)
   (scop-ctx (make-scop-ctx-from-blueprint blueprint) :type ctx)
-  (expr2args (make-hash-table) :type hash-table))
+  (expr2args (make-hash-table) :type hash-table)
+  (band-cnt 0 :type fixnum))
 
 (defun pctx-register-gid (pctx id range offset)
   (declare (type parse-ctx pctx) (type symbol id))
@@ -404,8 +405,17 @@
 (defun parse-isl-ast-mark (ctx ast)
   (declare (type cffi:foreign-pointer ast))
   (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
-         (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast))))
-    (print directive)
+         (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast)))
+         (depth (directive-depth directive))
+         (band-id (intern (format nil "B~a" (pctx-band-cnt ctx)))))
+    (incf (pctx-band-cnt ctx))
+    (labels ((rec (node count)
+               (declare (type node node node) (type fixnum count))
+               (assert (eql (node-type node) :FOR))
+               (setf (getattr node :band) band-id)
+               (push directive (getattr node :directive)) ;; multiple directives can be applied
+               (when (< count depth) (rec (id->value *ctx* (second (node-reads node))) (1+ count)))))
+      (rec user 1))
     user))
   
 (defun parse-isl-ast-block (ctx ast)
@@ -971,6 +981,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (setf (kernel-blueprint (getattr node :kernel-info)) blueprint
         (kernel-args (getattr node :kernel-info)) (append base-kernel-args (poly-extra-kernel-args poly))
         (kernel-name (getattr node :kernel-info)) (intern (format nil "~a_BEAM_~a" base-kernel-name (gensym))))
+  (caten/codegen/blueprint:print-blueprint blueprint t)
   (caten/codegen/byoc:%render-kernel renderer (getattr node :kernel-info))
   (caten/codegen/byoc:%compile-kernel renderer (list (getattr node :kernel-info)) nil)
   node)
