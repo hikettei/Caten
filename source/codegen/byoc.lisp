@@ -10,7 +10,8 @@
    #:%render-kernel #:%render-const #:%render-node #:%compile-kernel)
   ;; AutoScheduler
   (:export
-   #:define-auto-scheduler) ;; [TODO]
+   #:define-auto-scheduler
+   #:auto-scheduler-strategy)
   ;; Backend
   (:export
    #:define-backend
@@ -59,18 +60,20 @@
 (defgeneric %render-kernel (renderer abstract-kernel))
 (defgeneric %compile-kernel (renderer items dir))
 ;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Auto-Scheduler () ((strategy :type Auto-Scheduler-Strategy)))
+(defclass Auto-Scheduler () ((strategy :accessor Auto-Scheduler-Strategy)))
 
 (defstruct Strategy
+  (n-profile 10)
   (use-tile-gpu 0) (global-max) (local-max) (shared-max)
   (use-parallel 0))
 
 (defmacro define-auto-scheduler
-  (name &key
-          (use-tile-gpu 0) (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
-          (use-parallel 0) ;; Configurations for CPU Coincidence
-          ;; [TODO] Vectorize, Upcast, TileSize, etc
-          )
+    (name &key
+            (n-profile 1)
+            (use-tile-gpu 0) (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
+            (use-parallel 0) ;; Configurations for CPU Coincidence
+            ;; [TODO] Vectorize, Upcast, TileSize, etc
+            )
   "The macro `define-auto-scheduler` will declare an optimization strategy for the Caten Auto Scheduler.
 
 - use-tile-gpu[fixnum] Set > 1 to allow the compiler to tile bands to generate a parallelized gpu kernel. The value will be the maximum rank of tiling.
@@ -95,6 +98,7 @@
      (defmethod initialize-instance :after ((auto-scheduler ,name) &key)
        (setf (slot-value auto-scheduler 'strategy)
              (make-strategy
+              :n-profile ,n-profile
               :use-tile-gpu ,use-tile-gpu :global-max ',global-max :local-max ',local-max :shared-max ,shared-max :use-parallel ,use-parallel)))))
 ;; ~~ Backend ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric get-backend-buffer (backend))

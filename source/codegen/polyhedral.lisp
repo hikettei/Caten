@@ -907,45 +907,53 @@ Returns T if the current schedule does not break any dependences in dep."
         (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime x)) extra-args)
         total))))
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 1) (max-iters 5) (n 10) (threshold 1e-5)
-                                                         (base-args (kernel-args (getattr node :kernel-info)))
-                                                         (base-name (kernel-name (getattr node :kernel-info))))
+(defun realize-node-with-autotuning (runtime node args
+                                     &aux
+                                       (base-args (kernel-args (getattr node :kernel-info)))
+                                       (base-name (kernel-name (getattr node :kernel-info)))
+                                       (beam-width (ctx:getenv :BEAM))
+                                       (max-iters 5) ;; n_band * 3
+                                       (threshold 1e-5)
+                                       (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
+                                       (strategy (auto-scheduler-strategy auto-scheduler)))
+                                                         
   ;; BEAM Search
   ;; Parameters:
   ;;  - n
   ;;  - beam_width
   ;;  - max_iters
-  (with-isl-context
-    (labels ((make-candidate (polyhedral-ir)
-               (declare (type Polyhedral-IR polyhedral-ir))
-               (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) args n base-name base-args))))
-      (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
-             (beam (list (cons origin *+inf*))))
-        (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
-          (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
-          (loop for (kernel . score) in beam do
-            (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
-              (push (make-candidate new-kernel) candidates)))
-          (when (null candidates) (return-from beam)) ;; no new candidates -> exit
-          (setf candidates (sort candidates #'< :key #'cdr))
-          (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
-            (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
-              (setf beam new-beam)
-              (return-from beam))
-            (setf beam new-beam)))
-        (let ((best-kernel (car beam)))
-          (print "BEST KERNEL IS")
-          (print best-kernel)
-          (kernel-employ-blueprint
-           (car best-kernel) node
-           (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))
-           (poly-bp-cache (car best-kernel))
-           base-name base-args)
-          (loop for extra-arg in (poly-extra-allocs (car best-kernel))
-                do (insert-nodes (uiop:symbol-call :caten/runtime/runtime :runtime-graph runtime) (list extra-arg)))
-          (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
-          ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
-          (apply #'values (subseq args 0 (length (caten/air:node-writes node)))))))))
+  (with-slots ((n caten/codegen/byoc::n-profile)) strategy
+    (with-isl-context
+      (labels ((make-candidate (polyhedral-ir)
+                 (declare (type Polyhedral-IR polyhedral-ir))
+                 (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) args n base-name base-args))))
+        (let* ((origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
+               (beam (list (cons origin *+inf*))))
+          (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
+            (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
+            (loop for (kernel . score) in beam do
+              (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
+                (push (make-candidate new-kernel) candidates)))
+            (when (null candidates) (return-from beam)) ;; no new candidates -> exit
+            (setf candidates (sort candidates #'< :key #'cdr))
+            (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
+              (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
+                (setf beam new-beam)
+                (return-from beam))
+              (setf beam new-beam)))
+          (let ((best-kernel (car beam)))
+            (print "BEST KERNEL IS")
+            (print best-kernel)
+            (kernel-employ-blueprint
+             (car best-kernel) node
+             (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))
+             (poly-bp-cache (car best-kernel))
+             base-name base-args)
+            (loop for extra-arg in (poly-extra-allocs (car best-kernel))
+                  do (insert-nodes (uiop:symbol-call :caten/runtime/runtime :runtime-graph runtime) (list extra-arg)))
+            (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
+            ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
+            (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
 ;; [TODO]
 ;; - [x] Bring Back Metal Renderer
 ;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
