@@ -5,7 +5,7 @@
   :defsystem-depends-on ("cffi-grovel")
   :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features" "babel" "cl-pack" "cl-cpus" "lparallel")
   :components ((:file "lisp")
-               ;(:file "native")
+               (:file "native")
                (:file "clang")
                (:cffi-wrapper-file "helpers/callback" :soname "callback_helper")
                ;(:file "metal")

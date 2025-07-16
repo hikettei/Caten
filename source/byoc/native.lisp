@@ -1,24 +1,23 @@
-(defpackage :caten/byoc/native
-  (:documentation "BACKEND=NATIVE to use Lisp JIT")
-  (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
-   :caten/codegen/backend :caten/codegen/renderer :caten/air :caten/codegen/runner
-   :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
-  (:import-from
-   :caten/codegen/search
-   #:define-auto-scheduler)
-  (:import-from
-   :caten/byoc/lisp
-   #:LispBuffer))
+(defpackage :caten/byoc/lisp
+  (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
+        :caten/codegen/byoc :caten/codegen/renderer :caten/air
+        :caten/aasm :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
+  (:import-from :caten/byoc/lisp #:LispBuffer))
 
-(in-package :caten/byoc/native)
-;; [TODO]
-;; - [ ] Inline all mathematical functions! (compile nil generated-code) will produce no errors. (PRs are welcome)
-;;   - [ ] Add proper type declarations in %render-node, from given read-type-relay.
-(define-auto-scheduler Native-Auto-Scheduler :use-parallel 1)
+(in-package :caten/byoc/lisp)
+
 (defclass NativeRuntime (GraphRuntime) nil)
-(defclass NativeKernel (AbstractKernel) nil)
-(define-backend :native LispBuffer NativeRuntime LispStyle-Renderer NativeKernel Native-Auto-Scheduler t)
+(defclass NativeKernel (AbstractKernel)
+  ((code :accessor native-code)
+   (caller :accessor native-caller)))
+(define-auto-scheduler Native-Auto-Scheduler :use-parallel 1)
 (defclass LispStyle-Renderer (Renderer) nil)
+(define-backend :native LispBuffer NativeRuntime LispStyle-Renderer NativeKernel Native-Auto-Scheduler t)
+
+(defun const (obj)
+  (if (symbolp obj)
+      (intern (string-upcase (princ-to-string obj)))
+      obj))
 
 (defun global-type-spec (node)
   (declare (type node node))
@@ -29,37 +28,30 @@
          (dtype->lisp (getattr node :dtype)))
        ,(const (car (node-writes node)))))
 
-(defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
-  (let* ((args (schedule-item-args schedule-item)))
-    `(lambda (,@(map 'list #'(lambda (x) (const (car (node-writes x)))) args))
-       (declare (optimize (speed 3) (safety 0)) ,@(map 'list #'global-type-spec args))
-       ,(recursive-render-bp (getattr schedule-item :blueprint)))))
-
 (defun wrap-with-caller (kernel body &aux (args (gensym)))
   `(lambda (&rest ,args &aux (lparallel:*kernel* ,kernel))
      (caten/runtime/profile:with-real-time
        (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args)))))
 
+(defmethod %render-kernel ((renderer LispStyle-Renderer) (item NativeKernel))
+  (let* ((args (kernel-args item)))
+    (setf (native-code item)
+          `(lambda (,@(map 'list #'(lambda (x) (const (car (node-writes x)))) args))
+             (declare (optimize (speed 3) (safety 0)) ,@(map 'list #'global-type-spec args))
+             ,(recursive-render-bp (kernel-blueprint item))))))
+
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
   (when (>= (ctx:getenv :JIT_DEBUG) 3)
     (format t "[Final Code]:~%")
     (dolist (item items)
-      (when (getattr item :rendered-object)
-        (format t "~a"
-                (with-output-to-string (tmp)
-                  ;; (format tmp "~%[Blueprint: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
-                  (disassemble (compile nil (getattr item :rendered-object)) :stream tmp)
-                  (format tmp "~%```~%"))))))
+      (format t "~a"
+              (with-output-to-string (tmp)
+                ;; (format tmp "~%[Blueprint: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
+                (disassemble (compile nil (native-code item)) :stream tmp)
+                (format tmp "~%```~%")))))
   (let ((kernel (lparallel:make-kernel (cl-cpus:get-number-of-processors))))
     (dolist (item items)
-      (when (getattr item :rendered-object)
-        (setf (getattr item :compiled-object) (wrap-with-caller kernel (getattr item :rendered-object))
-              (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object)))))))
-
-(defun const (obj)
-  (if (symbolp obj)
-      (intern (string-upcase (princ-to-string obj)))
-      obj))
+      (setf (native-caller item) (compile nil (wrap-with-caller kernel (native-code item)))))))
 
 (defmethod %render-const ((renderer LispStyle-Renderer) object) (const object))
 ;; Binary
@@ -68,10 +60,14 @@
                 (let ((lhs (render-node renderer (nth ,(+ 0 offset) (node-reads node))))
                       (rhs (render-node renderer (nth ,(+ 1 offset) (node-reads node))))
                       (wrap-around-p (getattr node :wrap-around :allow-undefined t))
-                      (max (caten/common.dtype:dtype/max (buffer-dtype (car (relay-writes (read-type-relay node)))))))
-                  (if wrap-around-p
-                      (list 'mod (list ',op lhs rhs) (1+ max))
-                      (list ',op lhs rhs))))))
+                      (max (caten/common.dtype:dtype/max (tensor-relay-dtype (car (relay-writes (read-type-relay node))))))
+                      (outtype (dtype->lisp (tensor-relay-dtype (car (relay-writes (read-type-relay node))))))
+                      (lhstype (dtype->lisp (tensor-relay-dtype (nth ,(+ 0 offset) (relay-reads (read-type-relay node))))))
+                      (rhstype (dtype->lisp (tensor-relay-dtype (nth ,(+ 1 offset) (relay-reads (read-type-relay node)))))))
+                  `(the ,outtype 
+                        ,(if wrap-around-p
+                             (list 'mod (list ',op `(the ,lhstype ,lhs) `(the ,rhstype rhs)) (1+ max))
+                             (list ',op `(the ,lhstype ,lhs) `(the ,rhstype ,rhs))))))))
   (def :ADD +)
   (def :MUL *)
   (def :IDIV floor)
@@ -83,7 +79,7 @@
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
                 (let ((lhs (render-node renderer (nth 0 (node-reads node))))
                       (rhs (render-node renderer (nth 1 (node-reads node))))
-                      (dtype (buffer-dtype (car (relay-writes (read-type-relay node))))))
+                      (dtype (tensor-relay-dtype (car (relay-writes (read-type-relay node))))))
                   (if (eql dtype :bool)
                       `(,',op-boolean ,lhs ,rhs)
                       `(,',op-number ,lhs ,rhs))))))
@@ -93,8 +89,9 @@
 
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :!=)) node)
   (let ((lhs (render-node renderer (nth 1 (node-reads node))))
-        (rhs (render-node renderer (nth 2 (node-reads node)))))
-    `(not (= ,lhs ,rhs))))
+        (rhs (render-node renderer (nth 2 (node-reads node))))
+        (type-map (map 'list (alexandria:compose #'dtype->lisp #'tensor-relay-dtype) (relay-reads (read-type-relay node)))))
+    `(the boolean (not (= (the ,(nth 1 type-map) ,lhs) (the ,(nth 2 type-map) ,rhs))))))
 ;; Unary
 (declaim (inline log2 exp2))
 (defun log2 (x) (log x 2))
@@ -102,8 +99,8 @@
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
                 (let ((x (render-node renderer (nth 0 (node-reads node))))
-                      (rt (dtype->lisp (buffer-dtype (car (relay-reads (read-type-relay node))))))
-                      (wt (dtype->lisp (buffer-dtype (car (relay-writes (read-type-relay node)))))))
+                      (rt (dtype->lisp (tensor-relay-dtype (car (relay-reads (read-type-relay node))))))
+                      (wt (dtype->lisp (tensor-relay-dtype (car (relay-writes (read-type-relay node)))))))
                   (when (and (eql id :SQRT) (eql rt 'single-float))
                     (setf rt `(,rt 0.0)))
                   (list 'the wt (list ',op (list 'the rt x)))))))
@@ -117,15 +114,18 @@
 
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :LOAD)) node) (const (getattr node :value)))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Aref)) node)
-  (let ((idx (render-aref-index renderer node)))
-    (if idx
-        `(aref ,(const (getattr node :storage-id)) ,idx)
-        (const (getattr node :storage-id)))))
+  (let* ((p (id->value (renderer-graph renderer) (car (node-reads node))))
+         (idx (if (or (null p) (not (eql (node-type p) :BIND))) (car (node-reads node)) (getattr p :value)))
+         (access (render-node renderer (second (node-reads node)))))
+    `(aref ,(const idx) ,access)))
+(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :SETF)) node)
+  `(setf ,(render-node renderer (car (node-reads node))) ,(render-node renderer (second (node-reads node)))))
+(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :BIND)) node) (const (getattr node :value)))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Move)) node) (render-node renderer (second (node-reads node))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Store)) node) (render-node renderer (second (node-reads node))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Allocate)) node) nil)
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Cast)) node)
-  (let ((dtype-from (buffer-dtype (second (relay-reads (read-type-relay node)))))
+  (let ((dtype-from (tensor-relay-dtype (second (relay-reads (read-type-relay node)))))
         (dtype-to (getattr node :dtype))
         (dtype-to-lisp (caten/common.dtype:dtype->lisp (getattr node :dtype)))
         (x (render-node renderer (second (node-reads node)))))
@@ -138,76 +138,91 @@
       ((:int64 :int32 :int16 :int8 :uint64 :uint32 :uint16 :uint8)
        ;; int -> float/int
        `(coerce ,x ',dtype-to-lisp)))))
-
-(defmethod  %render-node ((renderer LispStyle-Renderer) (id (eql :Index-Components)) node)
-  (let ((out-dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
-        (components (render-expr 'LispStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer)))))
-    (case out-dtype
-      ((:float64 :float32) `(coerce ,components ',(dtype->lisp out-dtype)))
-      (otherwise components))))
+(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :LET)) node) (const (car (node-writes node))))
 
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :WHERE)) node)
-  `(if ,(render-node renderer (nth 0 (node-reads node))) ,(render-node renderer (nth 1 (node-reads node))) ,(render-node renderer (nth 2 (node-reads node)))))
+  (let ((types (map 'list (alexandria:compose #'dtype->lisp #'tensor-relay-dtype) (relay-reads (read-type-relay node)))))
+    `(the ,(second types) (if (the ,(car types) ,(render-node renderer (nth 0 (node-reads node)))) (the ,(second types) ,(render-node renderer (nth 1 (node-reads node)))) (the ,(third types) ,(render-node renderer (nth 2 (node-reads node))))))))
 
-(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :WMMA)) node)
-  (let ((x (render-node renderer (nth 0 (node-reads node))))
-        (y (render-node renderer (nth 1 (node-reads node))))
-        (z (render-node renderer (nth 2 (node-reads node)))))
-    `(+ ,x (* ,y ,z))))
+(defnode (:LispRender :LET) () "" :slots ((dtype)))
+(defun %let (form value rest-body dtype)
+  (declare (type list rest-body))
+  (emit (make-node :LispRender :LET (list form) (append (list value) rest-body) :dtype dtype)))
 
-(defun extract-scop-from-loop (for)
-  (declare (type node for))
-  (assert (eql (node-type for) :FOR))
-  (let ((below (expr-detach-loop-bound (getattr for :below) :allow-failed t)))
-    (when (and below (expr-equal-to (getattr for :upfrom) 0) (expr-equal-to (getattr for :by) 1))
-      below)))
+(defun recursive-render-bp (graph &aux (seen) (graph (->fast-graph (copy-graph graph))))
+  (funcall
+   (Simplifier
+       ()
+       ((:PROGN (~ _))
+        ->
+        ((node graph)
+         (let* ((found-p)
+                (exprs
+                  (loop for r in (node-reads node) for v = (id->value graph r) for s = (when v (id->value graph (car (node-reads v))))
+                        if (and v (eql (node-type v) :EXPR) (not (eql (node-type s) :SETF)))
+                          collect (progn (setf found-p t) (cons v (tensor-relay-dtype (car (relay-reads (read-type-relay v))))))
+                        else
+                          collect r)))
+           (when found-p
+             (with-context-nodes
+                 (out (let ((stack))
+                        (loop for e in (reverse exprs)
+                              if (consp e)
+                                do (setf stack (list (node->id (%let (car (node-writes (car e))) (car (node-reads (car e))) stack (cdr e)))))
+                              else
+                                do (push e stack))
+                        (apply #'%progn stack)))))))))
+   graph)
+  (labels ((r (s &aux (val (id->value graph s)))
+             (if (and val (null (find (node-id val) seen)))
+                 (prog1 (f val) (push (node-id val) seen))
+                 s))
+           (e (id)
+             (let ((renderer (make-instance 'LispStyle-Renderer :graph graph)))
+               (render-node renderer id)))
+           (f (node)
+             (case (node-type node)
+               (:PROGN
+                 `(progn ,@(map 'list #'r (node-reads node))))
+               (:EXPR
+                (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                    (e (car (node-reads node)))
+                    (error "EXPR w/o SETF should be rewritten as LET by LispStyleRenderer.")))
+               (:LET
+                 `(let ((,(const (car (node-writes node))) ,(e (car (node-reads node)))))
+                    (declare (type ,(dtype->lisp (getattr node :dtype)) ,(const (car (node-writes node)))))
+                    ,@(map 'list #'r (cdr (node-reads node)))))
+               (:DEFINE-GLOBAL) (:RANGE) (:ALLOCATE) ;; [TODO] Add a simplifier which removes :DEFINE-GLOBAL, RANGE, ALLOCATE from :PROGN.reads
+               (:FOR
+                (multiple-value-bind (range body) (apply #'values (node-reads node))
+                  (setf range (id->value graph range))
+                  (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
+                  (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
+                    (when (symbolp size)
+                      (let ((val (id->value graph size)))
+                        (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
+                        (setf size (e (car (node-reads val))))))
+                    (when (symbolp step)
+                      (let ((val (id->value graph step)))
+                        (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
+                        (setf step (e (car (node-reads val))))))
+                    ;; [TODO] parallel!
+                    (if (eql step 1)
+                        `(dotimes (,(const bind) ,size) ,(r body))
+                        (let ((tmp (gensym)))
+                          ;; for (i=0; i<125; i+=64) 64,
+                          `(dotimes (,tmp (floor ,size ,step))
+                             (let ((,(const bind) (* ,tmp ,step)))
+                               ,(r body))))))))
+               (:IF
+                (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                  (setf cond (id->value graph cond))
+                  (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                  `(if ,(e (car (node-reads cond))) ,(r body))))
+               (:BARRIER (error "thread barrier is not supported on clang"))
+               (:DEFINE-SHARED-MEMORY (error "shared memory is not supported on clang"))
+               (otherwise (error "The node ~a is not a supported renderop by clang" node)))))
+    (f (id->value graph (car (graph-outputs graph))))))
 
-(defun recursive-render-bp (rest-blueprints)
-  (let ((bp (car rest-blueprints)))
-    (when (null bp) (return-from recursive-render-bp nil))
-    (ecase (node-type bp)
-      (:FOR
-       (let* ((endfor (position-if #'(lambda (x) (and (eql (node-type x) :ENDFOR) (equal (getattr x :idx) (getattr bp :idx)))) rest-blueprints)))
-         (assert endfor () "recursive-render-bp: :FOR without :ENDFOR is not allowed. Malformed blueprint?")
-         (let ((below (extract-scop-from-loop bp)))
-           (if below
-               `(progn
-                  (,(if (eql (getattr bp :scope) :local) 'dotimes 'lparallel:pdotimes) (,(const (intern (princ-to-string (getattr bp :idx)))) ,(render-expr 'LispStyle-Renderer below))
-                    ,(recursive-render-bp (subseq rest-blueprints 1 endfor)))
-                  ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))
-               (progn
-                 (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but scheduled as local because the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
-                 `(progn
-                    (loop with ,(const (intern (princ-to-string (getattr bp :idx)))) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
-                          while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
-                          do ,(recursive-render-bp (subseq rest-blueprints 1 endfor))
-                             (incf ,(const (intern (princ-to-string (getattr bp :idx)))) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
-                    ,(recursive-render-bp (subseq rest-blueprints (1+ endfor)))))))))
-      (:ENDFOR
-       (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
-      (:IF
-       (let* ((endif (position-if #'(lambda (x) (and (eql (node-type x) :ENDIF) (equal (getattr x :idx) (getattr bp :idx)))) rest-blueprints)))
-         (assert endif () "recursive-render-bp: :IF without :ENDIF is not allowed. Malformed blueprint?")
-         (let ((condition (render-expr 'LispStyle-Renderer (getattr bp :condition))))
-           `(progn
-              (when ,condition
-                ,(recursive-render-bp (subseq rest-blueprints 1 endif)))
-              ,(recursive-render-bp (subseq rest-blueprints (1+ endif)))))))
-      (:ENDIF
-       (error ":ENDIF should not be appeared here. Malformed blueprint?"))
-      (:EXPR
-       (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
-             (id (const (car (node-writes bp))))
-             (dtype (buffer-dtype (car (relay-writes (read-type-relay bp)))))
-             (decl-p (car (getattr bp :declare-type))))
-         `(,@(if decl-p `(let ((,id ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))) '(progn))
-           ,@(if decl-p `((declare (type ,(dtype->lisp dtype) ,id))))
-           ,(when (null decl-p)
-              `(setf ,(if write-index `(aref ,id ,write-index) id) ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))
-           ,(recursive-render-bp (cdr rest-blueprints)))))
-      (:BARRIER (error "thread barrier is not supported on the native backend."))
-      (:DEFINE-SHARED-MEMORY
-       `(let ((,(car (node-writes bp)) (make-array (list ,(getattr bp :size)) :element-type ',(dtype->lisp (getattr bp :dtype)))))
-          ,(recursive-render-bp (cdr rest-blueprints))))
-      (:DEFINE-GLOBAL
-       (recursive-render-bp (cdr rest-blueprints))))))
+(defmethod kernel-call ((kernel NativeKernel) (runtime NativeRuntime) node args)
+  (apply (native-caller kernel) args))

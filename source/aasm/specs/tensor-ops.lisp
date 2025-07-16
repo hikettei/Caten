@@ -2,7 +2,7 @@
 ;; = [Summary of ops in caten/aasm] ===================================
 ;; UnaryOps   | {NEG, RECIP, SIN, EXP2, LOG2, SQRT, NOT}       | 7 Ops
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
-;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops
+;; TernaryOps | {!=, <, WHERE}                                 | 3 Ops
 ;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
 ;; Indexing   | {INDEX-COMPONENTS}                             | 1 Op(s)
 ;; JIT        | {SPACE}                                        | 1 OP(s)
@@ -290,18 +290,6 @@ out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
 "
 	 :placeholder 1
          :type-relay (make-type-relay 1))
-
-(defnode (:TernaryOps :WMMA) (TernaryOps JITAble)
-	 "The node :WMMA is generated during optimization (simplifiers.lisp) by AJIT and represents a fused computation of :ADD and :MUL. WMMA is not generated during VM execution.
-
-WMMA is used to optimize the gemm computation:
-```
-WMMA(c, a, b) is the equivalent to:
-c += a * b      (if reduction = t)
-out = c + a * b (if reduction = nil)
-```"
-	 :slots ((reduction))
-         :type-relay (make-type-relay 0))
 
 (defclass BufferOps ()
   nil

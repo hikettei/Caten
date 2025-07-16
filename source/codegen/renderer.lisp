@@ -163,12 +163,6 @@
   (def :OR " or ")
   (def :XOR " xor "))
 
-(defmethod %render-node ((renderer Default-Renderer) (id (eql :WMMA)) node)
-  (format nil "~a+~a*~a"
-	  (render-node renderer (nth 0 (node-reads node)))
-	  (render-node renderer (nth 1 (node-reads node)))
-	  (render-node renderer (nth 2 (node-reads node)))))
-
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
                 (format nil "~a(~a, ~a)"
@@ -275,12 +269,6 @@
   (def :OR " | ")
   (def :XOR " ^ "))
 
-(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WMMA)) node)
-  (format nil "~a+~a*~a"
-	  (render-node renderer (nth 0 (node-reads node)))
-	  (render-node renderer (nth 1 (node-reads node)))
-	  (render-node renderer (nth 2 (node-reads node)))))
-
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
                 (format nil "~a(~a, ~a)"
@@ -337,20 +325,20 @@
           (render-node renderer (second (node-reads node)))
           (render-node renderer (third (node-reads node)))))
 
-(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RANGE)) node)
-  (%render-const renderer (getattr node :idx)))
-
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :SETF)) node)
   (format nil "~a = ~a" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :BIND)) node)
   (format nil "~a" (%render-const renderer (getattr node :value))))
 
-(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :EXPR)) node)
+(defmethod %render-node (renderer (id (eql :EXPR)) node)
   (%render-const renderer (car (node-writes node))))
 
-(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
+(defmethod %render-node (renderer (id (eql :DEFINE-GLOBAL)) node)
   (%render-const renderer (car (node-writes node))))
+
+(defmethod %render-node (renderer (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
 
 (defmethod %render-node ((renderer CStyle-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
