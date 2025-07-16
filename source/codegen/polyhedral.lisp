@@ -11,6 +11,64 @@
 (in-package :caten/codegen/polyhedral)
 
 (defparameter *+inf* (expt 2 32))
+;; ~~ Directive ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Directive ()
+  ((type :initarg :type :accessor directive-type)
+   (amount :initarg :amount :accessor directive-amount)
+   (visible :initarg :visible :accessor directive-visible))
+  (:documentation "Directive is an instruction to schedule-node-band. This class is dumpable as a string to interoperate with ISL."))
+
+(defun directive (type amount visible)
+  (declare (type string type) (type fixnum amount) (type boolean visible))
+  (make-instance 'Directive :type type :amount amount :visible visible))
+
+(defmethod print-object ((directive Directive) stream)
+  (print-unreadable-object (directive stream)
+    (format stream "~a" (directive->str directive))))
+
+(defmethod directive->str ((directive Directive))
+  (with-output-to-string (out)
+    (format out "@DIRECTIVE(")
+    (loop with slots = (c2mop:class-slots (class-of directive))
+          for slot-def in slots
+          for slot-name = (c2mop:slot-definition-name slot-def)
+          for value     = (slot-value directive slot-name)
+          for idx upfrom 0 do
+            (format out "~a=~a" (string-upcase (princ-to-string slot-name)) value)
+            (when (< idx (1- (length slots))) (format out ",")))
+    (format out ")")))
+
+(defmethod directive->id ((directive directive)) (isl::make-id-from-str (directive->str directive)))
+
+(defun split-key-and-value (str)
+  (let ((pos (position #\= str)))
+    (assert pos)
+    (let ((key (intern (subseq str 0 pos) "KEYWORD"))
+          (value (subseq str (1+ pos))))
+      (list
+       key
+       (case key
+         (:TYPE value)
+         (:AMOUNT (parse-integer value))
+         (:VISIBLE (string= (string-upcase value) "T"))
+         (otherwise value))))))
+
+(defun split-directive-string (str)
+  (let ((res '()) (start 0) (len (length str)))
+    (loop for pos = (position #\, str :start start)
+          do (cond
+               ((null pos)
+                (push (subseq str start len) res)
+                (return-from split-directive-string (map 'list #'split-key-and-value (nreverse res))))
+               (t
+                (push (subseq str start pos) res)
+                (setf start (1+ pos)))))))
+
+(defmethod str->directive ((string string))
+  ;; @DIRECTIVE(...) is a valid format.
+  (unless (and (uiop:string-prefix-p "@DIRECTIVE(" string) (char= (char string (1- (length string))) #\))) (error "Invalid directive string: ~S" string))
+  (let* ((content (subseq string #.(length "@DIRECTIVE(") (1- (length string)))))
+    (apply #'make-instance 'Directive (apply #'append (split-directive-string content)))))
 ;; ~~ Polyhedral ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; blueprint -> polyhedral
 (defclass Polyhedral-IR ()
@@ -22,10 +80,11 @@
    (ctx :accessor poly-ctx :initarg :ctx)
    (extra-kernel-args :accessor poly-extra-kernel-args :initform nil)
    (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)
+   (strategy :accessor poly-strategy :initarg :strategy)
    (bp-cache :accessor poly-bp-cache)))
 
-(defun make-polyhedral-ir (blueprint domain read write schedule ctx)
-  (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint)))
+(defun make-polyhedral-ir (blueprint domain read write schedule ctx strategy)
+  (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint :strategy strategy)))
     (let* ((access (union-access-info-from-sink read))
            (access (union-access-info-set-must-source access write))
            (access (union-access-info-set-schedule access schedule))
@@ -43,7 +102,7 @@
       pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
-  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg)))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :strategy (poly-strategy pg)))
 
 (defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
   (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
@@ -286,7 +345,7 @@
       (assert (= 1 (length (graph-outputs blueprint))))
       (rewrite-node (car (graph-outputs blueprint))))))
 
-(defun make-polyhedral-from-blueprint (blueprint)
+(defun make-polyhedral-from-blueprint (blueprint &key (strategy))
   "Constructs Polyhedral IR from blueprint which is a static graph.
    
    The blueprint should be a FastGraph containing nodes with the following types:
@@ -303,7 +362,7 @@
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)))
-    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule ctx)))
+    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule ctx strategy)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
@@ -706,26 +765,6 @@ Returns T if the current schedule does not break any dependences in dep."
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
 (defmethod optrule-apply-transform-on-blueprint (poly (optrule NoOpt)) nil)
 
-(defclass Rewrite/FuseLoadReduceStore (OptimizationRule) nil)
-(defmethod optrule-generate-search-space (poly bands (id (eql :Rewrite/FuseLoadReduceStore)))
-  ;; [TODO] If there's reduction
-  ;; [TODO] Rewrite the base blueprint to have:
-  ;; - Remove LOAD (Separated Loop)
-  ;; - Add extra buffer
-  ;; - e.g.:
-  ;; val = 0.0
-  ;;   val += ...
-  ;; out[...] = val
-  ;; is rewrittern as
-  ;; for ...
-  ;;   out[...] = initial_value
-  ;; OUT[...] += ...
-  ;; separate activation
-  ;; OR, MAKE Post-Tile-Fusion DOABLE!!!
-  ;; [Original] -> [NoOpt, FuseLoadReduceStore] -> [Reschedule1, Reschedule2, Reschedule3] ... -> {SKETCH!}
-  ;; No Need to add this right?
-  nil)
-
 (defclass Reschedule (OptimizationRule)
   ((outer-coincidence :initarg :outer-coincidence :initform 0)
    (maximize-coincidence :initarg :maximize-coincidence :initform 0)
@@ -737,7 +776,7 @@ Returns T if the current schedule does not break any dependences in dep."
    (max-constant-term :initarg :max-constant-term :initform 0))) ;; always set to 0 to keep simplicity!
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Reschedule)))
-  ;; Reschedule can be placed on the top of commands.
+  ;; Reschedule can be placed on the top of scheduling commands.
   (when (null (some #'(lambda (x) (typep x 'Reschedule)) (poly-cmd-history poly)))
     (list
      ;; [TODO] Isn't there more to search configurations?
@@ -805,30 +844,27 @@ Returns T if the current schedule does not break any dependences in dep."
                 when (not (equal perm default-perm))
                   collect (make-instance 'Interchange :axis nth :band band :order perm)))))
 
-(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
-  ;; Not Ready
-  nil)
-
-(defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange)))
-;; [TODO] FlashAttention
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange)) nil) ;; [TODO]
+(defmethod optrule-apply-transform-on-blueprint (poly (opt Interchange)) nil)
+;; [TODO] FlashAttention, This will rewrite a graph
 (defclass FuseWithParent (OptimizationRule) nil)
-;; [TODO] SIMD
-(defclass TensorCore (OptimizationRule) nil)
 
-(defun tiling-sizes (band &key (size-default 32) (dims))
-  (declare (type list dims) (type fixnum size-default))
+(defclass TensorCore (OptimizationRule) nil) ;; TODO
+
+(defun tiling-size (band size)
+  (declare (type fixnum size))
   (let* ((band-space (schedule-node-band-get-space band))
          (dim (space-dim band-space 3)))
     (multi-val-from-val-list
-     band-space
-     (apply #'make-value-list (loop for i upfrom 0 below dim collect (or (nth i dims) size-default))))))
+     band-space(apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
 
 (defclass Tile (OptimizationRule) ((size :initarg :size :accessor tile-size)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   (loop for band in bands for nth upfrom 0
         append
-        (loop for size in `(2 4 8 16 32 64) ;; TODO: Only tile when it is not tiled.
+        (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::tile-search-space)
+              do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero!")
               collect
               (make-instance 'Tile :size size :band band :axis nth))))
 
@@ -836,12 +872,16 @@ Returns T if the current schedule does not break any dependences in dep."
   (setf
    (poly-schedule poly)
    (schedule-node-get-schedule
-    (schedule-node-band-tile (optrule-band opt) (tiling-sizes (optrule-band opt) :size-default (tile-size opt))))))
+    (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt))))))
 
 (defmethod optrule-apply-transform-on-blueprint (poly (opt Tile)))
 
-(defclass ParallelTile (OptimizationRule) ;; CPU will use this!
-  nil)
+(defclass TileGPU (OptimizationRule) ((local-size :initarg :local-size :accessor tile-gpu-local-size)))
+
+(defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
+  ;; TileGPU Can be applied at once
+  
+  )
 
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
@@ -870,7 +910,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (let* ((space (get-next-optimization-rules polyhedral))
          (next-generations
            (remove-duplicates
-            (loop for opt in space collect (apply-optimization polyhedral opt))
+            (loop for opt in space collect (apply-optimization polyhedral opt)) ;; [TODO] This should be lowered first.
             :test #'string= :key #'pg-dump-into-str)))
     (loop for gen in next-generations
           if (verify-polyhedral-ir gen) collect gen)))
@@ -927,7 +967,7 @@ Returns T if the current schedule does not break any dependences in dep."
                  (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) args n base-name base-args))))
         (let* ((band-count (count :RANGE (graph-nodes (kernel-blueprint (getattr node :kernel-info))) :key #'node-type))
                (max-iters (+ 2 (* band-count per-band-optrules)))
-               (origin (caten/codegen/polyhedral:make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info))))
+               (origin (make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)) :strategy strategy))
                (beam (list (cons origin *+inf*))))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
             (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
@@ -957,7 +997,11 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; [TODO]
 ;; - [x] Bring Back Metal Renderer
 ;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
-;; - [ ] Define AutoSchedulerConfig
+;; - [x] Define AutoSchedulerConfig
+;; - [ ] TileGPU -> use render-ops.lisp feature and insert mark
+;;  - [ ] Provide the directive class, and parse utils
+;;  - [ ] TileGPU is just splitting the band w/ coincidence parts
+;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
 ;; - Then all have to do is to get optimal kernel!
 ;; - カーネルの分割/融合を正しくサポートする
 ;; - More Transformation Patterns

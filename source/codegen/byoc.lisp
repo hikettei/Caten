@@ -63,13 +63,13 @@
 (defclass Auto-Scheduler () ((strategy :accessor Auto-Scheduler-Strategy)))
 
 (defstruct Strategy
-  (n-profile) (per-band-optrules)
+  (n-profile) (per-band-optrules) (tile-search-space nil :type list)
   (use-tile-gpu 0) (global-max) (local-max) (shared-max)
   (use-parallel 0))
 
 (defmacro define-auto-scheduler
     (name &key
-            (n-profile 1) (per-band-optrules 2)
+            (n-profile 1) (per-band-optrules 2) (tile-search-space '(2 4 8 16 32 64))
             (use-tile-gpu 0) (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
             (use-parallel 0) ;; Configurations for CPU Coincidence
             ;; [TODO] Vectorize, Upcast, TileSize, etc
@@ -100,7 +100,7 @@
      (defmethod initialize-instance :after ((auto-scheduler ,name) &key)
        (setf (slot-value auto-scheduler 'strategy)
              (make-strategy
-              :n-profile ,n-profile :per-band-optrules ,per-band-optrules
+              :n-profile ,n-profile :per-band-optrules ,per-band-optrules :tile-search-space ',tile-search-space
               :use-tile-gpu ,use-tile-gpu :global-max ',global-max :local-max ',local-max :shared-max ,shared-max :use-parallel ,use-parallel)))))
 ;; ~~ Backend ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric get-backend-buffer (backend))
