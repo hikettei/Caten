@@ -63,19 +63,21 @@
 (defclass Auto-Scheduler () ((strategy :accessor Auto-Scheduler-Strategy)))
 
 (defstruct Strategy
-  (n-profile 10)
+  (n-profile) (per-band-optrules)
   (use-tile-gpu 0) (global-max) (local-max) (shared-max)
   (use-parallel 0))
 
 (defmacro define-auto-scheduler
     (name &key
-            (n-profile 1)
+            (n-profile 1) (per-band-optrules 2)
             (use-tile-gpu 0) (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
             (use-parallel 0) ;; Configurations for CPU Coincidence
             ;; [TODO] Vectorize, Upcast, TileSize, etc
             )
   "The macro `define-auto-scheduler` will declare an optimization strategy for the Caten Auto Scheduler.
 
+- n-profile[fixnum] the number of profiling for cost model
+- n-per-band-optrules[fixnum] BEAM Search uses max_iter = 2 + {number_of_bands} * per-band-optrules
 - use-tile-gpu[fixnum] Set > 1 to allow the compiler to tile bands to generate a parallelized gpu kernel. The value will be the maximum rank of tiling.
 - global-max[list, optional] restrict the maximum size of the griddim. The value will be a list of fixnums with the same length as use-tile-gpu.
 - local-max[list, optional] restrict the maximun size of the thread. The value will be a list of fixnums with the same length as use-tile-gpu.
@@ -98,7 +100,7 @@
      (defmethod initialize-instance :after ((auto-scheduler ,name) &key)
        (setf (slot-value auto-scheduler 'strategy)
              (make-strategy
-              :n-profile ,n-profile
+              :n-profile ,n-profile :per-band-optrules ,per-band-optrules
               :use-tile-gpu ,use-tile-gpu :global-max ',global-max :local-max ',local-max :shared-max ,shared-max :use-parallel ,use-parallel)))))
 ;; ~~ Backend ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric get-backend-buffer (backend))
