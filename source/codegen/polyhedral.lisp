@@ -953,7 +953,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - More Transformation Patterns
 ;;  - TensorCore
 ;;  - SIMD
-;;  - 
+;;  - !sigmoid !matmul
 ;; [TODO]
 ;; - Loop Interchange is REQUIRED
 ;; - Why the indexing is so messed around? We have to fix this FIRST.

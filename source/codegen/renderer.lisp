@@ -331,14 +331,25 @@
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :BIND)) node)
   (format nil "~a" (%render-const renderer (getattr node :value))))
 
-(defmethod %render-node (renderer (id (eql :EXPR)) node)
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :EXPR)) node)
   (%render-const renderer (car (node-writes node))))
 
-(defmethod %render-node (renderer (id (eql :DEFINE-GLOBAL)) node)
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
   (%render-const renderer (car (node-writes node))))
 
-(defmethod %render-node (renderer (id (eql :RANGE)) node)
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RANGE)) node)
   (%render-const renderer (getattr node :idx)))
 
 (defmethod %render-node ((renderer CStyle-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
+
+;; ~~ Common behaviours ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod %render-node ((renderer Renderer) (id (eql :EXPR)) node)
+  (%render-const renderer (car (node-writes node))))
+
+(defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (car (node-writes node))))
+
+(defmethod %render-node ((renderer Renderer) (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
