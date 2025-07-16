@@ -36,7 +36,8 @@
 
 (defun wrap-with-caller (kernel body &aux (args (gensym)))
   `(lambda (&rest ,args &aux (lparallel:*kernel* ,kernel))
-     (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args))))
+     (caten/runtime/profile:with-real-time
+       (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args)))))
 
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
   (when (>= (ctx:getenv :JIT_DEBUG) 3)
@@ -184,11 +185,15 @@
       (:ENDFOR
        (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
       (:IF
-       ;; [TODO] ENDIF does not have :idx so cannot determine the pair of :IF and :ENDIF
-       ;; This is why LispStyle Renderer does not support IF statement yet.
-       (error "LispStyle Renderer currently does not support IF statement."))
+       (let* ((endif (position-if #'(lambda (x) (and (eql (node-type x) :ENDIF) (equal (getattr x :idx) (getattr bp :idx)))) rest-blueprints)))
+         (assert endif () "recursive-render-bp: :IF without :ENDIF is not allowed. Malformed blueprint?")
+         (let ((condition (render-expr 'LispStyle-Renderer (getattr bp :condition))))
+           `(progn
+              (when ,condition
+                ,(recursive-render-bp (subseq rest-blueprints 1 endif)))
+              ,(recursive-render-bp (subseq rest-blueprints (1+ endif)))))))
       (:ENDIF
-       (error "LispStyle Renderer currently does not support IF statement."))
+       (error ":ENDIF should not be appeared here. Malformed blueprint?"))
       (:EXPR
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
              (id (const (car (node-writes bp))))
@@ -199,5 +204,9 @@
            ,(when (null decl-p)
               `(setf ,(if write-index `(aref ,id ,write-index) id) ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))
            ,(recursive-render-bp (cdr rest-blueprints)))))
+      (:BARRIER (error "thread barrier is not supported on the native backend."))
+      (:DEFINE-SHARED-MEMORY
+       `(let ((,(car (node-writes bp)) (make-array (list ,(getattr bp :size)) :element-type ',(dtype->lisp (getattr bp :dtype)))))
+          ,(recursive-render-bp (cdr rest-blueprints))))
       (:DEFINE-GLOBAL
        (recursive-render-bp (cdr rest-blueprints))))))

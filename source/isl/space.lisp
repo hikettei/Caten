@@ -41,3 +41,10 @@
 (define-isl-function multi-aff-zero %isl-multi-aff-zero
   (:give multi-aff)
   (:take space))
+
+(define-isl-function space-set-from-params %isl-space-set-from-params
+  (:give space)
+  (:take space))
+
+(defun space-add-dims (space dim-type n)
+  (%make-space (%isl-space-add-dims (space-handle (copy space)) dim-type n)))

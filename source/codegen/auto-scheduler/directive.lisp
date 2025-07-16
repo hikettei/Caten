@@ -2,11 +2,13 @@
   (:documentation "Provides various hand-written blueprint rewriting rule for corresponding @directive.")
   (:use :cl :caten/codegen/expr :caten/codegen/polyhedral-ast :caten/air :caten/codegen/shape-inference)
   (:export
-    #:make-unrolled-body
-    #:compute-reminder-for-unroll
-    #:unroll-expr
-    #:astfor-mutate-global
-    #:astfor-mutate-reminder-global))
+   #:make-unrolled-body
+   #:make-packed-body
+   #:compute-reminder-for-unroll
+   #:unroll-expr
+   #:astfor-mutate-global
+   #:astfor-mutate-local
+   #:astfor-mutate-reminder-global))
 
 (in-package :caten/codegen/directive)
 ;; ~~~ UNROLL ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -14,6 +16,9 @@
   "Creates a copy of ASTFor body with the idx is set to nth."
   (declare (type ASTFor body) (type fixnum n-unroll))
   (unroll-ast (astfor-body body) (astfor-idx body) (astfor-idx user) n-unroll))
+
+(defun make-packed-body (user body n-pack)
+  (packing-ast (astfor-body body) (astfor-idx body) (astfor-idx user) n-pack))
 
 (defmethod astfor-compute-reminder ((astfor ASTFor) unroll-by)
   (let ((below (expr-detach-loop-bound (astfor-to astfor)))
@@ -34,8 +39,8 @@
      (expr-const 1 :int64)
      (copy-and-assign-ast-tree (astfor-body body) (astfor-idx user) 0))))
 
-(defun make-suffix (space user)
-  (flet ((s (idx &aux (val (find idx (user-unroll user) :key #'car :test #'string=)))
+(defun make-suffix (space user &key (unroll (user-unroll user)))
+  (flet ((s (idx &aux (val (find idx unroll :key #'car :test #'string=)))
            (if val (cdr val) nil)))
     (let ((suffix
             (apply #'concatenate 'string
@@ -46,16 +51,36 @@
           ""
           (format nil "_~a" suffix)))))
 
-(defun make-suffix-for-is (name iteration-space space user)
-  (let ((space (loop for s in space
-                     for stride in (iteration-space-strides iteration-space)
-                     unless (expr-equal-to stride 0) collect s)))
-    (intern (string-upcase (format nil "~a~a" name (make-suffix space user))))))
+(defun make-suffix-for-is (name iteration-space user max-size)
+  (let* ((prefixes (user-unroll-prefix user))
+         (space (loop for stride in (iteration-space-strides iteration-space)
+                      for nth upfrom 0
+                      for p = (nth nth prefixes)
+                      if (or (null p) (expr-equal-to stride 0))
+                        collect 0
+                      else
+                        collect p))
+         (space (loop for i upfrom 0 below max-size
+                      collect (or (nth i space) 0))))
+    (intern
+     (string-downcase
+      (format nil "~a_~a" name (apply #'concatenate 'string (butlast (loop for s in space append (list (princ-to-string s) "_")))))))))
 
-(defun unroll-node (node space user)
+(defun make-padding-suffix (name max-size)
+  (intern
+   (string-downcase
+    (format nil "~a_~a" name (apply #'concatenate 'string (butlast (loop repeat max-size append (list "0" "_"))))))))
+
+(defun unroll-node (node user maximum-rank ds)
   (when (eql (node-type node) :Aref)
     (when (= -1 (caten/runtime:buffer-nrank (getattr node :buffer)))
-      (setf (getattr node :storage-id) (make-suffix-for-is (getattr node :storage-id) (getattr node :space) space user)))
+      (setf (getattr node :storage-id) (make-suffix-for-is (getattr node :storage-id) (getattr node :space) user maximum-rank)))
+    (return-from unroll-node node))
+  (when (eql (node-type node) :LOAD)
+    (when (symbolp (getattr node :value))
+      (when (and (= 0 (caten/runtime:buffer-nrank (car (relay-reads (read-type-relay node)))))
+                 (null (gethash (string-upcase (princ-to-string (getattr node :value))) ds))) ;; not defined as a dynamic shape
+        (setf (getattr node :value) (make-padding-suffix (getattr node :value) maximum-rank))))
     (return-from unroll-node node))
   (when (null (getattr node :_type_relay :allow-undefined t))
     (return-from unroll-node node))
@@ -64,20 +89,22 @@
         for wi in (relay-write-iters (read-type-relay node))
         for nth upfrom 0
         if (= (caten/runtime:buffer-nrank write) -1)
-          do (setf (nth nth (node-writes node)) (make-suffix-for-is w wi space user)))
+          do (setf (nth nth (node-writes node)) (make-suffix-for-is w wi user maximum-rank))
+        if (null wi)
+          do (setf (nth nth (node-writes node)) (make-padding-suffix w maximum-rank)))
   (loop for read in (relay-reads (read-type-relay node))
         for r in (node-reads node)
         for ri in (relay-read-iters (read-type-relay node))
         for nth upfrom 0
         if (and read ri (= 0 (caten/runtime:buffer-nrank read)))
-          do (setf (nth nth (node-reads node)) (make-suffix-for-is r ri space user)))
+          do (setf (nth nth (node-reads node)) (make-suffix-for-is r ri user maximum-rank))
+        else if (and (symbolp r) (null ri))
+          do (setf (nth nth (node-reads node)) (make-padding-suffix r maximum-rank)))
   node)
 
-(defun unroll-expr (space expr user)
+(defun unroll-expr (space expr user maximum-rank ds)
   "Unrolls the expr who belongs to the User"
-  (declare (type node expr) (type User user))
-  (when (null (user-unroll user))
-    (return-from unroll-expr expr))
+  (declare (type node expr) (type User user) (type hash-table ds))
   (assert (eql (node-type expr) :EXPR))
   (assert (null (getattr expr :unroll-history)))
   (assert (null (getattr expr :parent-node-id)))
@@ -87,40 +114,45 @@
           (make-expr :graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (expr-graph (getattr expr :EXPR)))))
                      :out (copy-node (expr-out (getattr expr :EXPR))))
           (node-id expr) (intern (string-upcase (format nil "~a~a" (node-id expr) suffix))))
-    (unroll-node expr space user)
-    (map 'list #'(lambda (node) (when (eql (node-type node) :AREF) (unroll-node node space user))) (graph-nodes (expr-graph (getattr expr :EXPR))))
+    (unroll-node expr user maximum-rank ds)
+    (map 'list #'(lambda (node) (when (find (node-type node) `(:AREF :LOAD)) (unroll-node node user maximum-rank ds))) (graph-nodes (expr-graph (getattr expr :EXPR))))
     expr))
 ;; ~~~ Block/Thread Parallelism ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun astfor-mutate-global (astfor depth local-size &key (dtype :int64))
-  "Mutates the ASTFor to use global/local indexing."
-  (declare (type ASTFor astfor))
-  (let* ((bind (astfor-idx astfor)) (from (astfor-from astfor)) (to (astfor-to astfor)) (by (astfor-by astfor))
-         (upper-bound (expr-detach-loop-bound to :allow-failed t))
-         (size (expr-ceiling (expr-div (expr-cast (expr-sub upper-bound from) :float32) (expr-cast by :float32)) :float32))
-         (gs (expr-cast (expr-div size (expr-const local-size :float32)) dtype))
+(defun astfor-mutate-global (astfor depth local-size callback &key (dtype :int64))
+  (assert (expr-equal-to (astfor-from astfor) 0) () "AstFor-Mutate-Global: The Global should start from 0.")
+  (let* ((bind (astfor-idx astfor)) (to (astfor-to astfor)) (by (astfor-by astfor))
+         (upper-bound (expr-detach-loop-bound to))
+         ;; EXPR passed to the GPU Driver
+         (gs (expr-ceiling (expr-div (expr-cast upper-bound :float32) (expr-cast (expr-const local-size dtype) :float32)) :float32))
          (global (expr-grid :block depth dtype gs))
-         (local  (expr-grid :thread depth dtype (expr-const local-size dtype)))
-         (idx (expr-add (expr-mul global (expr-const local-size dtype)) local))
-         (idx (expr-add from (expr-mul idx by)))
+         (idx (expr-mul global by))
          (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
          (bind-name (intern (string-upcase (princ-to-string bind))))
-         (meta (make-instance 'Exprgrid :rank depth :global-size gs :local-size (expr-const local-size dtype))))
+         (meta (make-instance 'ExprGrid :rank depth :global-size (expr-cast gs dtype) :local-size (expr-const local-size dtype))))
     (setf (relay-write-iters type-relay) (list (make-iteration-space)))
-    (assert upper-bound () "astfor-mutate-global: The ASTFor is not an SCOP: ~a" astfor)
+    (expr-infer-type idx)
+    (make-block
+     (list
+      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay :meta meta) t)
+      (funcall callback (astfor-body astfor))))))
+
+(defun astfor-mutate-local (astfor parent depth local-size callback &key (dtype :int64))
+  (assert (expr-equal-to (astfor-from astfor) 0) () "AstFor-Mutate-Local: The Local should start from 0.")
+  (let* ((bind (astfor-idx astfor)) (by (astfor-by astfor))
+         (ls (expr-grid :thread depth dtype local-size))
+         (idx (expr-mul ls by)) ;; [TODO] Replace this expr to implement memory coalescing.
+         (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+         (bind-name (intern (string-upcase (princ-to-string bind))))
+         (meta nil) ;; [TODO]
+         ;; reminder computation
+         (parent-id (expr-const (intern (string-upcase (astfor-idx parent))) dtype))
+         (loop-size (expr-detach-loop-bound (astfor-to parent))))
+    (setf (relay-write-iters type-relay) (list (make-iteration-space)))
     (expr-infer-type idx)
     (make-block
      (list
       (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay :meta meta) t)
       (make-if
-       (expr-< (expr-const bind-name dtype) upper-bound)
-       (astfor-body astfor)
+       (expr-< (expr-add (expr-const bind-name dtype) parent-id) loop-size)
+       (funcall callback (astfor-body astfor))
        nil)))))
-
-(defun astfor-mutate-reminder-global (parent-idx astfor &key (dtype :int64))
-  "This function receives the reminder part of ASTFor, returning the new ASTFor using global indexing."
-  (declare (type ASTFor astfor))
-  ;; (IF IDX == UPFROM)
-  ;; ASTFOR
-  (let* ((parent-bind (intern (string-upcase (princ-to-string parent-idx))))
-         (from (astfor-from astfor)))
-    (make-if (expr-= (expr-const parent-bind dtype) from) astfor nil)))

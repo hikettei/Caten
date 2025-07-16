@@ -131,3 +131,7 @@
 (define-isl-function union-map-is-empty %isl-union-map-is-empty
   (:give boolean)
   (:take union-map))
+
+(define-isl-function union-map-coalesce %isl-union-map-coalesce
+  (:give union-map)
+  (:take union-map))
