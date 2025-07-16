@@ -955,8 +955,42 @@ Returns T if the current schedule does not break any dependences in dep."
      (schedule-node-get-schedule band))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :TileGPU)) bands blueprint)
-  (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
-         
+  "Applies the tile and mapping them into blockIdx/threadIdx in CUDA. The inner tile is always further fused for memory locality.
+e.g.
+for (int i=0; i<32; i+=2)
+  for (int j=0; j<32; j+=2)
+    for (int ii=0; ii<2; ii++)
+      for (int jj=0; jj<2; jj++)
+        A[i+ii, j+jj]
+=>
+for (int i=0; i<32; i+=2)
+  for (int j=0; j<32; j+=2)
+    for (int ii=0; ii<2*2; ii++)
+        A[i+(ii/2), j+(jj%2)]
+=>
+
+"
+  (let* ((new-bp (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
+         (innerbands (loop for node in (graph-nodes new-bp)
+                           if (and (eql (node-type node) :SPACE) (eql (getattr node :level) :thread))
+                             collect node))
+         (innerbands (sort innerbands #'< :key #'(lambda (x) (getattr x :rank))))
+         (blocksize (directive-amount (getattr (car bands) :directive))))
+    (case (length innerbands)
+      (2
+       (let* ((thread (%lid 0 (caten/aasm/expr:expr-mul (getattr (car innerbands) :size) (getattr (second innerbands) :size))))
+              (x (with-context-nodes (_ (%idiv thread (%load (%salloc :dtype :int64) blocksize) :id (car (node-writes (nth 0 innerbands)))))))
+              (y (with-context-nodes (_ (%mod  thread (%load (%salloc :dtype :int64) blocksize) :id (car (node-writes (nth 1 innerbands))))))))
+         (insert-nodes new-bp (append (list thread) x y))))
+      (3
+       (let* ((thread (%lid 0 (caten/aasm/expr:expr-mul (getattr (nth 0 innerbands) :size) (getattr (nth 1 innerbands) :size) (getattr (nth 2 innerbands) :size))))
+              (x (with-context-nodes (_ (%idiv thread (%load (%salloc :dtype :int64) (* blocksize blocksize)) :id (car (node-writes (nth 0 innerbands)))))))
+              (y (with-context-nodes (_ (%mod (%idiv thread (%load (%salloc :dtype :int64) blocksize)) (%load (%salloc :dtype :int64) blocksize) :id (car (node-writes (nth 1 innerbands)))))))
+              (z      (with-context-nodes (_ (%mod thread (%load (%salloc :dtype :int64) blocksize) :id (car (node-writes (nth 2 innerbands))))))))
+         (insert-nodes new-bp (append (list thread) x y z)))))
+    new-bp))
+
+(defclass Parallel (OptimizationRule) nil) ;; [TODO] Loop Fissionしても，各地点のTopへ配置できる。
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
   nil)
@@ -970,7 +1004,7 @@ Returns T if the current schedule does not break any dependences in dep."
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (1 . (:NoOpt :TileGPU )) ;; Early determine the parallel axis
+    (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
     (t . (:NoOpt :Tile))))      ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
@@ -1074,9 +1108,12 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; - [x] Bring Back Metal Renderer
 ;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
 ;; - [x] Define AutoSchedulerConfig
-;; - [ ] TileGPU -> use render-ops.lisp feature and insert mark
-;;  - [ ] Provide the directive class, and parse utils
-;;  - [ ] TileGPU is just splitting the band w/ coincidence parts
+;; - [x] TileGPU -> use render-ops.lisp feature and insert mark
+;;  - [x] Provide the directive class, and parse utils
+;;  - [x] TileGPU is just splitting the band w/ coincidence parts
+;;  - [ ] Optimization on Reduction
+;;  - [ ] TensorCore, SIMD
+;;  - [ ] Support Loop Fission, and post loop collapse.
 ;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
 ;;  - [ ] How to implement loop coalescing to the band tile?
 ;; - Then all have to do is to get optimal kernel!
@@ -1087,15 +1124,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;;  - !sigmoid+!matmul
 ;;  - Metal: Specify Local Size
 ;;  - [ ] 
-;; [TODO]
 ;; - Loop Interchange is REQUIRED
-;; - Why the indexing is so messed around? We have to fix this FIRST.
-;; - Two Things I should fix:
-;;  - 1. Schedule, won't zero start. (... Arefの話はこのままでいい気がしてきた。)
-;;  - 2. Indexing is flatten, should we allow it?
-;; - 1. Replace IDX
-;; - 2. Simplifier, More Powerful Symbolic Simplification Patterns
-;; - 3. Flexible reduction accumlator
 ;; - 4. fix a bug in threefry2x32
 ;; - 5. ループの途中でincf挿入するやつやりたい?
 ;; - 6. BEAM Cacheを実装する

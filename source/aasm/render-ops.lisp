@@ -88,7 +88,8 @@ Constraints:
     (emit (make-node :JIT :SPACE (list id) nil :level :block :rank rank :dtype dtype :size size))))
 
 (defun %lid (rank size &key (dtype :int64) (id (gensym "L")))
-  (emit (make-node :JIT :SPACE (list id) nil :level :thread :rank rank :dtype dtype :size (caten/aasm/expr:expr-const size dtype))))
+  (emit (make-node :JIT :SPACE (list id) nil :level :thread :rank rank :dtype dtype :size
+                   (if (caten/aasm/expr::expr-p size) size (caten/aasm/expr:expr-const size dtype)))))
 
 (defun %function (name body &key (id (gensym "OUT")))
   (emit (make-node :Runtime :FUNCTION (list id) (list (node->id1 body)) :name name)))
