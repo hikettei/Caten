@@ -109,10 +109,7 @@
 (defmethod initialize-instance :after ((runtime MetalRuntime) &key)
   (ensure-foreign-library)
   (float-features:with-float-traps-masked t
-    (setf (metal-runtime-device runtime)
-          (if (runtime-renderer runtime)
-              (metal-renderer-device (runtime-renderer runtime))
-              (MTLCreateSystemDefaultDevice)))))
+    (setf (metal-runtime-device runtime) (MTLCreateSystemDefaultDevice))))
 
 (defmethod open-buffer ((runtime MetalRuntime) (buffer MetalBuffer))
   (let ((initial-value (if (eql (buffer-dtype buffer) :bool)

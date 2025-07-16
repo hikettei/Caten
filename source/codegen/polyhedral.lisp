@@ -907,7 +907,7 @@ Returns T if the current schedule does not break any dependences in dep."
         (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime x)) extra-args)
         total))))
 
-(defun realize-node-with-autotuning (runtime node args &aux (beam-width 5) (max-iters 5) (n 10) (threshold 1e-5)
+(defun realize-node-with-autotuning (runtime node args &aux (beam-width 1) (max-iters 5) (n 10) (threshold 1e-5)
                                                          (base-args (kernel-args (getattr node :kernel-info)))
                                                          (base-name (kernel-name (getattr node :kernel-info))))
   ;; BEAM Search
@@ -947,13 +947,17 @@ Returns T if the current schedule does not break any dependences in dep."
           ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
           (apply #'values (subseq args 0 (length (caten/air:node-writes node)))))))))
 ;; [TODO]
-;; - Bring Back Metal Renderer
-;; - Bring Back Lisp Renderer (BEAM is too slow on my mac)
+;; - [x] Bring Back Metal Renderer
+;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
+;; - [ ] Define AutoSchedulerConfig
+;; - Then all have to do is to get optimal kernel!
 ;; - カーネルの分割/融合を正しくサポートする
 ;; - More Transformation Patterns
 ;;  - TensorCore
 ;;  - SIMD
-;;  - !sigmoid !matmul
+;;  - !sigmoid+!matmul
+;;  - Metal: Specify Local Size
+;;  - [ ] 
 ;; [TODO]
 ;; - Loop Interchange is REQUIRED
 ;; - Why the indexing is so messed around? We have to fix this FIRST.
