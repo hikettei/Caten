@@ -153,7 +153,9 @@
 (defclass MetalKernel (AbstractKernel)
   ((caller :accessor metal-caller)
    (program :accessor metal-program)))
-(define-auto-scheduler Metal-Auto-Scheduler :use-tile-gpu 3 :shared-max 32768)
+(define-auto-scheduler Metal-Auto-Scheduler
+  :n-profile 1 :per-band-optrules 2
+  :ptile-max-rank 3 :shared-max 32768)
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer MetalKernel Metal-Auto-Scheduler t)
 
 (defun dtype->mtype (dtype)

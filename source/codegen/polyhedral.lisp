@@ -876,12 +876,46 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defmethod optrule-apply-transform-on-blueprint (poly (opt Tile)))
 
-(defclass TileGPU (OptimizationRule) ((local-size :initarg :local-size :accessor tile-gpu-local-size)))
+(defclass TileGPU (OptimizationRule)
+  ((local-size :initarg :local-size :accessor tile-gpu-local-size)
+   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at)))
+
+(defun schedule-node-band-get-coincident (band)
+  (loop for i upfrom 0 below (schedule-node-get-band-depth band)
+        if (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle band) i))
+          collect 1 else collect 0))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   ;; TileGPU Can be applied at once
-  
-  )
+  (when (and
+         (null (some #'(lambda (x) (typep x 'TileGPU)) (poly-cmd-history poly)))
+         (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2))
+    (loop for band in bands for nth upfrom 0
+          for coincident = (print (schedule-node-band-get-coincident band))
+          for split-at-base = (or (position 0 coincident) (length coincident))
+          for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
+          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident split-at (length coincident))))
+            append
+            (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
+                  do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
+                  collect
+                  (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
+  (let* ((band (schedule-node-insert-mark (optrule-band opt) (directive->id (directive "TILE_GPU" (tile-gpu-local-size opt) t))))
+         (band (if (tile-gpu-band-split-at opt)
+                   (schedule-node-band-split band (tile-gpu-band-split-at opt))
+                   band)))
+    (setf
+     (poly-schedule poly)
+     (schedule-node-get-schedule band))
+    ;; [TODO]
+    ;; - Implement Parse AST Mark
+    ;; - Implement TileGPU as a render-ops.lisp level rewriting rule.
+    ;; - Is it ok to parse coincident? there's no wrong thing right?
+    (print opt)
+    (print poly)
+    ))
 
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
@@ -1002,6 +1036,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;;  - [ ] Provide the directive class, and parse utils
 ;;  - [ ] TileGPU is just splitting the band w/ coincidence parts
 ;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
+;;  - [ ] How to implement loop coalescing to the band tile?
 ;; - Then all have to do is to get optimal kernel!
 ;; - カーネルの分割/融合を正しくサポートする
 ;; - More Transformation Patterns

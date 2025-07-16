@@ -63,15 +63,23 @@
 (defclass Auto-Scheduler () ((strategy :accessor Auto-Scheduler-Strategy)))
 
 (defstruct Strategy
-  (n-profile) (per-band-optrules) (tile-search-space nil :type list)
-  (use-tile-gpu 0) (global-max) (local-max) (shared-max)
-  (use-parallel 0))
+  (n-profile 1 :type fixnum) (per-band-optrules 1 :type fixnum)
+  (ptile-max-rank 0 :type fixnum)
+  (tile-search-space nil :type list)
+  (ptile-search-space nil :type list)
+  (global-max) (local-max) (shared-max))
 
 (defmacro define-auto-scheduler
     (name &key
-            (n-profile 1) (per-band-optrules 2) (tile-search-space '(2 4 8 16 32 64))
-            (use-tile-gpu 0) (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
-            (use-parallel 0) ;; Configurations for CPU Coincidence
+            ;; Sampling Configuration (TODO: User-defined cost function)
+            (n-profile 1) (per-band-optrules 2)
+            ;; Parallelism Configuration
+            (ptile-max-rank 0) ;; 0 = No Parallelism, 1 = CPU, >= 2 is GPU, NPU, etc.
+            ;; Search Space Configuration
+            (tile-search-space '(2 4 8 16 32 64))
+            (ptile-search-space '(2 3 4 8 13 16 29)) ;; Only effective when ptile-max-rank >= 2.
+            ;; Constraints Configuration
+            (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
             ;; [TODO] Vectorize, Upcast, TileSize, etc
             )
   "The macro `define-auto-scheduler` will declare an optimization strategy for the Caten Auto Scheduler.
@@ -84,24 +92,18 @@
 - shared-max[or null fixnum] If specified, the search can generate `Prefetch` optimization. This parameter restricts the maximum size of the shared memory. 
 - use-parallel[fixnum] Set = 1 to allow the compiler to insert @parallel annotations to generate a parallelized cpu kernel. Note that this value is not orthogonal to use-tile-gpu.
 "
-  (declare (type (integer 0 1) use-parallel)
-           (type (integer 0 3) use-tile-gpu)
-           (type list global-max local-max)
+  (declare (type list global-max local-max)
            (type (or null fixnum) shared-max))
-  (when (> use-tile-gpu 0)
-    (assert (= use-parallel 0) () "use-tile-gpu is not orthogonal to use-parallel. Please set use-parallel=0"))
-  (when (> use-parallel 0)
-    (assert (= use-tile-gpu 0) () "use-parallel is not orthogonal to use-tile-gpu. Please set use-tile-gpu=0"))
-  (when (= use-tile-gpu 0)
-    (assert (and (null global-max) (null local-max)) () "use-parallel does not support global-max and local-max. Please set them to nil"))
-
   `(progn
      (defclass ,name (Auto-Scheduler) nil)
      (defmethod initialize-instance :after ((auto-scheduler ,name) &key)
        (setf (slot-value auto-scheduler 'strategy)
              (make-strategy
-              :n-profile ,n-profile :per-band-optrules ,per-band-optrules :tile-search-space ',tile-search-space
-              :use-tile-gpu ,use-tile-gpu :global-max ',global-max :local-max ',local-max :shared-max ,shared-max :use-parallel ,use-parallel)))))
+              :n-profile ,n-profile :per-band-optrules ,per-band-optrules
+              :ptile-max-rank ,ptile-max-rank
+              ;; Search Space configuration
+              :tile-search-space ',tile-search-space :ptile-search-space ',ptile-search-space
+              :global-max ',global-max :local-max ',local-max :shared-max ,shared-max)))))
 ;; ~~ Backend ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric get-backend-buffer (backend))
 (defgeneric get-backend-runtime (backend))

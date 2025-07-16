@@ -12,7 +12,9 @@
 (defclass ClangKernel (AbstractKernel)
   ((program :accessor clang-program :type string)
    (caller :accessor clang-caller :type function)))
-(define-auto-scheduler Clang-Auto-Scheduler :use-parallel 1)
+(define-auto-scheduler Clang-Auto-Scheduler
+  :n-profile 1 :per-band-optrules 2
+  :ptile-max-rank 1)
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 
 (defmethod %render-kernel ((renderer CStyle-Renderer) kernel)
