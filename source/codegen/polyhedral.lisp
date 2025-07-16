@@ -697,12 +697,13 @@
   (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
     (declare (type isl::ast-node ast))
     (let ((pctx (make-parse-ctx (poly-blueprint polyhedral))))
-      (apply-directives
-       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
-        pctx
-        (poly-ctx polyhedral)
-        (caten/aasm::ast-simplify-expr-subgraph
-         (with-blueprint () (%progn (parse-isl-ast pctx (isl::ast-node-handle ast))))))))))
+      (multiple-value-bind (new-bp x y)
+          (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
+           pctx
+           (poly-ctx polyhedral)
+           (caten/aasm::ast-simplify-expr-subgraph
+            (with-blueprint () (%progn (parse-isl-ast pctx (isl::ast-node-handle ast))))))
+        (values (apply-directives new-bp) x y)))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -951,17 +952,11 @@ Returns T if the current schedule does not break any dependences in dep."
                    band)))
     (setf
      (poly-schedule poly)
-     (schedule-node-get-schedule band))
-    ;; [TODO]
-    ;; - Implement Parse AST Mark
-    ;; - Implement TileGPU as a render-ops.lisp level rewriting rule.
-    ;; - Is it ok to parse coincident? there's no wrong thing right?
-    ;; - Once the optimization is applied on the gpu; delete them from an rewritable band
-    ))
+     (schedule-node-get-schedule band))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :TileGPU)) bands blueprint)
   (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
-
+         
 (defclass SplitReduce (OptimizationRule)
   ;; TODO: Mode = :warp :block
   nil)
@@ -975,7 +970,7 @@ Returns T if the current schedule does not break any dependences in dep."
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
+    (1 . (:NoOpt :TileGPU )) ;; Early determine the parallel axis
     (t . (:NoOpt :Tile))))      ;; Recursively optimize things ...
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
