@@ -6,6 +6,8 @@
 
 (in-package :caten/byoc/lisp)
 
+(defparameter *global-kernel* (lparallel:make-kernel (cl-cpus:get-number-of-processors)))
+
 (defclass NativeRuntime (GraphRuntime) nil)
 (defclass NativeKernel (AbstractKernel)
   ((code :accessor native-code)
@@ -28,8 +30,8 @@
          (dtype->lisp (getattr node :dtype)))
        ,(const (car (node-writes node)))))
 
-(defun wrap-with-caller (kernel body &aux (args (gensym)))
-  `(lambda (&rest ,args &aux (lparallel:*kernel* ,kernel))
+(defun wrap-with-caller (body &aux (args (gensym)))
+  `(lambda (&rest ,args &aux (lparallel:*kernel* *global-kernel*))
      (caten/runtime/profile:with-real-time
        (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args)))))
 
@@ -49,9 +51,8 @@
                 ;; (format tmp "~%[Blueprint: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
                 (disassemble (compile nil (native-code item)) :stream tmp)
                 (format tmp "~%```~%")))))
-  (let ((kernel (lparallel:make-kernel (cl-cpus:get-number-of-processors))))
-    (dolist (item items)
-      (setf (native-caller item) (compile nil (wrap-with-caller kernel (native-code item)))))))
+  (dolist (item items)
+    (setf (native-caller item) (compile nil (wrap-with-caller (native-code item))))))
 
 (defmethod %render-const ((renderer LispStyle-Renderer) object) (const object))
 ;; Binary
