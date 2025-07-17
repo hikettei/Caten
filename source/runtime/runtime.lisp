@@ -248,8 +248,8 @@ disassemble:
       (let ((memory-pool (getattr node :pool))) ;; the second run of :Allocation?
         (when (and (buffer-p memory-pool) shape)
           (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
-             (report-allocation runtime t (buffer-dtype memory-pool) (buffer-shape memory-pool))
-             (return-from realize-node memory-pool))
+            (report-allocation runtime t (buffer-dtype memory-pool) (buffer-shape memory-pool))
+            (return-from realize-node memory-pool))
           ;; Overwritting the old memory pool
           (when (buffer-p memory-pool) (close-buffer runtime memory-pool))))
       (let ((buffer (make-buffer (map 'list #'->number shape) (map 'list #'->number stride) (getattr node :dtype) nil :device (runtime-buffer-type runtime))))

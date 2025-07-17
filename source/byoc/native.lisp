@@ -43,7 +43,7 @@
   (let* ((args (kernel-args item)))
     (setf (native-code item)
           `(lambda (,@(map 'list #'(lambda (x) (const (car (node-writes x)))) args))
-             (declare (optimize (speed 3) (safety 0)) ,@(map 'list #'global-type-spec args))
+             (declare (optimize (speed 3)) ,@(map 'list #'global-type-spec args))
              ,(recursive-render-bp (kernel-blueprint item))))))
 
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
