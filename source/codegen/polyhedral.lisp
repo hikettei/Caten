@@ -6,7 +6,14 @@
   (:export
    #:realize-node-with-autotuning
    #:make-polyhedral-from-blueprint
-   #:get-blueprint-from-polyhedral))
+   #:get-blueprint-from-polyhedral)
+  ;; GFlops Mesaurer
+  (:export
+   #:GFlops-Measurer
+   #:GFlops-Measurer-ops
+   #:GFlops-Measurer-succeed-p
+   #:compute-gflops
+   #:schedule-item-gflops))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -18,7 +25,44 @@
   (:documentation
    "Raised when the conversion from Polyhedral IR to Blueprint
     after beam search is determined to be invalid, causing result rejection.")
-  (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason))))) 
+  (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason)))))
+;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct GFlops-Measurer
+  "A helper object to compute GFlops"
+  (ops (error "flops must occur") :type (or null caten/aasm/expr:Expr))
+  (succeed-p t :type boolean))
+(defun cannot-compute-flop () (make-gflops-measurer :ops nil :succeed-p nil))
+(defmethod compute-gflops ((gfm GFlops-Measurer) elapsed params)
+  (when (null (gflops-measurer-succeed-p gfm)) (return-from compute-gflops nil))
+  (assert (gflops-measurer-ops gfm))
+  (when (zerop elapsed) (return-from compute-gflops nil)) ;; Elapsed Time = 0.0
+  (let* ((ops (apply #'caten/aasm/expr:expr-realize (gflops-measurer-ops gfm) params))
+         (_ (assert (numberp (caten/runtime:buffer-value ops)) () "measure-gflpos: the result is not a number."))
+         (gflops (/ (caten/runtime:buffer-value ops) (* elapsed 1e9))))
+    (declare (ignore _))
+    gflops))
+(defmethod schedule-item-gflops (blueprint &aux (total-flops))
+  (let ((ctx (make-scop-ctx-from-blueprint blueprint)))
+    (loop for expr in (ctx-exprs ctx)
+          for expr-graph = (caten/aasm::ast-expr-graph blueprint expr) do
+            (let ((flop (caten/aasm/expr:expr-const (caten/aasm/expr::nodes-flops (graph-nodes expr-graph)) :int64))
+                  (volume
+                    (reduce
+                     #'caten/aasm/expr:expr-mul
+                     (loop for loop-info in (gethash (node-id expr) (ctx-node-to-loops ctx))
+                           for loop = (print (getf loop-info :for-node))
+                           for range = (id->value blueprint (car (node-reads loop)))
+                           for size = (car (node-reads range))
+                           for step = (second (node-reads range))
+                           for size-expr = (id->value blueprint size)
+                           for step-expr = (id->value blueprint step)
+                           for size-graph = (if (numberp size) (caten/aasm/expr:expr-const size :int64) (caten/aasm/expr:expr-from-graph (car (node-reads size-expr)) blueprint))
+                           for step-graph = (if (numberp step) (caten/aasm/expr:expr-const step :int64) (caten/aasm/expr:expr-from-graph (car (node-reads step-expr)) blueprint))
+                           collect
+                           (caten/aasm/expr:expr-div size-graph step-graph)))))
+              (push (caten/aasm/expr:expr-mul flop volume) total-flops)))
+    (let ((ops (reduce #'caten/aasm/expr:expr-add total-flops)))
+      (make-gflops-measurer :ops ops :succeed-p t))))
 ;; ~~ Directive ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Directive ()
   ((type :initarg :type :accessor directive-type)
@@ -942,10 +986,9 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
      (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
-     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
-     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     ;(make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0)
-     )))
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
@@ -1195,7 +1238,7 @@ for (int i=0; i<32; i+=2)
               :name (intern (format nil "~a_~a" (kernel-name base-kernel) nth))
               :blueprint blueprint
               :args args
-              :flops nil)
+              :flops (kernel-flops base-kernel))
              :optimized-p t)))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
@@ -1243,7 +1286,7 @@ for (int i=0; i<32; i+=2)
                   (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
           ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
-          (format t "Evlauation: ~a(s)~%" total)
+          (format t "Evaluation: ~a(s) ~aGFLOps~%" total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil))
           total)))))
 
 (defun realize-node-with-autotuning (runtime node args
@@ -1251,7 +1294,7 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 0)
+                                       (threshold 1e-5)
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler)))
                                                          
@@ -1290,12 +1333,12 @@ for (int i=0; i<32; i+=2)
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
 ;; [TODO] 戻ったらやること
-;; - [ ] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
-;;   - [ ] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
-;;   - [ ] RuntimeGraph作れるように。
-;; - [ ] TileGPUの付与について -> ScheduleTreeをRootからTraverseして探索する方法に変える
-;;   - [ ] これによって，複数のTileGPUが付与される。
-;; - [ ] 探索空間下に戻す
+;; - [x] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
+;;   - [x] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
+;;   - [x] RuntimeGraph作れるように。
+;; - [x] TileGPUの付与について -> ScheduleTreeをRootからTraverseして探索する方法に変える
+;;   - [x] これによって，複数のTileGPUが付与される。
+;; - [x] 探索空間下に戻す
 ;; - [ ] Measure the score based on GFLOPs
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)

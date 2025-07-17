@@ -910,7 +910,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                                          node))))
                       (mapc #'e writes)
                       (emit ($kernel parents (map 'list (alexandria:compose #'car #'node-writes) args)
-                                     (make-instance kernel :name (getattr node :name) :args args :blueprint (getattr node :blueprint) :flops nil)
+                                     (make-instance kernel :name (getattr node :name) :args args :blueprint (getattr node :blueprint) :flops (uiop:symbol-call :caten/codegen/polyhedral :schedule-item-gflops (getattr node :blueprint)))
                                      :out (gethash (node-id node) visited)))
                       (gethash (node-id node) visited)))))))
       (setf (graph-outputs caten/aasm:*ctx*)
