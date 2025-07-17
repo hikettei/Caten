@@ -20,6 +20,10 @@
 	  "verify-buffers: Buffers are number or symbol. ~a" buffers)
   buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct Relay
+  "Contains a list of AType class, which is a result of type inference."
+  (reads nil :type list) (writes nil :type list))
+
 (declaim (inline %make-node-inlined))
 (defstruct (Node
 	    (:copier %copy-node)
@@ -30,15 +34,30 @@
 					(reads  (verify-buffers reads))
 					(attr   (apply #'make-attr type (verify-attrs attrs)))
 					(id (progn (verify-args attr writes reads) (gensym "NID"))))))
-  "
-A node is a computation with input sources `(reads)` and outputs `(writes)`.
+  "A Node represents an element in a Static Single Assignment (SSA) graph. Each node contains:
+
+- Writes: One or more assignment targets.
+- Reads: One or more source operands.
+- Attributes: Key/value paired parameters.
+
 ```
- Read1 Read2 Read3 Read4
-   \\    |    |    /
-      [Operation]
-          |
-   writes1 writes2 ...
+w1[T.w1], w2[T.w2], w3[T.w3] <- f(r1[T.r1], r2[T.r2], r3[T.r3], ..., attr1=v1, attr2=v2, ...)
 ```
+
+- Every node has a `node-type-relay` slot, which may be either `null` or a `Relay` instance.
+- `graph-infer-type-relay` function propagates type inference according to the `:type-relay` clauses specified in each node’s `defnode` definition:
+
+```
+1. Traverses the graph in topological order.
+2. For each node, retrieves the type-relay function from its `node-type-relay` slot.
+3. Invokes this function to infer output types based on input types and node attributes.
+4. Stores the inferred types back into the node’s `node-type-relay` slot.
+```
+
+A `Relay` object’s `(relay-reads relay)` and `(relay-writes relay)` lists must:
+
+- Contain the same number of elements as the node’s original reads and writes.
+- Be lists of `AType` instances representing the inferred types.
 
 Before creating a node using `make-node`, the node must be defined using `defnode`. Attributes are defined by defnode.
 
@@ -56,7 +75,10 @@ Before creating a node using `make-node`, the node must be defined using `defnod
   (writes writes :type list)
   (reads  reads  :type list)
   (attr   attr   :type Attribute)
-  (out-nth 0 :type fixnum))
+  (out-nth 0 :type fixnum)
+  (type-relay nil :type (or null Relay)))
+
+(defun read-type-relay (node) (or (node-type-relay node) (error "Run graph-infer-type-relay first for the node ~a." node)))
 
 (defun make-node (class type writes reads &rest attrs)
   "

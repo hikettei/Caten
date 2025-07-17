@@ -16,7 +16,8 @@
    #:nodes-create-namespace
    #:%isl-safe-pmapc
    #:->cffi-dtype
-   #:schedule-item-args))
+   #:schedule-item-args
+   #:row-major-calc-strides))
 
 (in-package :caten/codegen/helpers)
 
@@ -163,3 +164,11 @@ Otherwise -> they are passed as a buffer."
   (loop for item in (getattr node :blueprint)
         if (eql (node-type item) :DEFINE-GLOBAL)
           collect item))
+
+(defun row-major-calc-strides (shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element 1)))
+    (loop for i downfrom (- num-dims 2) to 0 do
+      (setf (nth i strides) (* (nth (+ i 1) strides) (nth (+ i 1) shape))))
+    strides))

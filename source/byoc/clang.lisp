@@ -1,53 +1,42 @@
 (defpackage :caten/byoc/clang
   (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
-        :caten/codegen/backend :caten/codegen/renderer :caten/air
-        :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
-  (:import-from
-   :caten/codegen/config
-   #:define-auto-scheduler)
-  (:import-from :caten/byoc/lisp #:LispBuffer))
+        :caten/codegen/byoc :caten/codegen/renderer :caten/air
+        :caten/aasm :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
+  (:import-from :caten/byoc/lisp #:LispBuffer)
+  (:export #:ClangBuffer #:ClangRuntime #:load-foreign-function))
 
 (in-package :caten/byoc/clang)
 
 (defclass ClangBuffer (LispBuffer) nil)
 (defclass ClangRuntime (GraphRuntime) nil)
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (n-global-loop (ctx:getenv :OMP))))
-                       ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
-                       :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
-                       :tile-sizes `(2 4 8 16 32))
-(define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer Clang-Auto-Scheduler t)
+(defclass ClangKernel (AbstractKernel)
+  ((program :accessor clang-program :type string)
+   (caller :accessor clang-caller :type function)))
+(define-auto-scheduler Clang-Auto-Scheduler
+  :n-profile 1 :per-band-optrules 2
+  :ptile-max-rank 1)
+(define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 
-(defvar *indent*)
-(defmethod %render-kernel ((renderer CStyle-Renderer) si)
-  (let ((args (loop for item in (getattr si :blueprint)
-                    if (eql (node-type item) :DEFINE-GLOBAL)
-                      collect item)))
-    (with-output-to-string (out)
-      (let ((args
-              (apply
-               #'concatenate
-               'string
-               (butlast
-                (loop for arg in args
-                      append (list
+(defmethod %render-kernel ((renderer CStyle-Renderer) kernel)
+  (let* ((bp (kernel-blueprint kernel))
+         (args (apply #'concatenate 'string
+                      (butlast
+                       (loop for arg in (kernel-args kernel)
+                             append
+                             (list
                               (format nil "~a~a~a~a ~(~a~)"
-                                      (ecase (getattr arg :type)
-                                        (:input "const ")
-                                        (:output "")
-                                        (:shape "const "))
+                                      (case (getattr arg :mode) (:read "const ") (otherwise ""))
                                       (->cdtype (getattr arg :dtype))
                                       (if (getattr arg :pointer-p) "*" "")
-                                      (if (and (eql :input (getattr arg :type)) (getattr arg :pointer-p))
+                                      (if (and (eql :read (getattr arg :mode)) (getattr arg :pointer-p))
                                           " restrict"
                                           "")
                                       (car (node-writes arg)))
                               ", "))))))
-        (format out "void ~(~a~)(~a);~%" (getattr si :name) args)
-        (format out "void ~(~a~)(~a) {~%" (getattr si :name) args)
-        (let ((*indent* 2))
-          (dolist (bp (getattr si :blueprint))
-            (render-bp out bp)))
-        (format out "}~%")))))
+    (setf (clang-program kernel)
+          (with-output-to-string (out)
+            (format out "void ~(~a~)(~a);~%" (kernel-name kernel) args)
+            (format out "void ~(~a~)(~a)~%~a" (kernel-name kernel) args (render-bp bp))))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
   (let ((len (length str)))
@@ -55,60 +44,62 @@
         (subseq str 1 (1- len))
         str)))
 
-(defun render-bp (stream bp)
-  (flet ((indent () (make-string *indent* :initial-element #\space)))
-    (ecase (node-type bp)
-      (:FOR
-       (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
-               (indent)
-               (if (eql (getattr bp :scope) :global)
-                   (format nil "#pragma omp parallel for~%~a" (indent))
-                   "")
-               (getattr bp :idx)
-               (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-               (trim-brackets (render-expr 'CStyle-Renderer (getattr bp :below)))
-               (getattr bp :idx)
-               (render-expr 'CStyle-Renderer (getattr bp :by)))
-       (incf *indent* 2))
-      (:ENDFOR
-       (decf *indent* 2)
-       (format stream "~a}~%" (indent)))
-      (:IF
-       (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
-       (incf *indent* 2))
-      (:ENDIF
-       (decf *indent* 2)
-       (format stream "~a}~%" (indent)))
-      (:EXPR
-       ;; [TODO] Use render-index for simplicity
-       (let ((pre-iterations (getattr bp :iterations)))
-         (labels ((print-aref (name b is &key iterations)
-                    (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                        (format nil "~(~a~)[~(~a~)]" name
-                                (render-expr
-                                 'CStyle-Renderer
-                                 (apply
-                                  #'expr-add
-                                  (map
-                                   'list
-                                   #'(lambda (view stride i)
-                                       (if view
-                                           (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
-                                           (expr-mul stride i)))
-                                   (iteration-space-views is)
-                                   (iteration-space-strides is)
-                                   iterations))))
-                        (format nil "~(~a~)" name))))
-           (format stream "~a~a~a = ~a;~%"
-                   (indent)
-                   (if (car (getattr bp :declare-type))
-                       (format nil "~a " (->cdtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
-                       "")
-                   (render-list
-                    (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
-                         (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
-      (:DEFINE-GLOBAL))))
+(defun render-bp (graph &aux (indent 0) (seen))
+  (with-output-to-string (out)
+    (labels ((indent () (make-string indent :initial-element #\space))
+             (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
+             (r (s &aux (val (id->value graph s)))
+               (when (and val (null (find (node-id val) seen)))
+                 (f val) (push (node-id val) seen))
+               s)
+             (e (id)
+               (let ((renderer (make-instance 'CStyle-Renderer :graph graph)))
+                 (render-node renderer id)))
+             (f (node)
+               (case (node-type node)
+                 (:PROGN
+                   (fmt "{")
+                   (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                   (fmt "}"))
+                 (:EXPR
+                  (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                      (fmt "~a;" (e (car (node-reads node))))
+                      (let ((type (car (relay-writes (read-type-relay node)))))
+                        (assert type () "The node ~a must be shape inferred." node)
+                        (fmt "~a ~(~a~) = ~a;" (->cdtype (tensor-relay-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
+                 (:DEFINE-GLOBAL) (:RANGE) (:ALLOCATE) ;; [TODO] Add a simplifier which removes :DEFINE-GLOBAL, RANGE, ALLOCATE from :PROGN.reads
+                 (:FOR
+                  (multiple-value-bind (range body) (apply #'values (node-reads node))
+                    (setf range (id->value graph range))
+                    (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
+                    (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
+                      (when (symbolp size)
+                        (let ((val (id->value graph size)))
+                          (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
+                          (setf size (car (node-reads val)))))
+                      (when (symbolp step)
+                        (let ((val (id->value graph step)))
+                          (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
+                          (setf step (car (node-reads val)))))
+                      (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a)"
+                           (if (> (getattr node :parallel) 0)
+                               (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr node :parallel) (indent))
+                               "")
+                           bind bind (trim-brackets (e size)) bind (trim-brackets (e step))))
+                    (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
+                    (r body)
+                    (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
+                 (:IF
+                  (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                    (setf cond (id->value graph cond))
+                    (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                    (fmt "if (~(~a~)) {" (e (car (node-reads cond))))
+                    (incf indent 2) (r body) (decf indent)
+                    (fmt "}")))
+                 (:BARRIER (error "thread barrier is not supported on clang"))
+                 (:DEFINE-SHARED-MEMORY (error "shared memory is not supported on clang"))
+                 (otherwise (error "The node ~a is not a supported renderop by clang" node)))))
+      (f (id->value graph (car (graph-outputs graph)))))))
 
 (defun header ()
   (format nil "~%#include <math.h>
@@ -156,6 +147,23 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
+(defun disassemble-foreign-code (source &key (compiler "gcc") (lang "c") (compiler-flags))
+  (declare (type string source compiler))
+  (when (= 1 (ctx:getenv :OMP)) (push "-fopenmp" compiler-flags))
+  (let* ((cmd (append (list compiler "-x" lang) compiler-flags (list "-" "-S" "-o" "-")))
+	 (process-info (uiop:launch-program cmd :input :stream :error-output :stream :output :stream))
+	 (input (uiop:process-info-input process-info))
+	 (error-output (uiop:process-info-error-output process-info)))
+    (unwind-protect (princ source input) (close input))
+    (unless (zerop (uiop:wait-process process-info))
+      (error "Caten[Clang]: Failed to compile a shared library:~%~a~%
+
+Compiled with this command: ~a"
+	     (alexandria:read-stream-content-into-string error-output)
+	     (with-output-to-string (out)
+	       (dolist (c cmd) (princ c out) (princ " " out)))))
+    (alexandria:read-stream-content-into-string (uiop:process-info-output process-info))))
+
 (defmacro with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked (form)
   #+(and :darwin :x86-64) `(float-features:with-float-traps-masked (:invalid) ,form)
   #-(and :darwin :x86-64) `(progn ,form))
@@ -163,20 +171,13 @@ Compiled with this command: ~a"
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
-		 (if (= 0 (getattr (car rest-forms) :nrank))
-		     (if (not (getattr (car rest-forms) :pointer-p))
-			 (expand (cdr rest-forms) body)
-			 (let ((node (car rest-forms))
-			       (tmp (gensym)))
-			   (push (cons tmp node) tmps)
-			   `(let ((,tmp ,(car (node-writes (car rest-forms)))))
-			      (with-foreign-object (,(car (node-writes (car rest-forms))) ,(->cffi-dtype (getattr (car rest-forms) :dtype)))
-				(setf (mem-ref ,(car (node-writes (car rest-forms))) ,(->cffi-dtype (getattr (car rest-forms) :dtype)))
-                                      (buffer-value ,tmp))
-				,(expand (cdr rest-forms) body)))))
-		     `(with-pointer-to-vector-data
+                 (if (getattr (car rest-forms) :pointer-p)
+                     ;; Vector
+                     `(with-pointer-to-vector-data
 			  (,(car (node-writes (car rest-forms))) (buffer-value ,(car (node-writes (car rest-forms)))))
-			,(expand (cdr rest-forms) body)))
+			,(expand (cdr rest-forms) body))
+                     ;; Scalar
+                     (expand (cdr rest-forms) body))
 		 `(progn
 		    ,@body
 		    ,@(loop for (buffer . node) in tmps
@@ -191,36 +192,39 @@ Compiled with this command: ~a"
        ;; causes an "arithmetic error FLOATING-POINT-INVALID-OPERATION".
        ;; This might be due to the (implicit and/or float/int) conversions
        ;; in the code generated for example, for threefry2x32.
-       (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
-	,(expand
-	  defglobals
-	  `((cffi:foreign-funcall
-             ,(format nil "~(~a~)" name)
-             ,@(loop for arg in defglobals
-		     for is-pointer = (getattr arg :pointer-p)
-		     if (not is-pointer)
-		       append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
-		     else
-		       append `(:pointer ,(car (node-writes arg))))
-             :void)))))))
+       (caten/runtime/profile:with-real-time
+         (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
+	     ,(expand
+	       defglobals
+	       `((cffi:foreign-funcall
+                  ,(format nil "~(~a~)" name)
+                  ,@(loop for arg in defglobals
+                          if (getattr arg :pointer-p)
+                            append `(:pointer ,(car (node-writes arg)))
+                          else
+                            append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg))))
+                  :void))))))))
 
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
   (let ((code
           (apply #'concatenate 'string
                  (append
                   (list (header))
-                  (loop for item in items
-                        if (getattr item :rendered-object)
-                          collect (getattr item :rendered-object))))))
+                  (map 'list #'clang-program items)))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
+    ;; [Note] -ffast-math and CI fails?
     (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
+    (when (>= (ctx:getenv :DISASSEMBLE) 1)
+      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
-      (when (getattr item :rendered-object)
-        (setf (getattr item :compiled-object)
-              (make-foreign-function-caller
-               (getattr item :name)
-               (loop for bp in (getattr item :blueprint)
-                     if (eql :DEFINE-GLOBAL (node-type bp))
-                       collect bp)))))
+      (setf (clang-caller item)
+            (compile
+             nil
+             (make-foreign-function-caller
+              (kernel-name item)
+              (kernel-args item)))))
     nil))
+
+(defmethod kernel-call ((kernel ClangKernel) (runtime ClangRuntime) node args)
+  (apply (clang-caller kernel) args))

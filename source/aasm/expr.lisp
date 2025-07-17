@@ -1,11 +1,9 @@
-(defpackage :caten/codegen/expr
-  (:documentation "`Expr` is a syntax sugar for the ops in `caten/aasm`")
+(defpackage :caten/aasm/expr
+  (:documentation "`Expr` is a syntax sugar to construct `caten/aasm` tensor graph")
   (:use :cl :caten/air :caten/aasm)
-  (:import-from
-   :caten/codegen/helpers
-   :nodes-write-to)
   (:export
    #:with-expr
+   #:expr-copy
    #:expr-depends-on
    #:expr-graft-after
    #:expr-graph
@@ -43,23 +41,28 @@
    #:with-expr-cache
    #:expr-detach-loop-bound
    #:expr-flops
-   #:expr-realize)
-  ;; Meta
-  (:export
-   #:ExprMeta #:exprmeta-comment
-   #:ExprGrid
-   #:exprgrid-rank
-   #:exprgrid-global-size
-   #:exprgrid-local-size
-   #:exprgrid-global-size-int
-   #:exprgrid-local-size-int))
+   #:expr-realize
+   #:expr-realize-as-value))
 
-(in-package :caten/codegen/expr)
+(in-package :caten/aasm/expr)
 
-(defstruct Expr
+(defun nodes-write-to (nodes)
+  (flet ((used-p (id) (find id nodes :key #'node-reads :test #'find)))
+    (loop for node in nodes
+	  append
+	  (loop for w in (node-writes node)
+		if (not (used-p w)) collect w))))
+
+(defstruct (Expr (:copier %copy-expr))
   "Expr is a graph wrapper that reprensents a computation whose node leaves are scalar (scalar number, aref from the tensor) and each computation is a scalar."
   (graph (error "graph must occur") :type Graph)
   (out (error "out must occur") :type node))
+
+(defun copy-expr (expr)
+  (let ((new-expr (%copy-expr expr)))
+    (setf (expr-graph new-expr) (copy-graph (expr-graph expr))
+          (expr-out new-expr) (copy-node (expr-out expr)))
+    new-expr))
 
 (defsimplifier
     (%get-scalar)
@@ -118,7 +121,7 @@
       (when (and (= (length (graph-nodes graph)) 1)
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
 	(car (node-reads (car (graph-nodes graph))))))))
-
+;; [TODO] Remove this
 (defmethod expr-scalar-equivalent-p ((expr1 Expr) (expr2 Expr))
   "Returns T if expr1 and expr2 performs the equivalent computation.
 Only supports the scalar computation because it is intended to identify the same and dynamic stride computation"
@@ -162,17 +165,22 @@ Only supports the scalar computation because it is intended to identify the same
             do (push (getattr node :value) symbols))
     (remove-duplicates symbols)))
 
+(defparameter *expr-no-simplify-mode* nil)
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
-  (optimize-aasm (expr-graph expr))
-  (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
+  ;; Note(hikkei) set heavy-opt-threshold to 0 to always enable full symbolic simplification.
+  (unless *expr-no-simplify-mode*
+    (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
+    (graph-infer-type-relay (expr-graph expr)))
   expr)
 
 (defun %connect-expr (grh args out)
   (declare (type graph grh))
-  (assert (every #'expr-p args))
-  (let ((graph (apply #'make-graph (append (apply #'append (map 'list (alexandria:compose #'graph-nodes #'expr-graph) args)) (graph-nodes grh)))))
-    (setf (graph-outputs graph) (list out))
+  (let* ((seen (loop for a in args if (symbolp a) collect a))
+         (args (loop for a in args if (expr-p a) collect a))
+         (graph (apply #'make-graph (append (apply #'append (map 'list (alexandria:compose #'graph-nodes #'expr-graph) args)) (graph-nodes grh)))))
+    (setf (graph-outputs graph) (list out)
+          (graph-seen graph) seen)
     (simplify-expr (make-expr :graph graph :out (id->value graph out)))))
 
 (defun expr-from-graph (id graph)
@@ -204,8 +212,9 @@ Only supports the scalar computation because it is intended to identify the same
 
 (macrolet ((def (name op)
              `(defun ,name (a b &aux (out (gensym "w")))
-                (declare (type Expr a b))
-                (let ((grh (with-context (_ (,op (expr-out a) (expr-out b) :id out)))))
+                (declare (type (or symbol Expr) a b))
+                ;; (special case) expr-mul allows the symbol as an argument because it is used to compute the stride and merged w/ another graph.
+                (let ((grh (with-context (_ (,op (if (expr-p a) (expr-out a) a) (if (expr-p b) (expr-out b) b) :id out)))))
                   (%connect-expr grh (list a b) out)))))
   (def expr-add-binary %add)
   (def expr-sub-binary %sub)
@@ -283,29 +292,6 @@ Only supports the scalar computation because it is intended to identify the same
   (declare (type Expr x))
   (let ((b (expr-truncate x out-dtype)))
     (expr-where (expr-> x b) (expr-add b (expr-const 1 out-dtype)) b)))
-  
-(defun expr-detach-loop-bound (expr &key (allow-failed nil))
-  "If :below is this format
-```
-_gid < BOUND
-```
-This function returns the BOUND, otherwise returns error.
-"
-  (declare (type expr expr))
-  (unless (eql :< (node-type (expr-out expr)))
-    (if allow-failed
-        (return-from expr-detach-loop-bound)
-        (error "Cannot dump the loop bound from the expression ~a" expr)))
-  (let ((gid (id->value (expr-graph expr) (nth 1 (node-reads (expr-out expr)))))
-        (bound (id->value (expr-graph expr) (nth 2 (node-reads (expr-out expr))))))
-    ;; TODO(hikettei): wanna assert (getattr gid :value) starts with _gid_xx?
-    (unless (eql (node-type gid) :LOAD)
-      (if allow-failed
-          (return-from expr-detach-loop-bound)
-          (error "The first argument of the loop bound must be a LOAD node.")))
-    (let ((new-expr (copy-expr expr)))
-      (setf (expr-out new-expr) bound)
-      new-expr)))
 
 (defun expr-flops (expr)
   "Computes the number of floating-operations in the expression"
@@ -341,32 +327,13 @@ Runs the expr with given params.
     (apply
      #'uiop:symbol-call
      :caten/api :%run
-     (caten/runtime:make-runtime
+     (uiop:symbol-call
+      :caten/runtime :make-runtime
       (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
      params)))
-;; ~~ ExprMeta ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass ExprMeta () nil
-  (:documentation "ExprMeta gives a meta information for the Expr."))
 
-(defmethod exprmeta-comment (exprmeta))
-(defmethod print-object ((exprmeta exprmeta) stream)
-  (print-unreadable-object (exprmeta stream :type t)
-    (format stream "/* ~a */" (exprmeta-comment exprmeta))))
-
-(defclass ExprGrid (ExprMeta)
-  ((rank :initarg :rank :accessor exprgrid-rank)
-   (global-size :initarg :global-size :accessor exprgrid-global-size :type Expr)
-   (local-size :initarg :local-size :accessor exprgrid-local-size :type Expr)))
-
-(defmethod exprgrid-global-size-int ((exprgrid ExprGrid) args)
-  (let ((val (apply #'expr-realize (exprgrid-global-size exprgrid) args)))
+(defun expr-realize-as-value (expr &optional params)
+  (declare (type Expr expr))
+  (let ((val (apply #'expr-realize expr params)))
     (assert (numberp (caten/runtime:buffer-value val)))
     (caten/runtime:buffer-value val)))
-
-(defmethod exprgrid-local-size-int ((exprgrid ExprGrid))
-  (let ((val (expr-realize (exprgrid-local-size exprgrid))))
-    (assert (numberp (caten/runtime:buffer-value val)))
-    (caten/runtime:buffer-value val)))
-
-(defmethod exprmeta-comment ((exprgrid exprgrid))
-  (format nil "GRID_~a<~a, ~a>" (exprgrid-rank exprgrid) (exprgrid-global-size exprgrid) (exprgrid-local-size exprgrid)))

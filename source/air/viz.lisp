@@ -202,15 +202,16 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                 ;; princ-node controls how the node is rendered.
                 (case (node-type node)
                   (:SCHEDULE-ITEM
-                   (if (getattr node :allocate-p)
+                   (if (eql (getattr node :type) :allocate)
                        (let ((alloc (car (getattr node :items))))
                          (assert alloc)
                          (princ-node alloc))
-                       (if (getattr node :jitable)
+                       (if (eql (getattr node :type) :kernel)
                            (format nil "[KERNEL] ~a" (getattr node :name))
                            (let ((node (car (getattr node :items))))
                              (assert node)
                              (princ-node node)))))
+                  (:DEFINE-GLOBAL (format nil ":DEFINE-GLOBAL (~(~a~)~a ~a)" (getattr node :dtype) (if (getattr node :pointer-p) "*" "") (car (node-writes node))))
                   (:Allocate
                    (format nil "Allocate[:~(~a~)] ~a" (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))
                   (:LOAD
