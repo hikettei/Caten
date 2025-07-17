@@ -744,11 +744,8 @@
         (caten/aasm::%simplify-ast kernel)))
     (values (apply-directives new-bp) x y)))
 
-(defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids)
+(defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))
-  ;; TODO
-  ;; バグを減らすため，^のbufferifyを廃止する。
-  ;; また，extra-argsを廃止し，普通に毎回新しいAbstractKernelを生成するように変更。
   (let* ((contexts (map 'list #'make-scop-ctx-from-blueprint kernels))
          (expr-subgraphs
            (loop for ctx in contexts for kernel in kernels
@@ -798,13 +795,13 @@
         (multiple-value-bind (dtype loops acc) (id->tensor-info scal-id)
           ;; [TODO] Get Shape/Stride
           ;; [TODO] Create extra alloc inserted to tuned runtime graph
-          ;; (%alloc (length shape) shape stride :dtype dtype :id argname)
           (assert (and dtype loops acc) () "Could not find the definition of scalar ~a" scal-id)
           (dolist (blueprint kernels)
             (let* ((rewrite-context (gethash scal-id (ctx-scal->access ctx)))
                    (shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
                    (argname (swpid scal-id "tmp")) (defglobal (%global argname dtype t)) (count 0))
               (assert rewrite-context)
+              (push (%alloc (length shape) shape stride :dtype dtype :id argname) extra-allocs)
               ;; Rewrite the definition of scal-id if it exists in current blueprint
               (insert-nodes blueprint (list defglobal))
               (when (id->value blueprint scal-id)
@@ -827,7 +824,8 @@
                       if (and (eql (node-type node) :BIND) (eql scal-id (getattr node :value)))
                         do (if (id->value blueprint (car (node-reads node))) ;; two case: the reductor is defined in the same group, or
                                (insert-nodes blueprint (make-new-aref-bind (car (node-writes node)) argname (car (node-reads node)) acc stride node))
-                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node))))))))))))
+                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node))))))))
+        (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes))))))
 
 (defun get-blueprint-from-polyhedral (polyhedral)
   (print "Extracting the following Polyhedral IR")
@@ -850,7 +848,9 @@
           ;; この時点で，ARGSを書き換える。
           ;; Bufferizeは，Skipするケースへ分岐する。この分岐が正しく動けばOK
           ;; Bufferize
-          (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)
+          (let ((extra-allocs (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)))
+
+            )
           ;; [TODO] 1. Multi Kernel Refactor
           ;; [TODO] 2. _gid_p0_1のリファクタ (ループごとに全く別のRANGEを挿入する必要がある。This feature is only blocked by Bufferize Right?)
           ;; 1. Args挿入の判定
