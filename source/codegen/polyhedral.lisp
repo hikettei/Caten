@@ -588,7 +588,7 @@
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
     (let* ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
-      (labels ((lookup (node) (reverse (or (gethash (node-id node) node-to-loops) (error "The node ~a is not found in the new blueprint?" node))))
+      (labels ((lookup (node) (reverse (gethash (node-id node) node-to-loops)))
                (find-expr-from-user (user)
                  (loop for expr in expr-subgraphs
                        if (find (node-id user) (graph-nodes (cdr expr)) :key #'node-id)
@@ -1026,7 +1026,7 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
-    (t . (:NoOpt :Vectorize))))  ;; Recursively optimize things ... ;; :TILE, 
+    (t . (:NoOpt :Tile))))  ;; Recursively optimize things ... ;; :TILE, 
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1128,7 +1128,8 @@ for (int i=0; i<32; i+=2)
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
 ;; - [ ] Implement Float4(Upcast) Workload
-;;  - [ ] 先に!sumとかの展開でFailするのを直す
+;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
+;;    - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
 ;;  - [ ] TypeInference+Unrollを再利用することで実装
 ;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
 ;;  - [ ] TileGPU, VISIBLE=Tに変更する (further vectorized)
