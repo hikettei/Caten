@@ -67,6 +67,7 @@
   (ptile-max-rank 0 :type fixnum)
   (tile-search-space nil :type list)
   (ptile-search-space nil :type list)
+  (vectorize-search-space nil :type list)
   (global-max) (local-max) (shared-max))
 
 (defmacro define-auto-scheduler
@@ -78,6 +79,7 @@
             ;; Search Space Configuration
             (tile-search-space '(2 4 8 16 32 64))
             (ptile-search-space '(2 3 4 8 13 16 29)) ;; Only effective when ptile-max-rank >= 2.
+            (vectorize-search-space '(4))
             ;; Constraints Configuration
             (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence
             ;; [TODO] Vectorize, Upcast, TileSize, etc
@@ -102,7 +104,7 @@
               :n-profile ,n-profile :per-band-optrules ,per-band-optrules
               :ptile-max-rank ,ptile-max-rank
               ;; Search Space configuration
-              :tile-search-space ',tile-search-space :ptile-search-space ',ptile-search-space
+              :tile-search-space ',tile-search-space :ptile-search-space ',ptile-search-space :vectorize-search-space ',vectorize-search-space
               :global-max ',global-max :local-max ',local-max :shared-max ,shared-max)))))
 ;; ~~ Backend ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric get-backend-buffer (backend))

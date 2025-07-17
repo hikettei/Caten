@@ -418,7 +418,7 @@
                (when (< count depth) (rec (id->value *ctx* (second (node-reads node))) (1+ count)))))
       (rec user 1))
     user))
-  
+
 (defun parse-isl-ast-block (ctx ast)
   (declare (type cffi:foreign-pointer ast))
   (let* ((children (isl::%isl-ast-node-block-get-children ast))
@@ -889,10 +889,6 @@ Returns T if the current schedule does not break any dependences in dep."
                   collect (make-instance 'Interchange :axis nth :band band :order perm)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange)) nil) ;; [TODO]
-;; [TODO] FlashAttention, This will rewrite a graph
-(defclass FuseWithParent (OptimizationRule) nil)
-
-(defclass TensorCore (OptimizationRule) nil) ;; TODO
 
 (defun tiling-size (band size)
   (declare (type fixnum size))
@@ -989,11 +985,36 @@ for (int i=0; i<32; i+=2)
               (z      (with-context-nodes (_ (%mod thread (%load (%salloc :dtype :int64) blocksize) :id (car (node-writes (nth 2 innerbands))))))))
          (insert-nodes new-bp (append (list thread) x y z)))))
     new-bp))
-
-(defclass Parallel (OptimizationRule) nil) ;; [TODO] Loop Fissionしても，各地点のTopへ配置できる。
+;; [TODO] Loop Fissionしても，各地点のTopへ配置できる。
+(defclass Parallel (OptimizationRule) nil) ;; [TODO] CPU Parallel Using OpenMP
+;; [TODO] FlashAttention, This will rewrite a graph
+(defclass FuseWithParent (OptimizationRule) nil)
+(defclass TensorCore (OptimizationRule) nil) ;; TODO
 (defclass SplitReduce (OptimizationRule)
-  ;; TODO: Mode = :warp :block
+  ;; :mark :reductionを使用するようにしたい。 (TODO: It has two mode, :warp level and :block level)
   nil)
+
+(defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width)))
+(defmethod optrule-generate-search-space (poly bands (id (eql :Vectorize)))
+  (loop for band in bands for nth upfrom 0
+        append
+        (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::vectorize-search-space)
+              do (assert (and (integerp size) (>= size 1)) () "vectorize-search-space must be a list of fixnum greater than zero!")
+              collect
+              (make-instance 'Vectorize :width size :band band :axis nth))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
+  (let* ((band (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
+         (child (schedule-node-get-child band 0)) ;; [TODO] If the band is too small? ===> @VECTORIZEを展開する時にエラーを出させる+Reject
+         (child (schedule-node-insert-mark child (directive->id (directive "VECTORIZE" (vectorize-width opt) 1 NIL)))))
+    (setf (poly-schedule poly) (schedule-node-get-schedule child))
+    (print "VECTORIZED")
+    (print poly)))
+
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
+  (print bands)
+  (print blueprint)
+  (error "NOT READY!"))
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
@@ -1005,7 +1026,7 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
-    (t . (:NoOpt :Tile))))      ;; Recursively optimize things ...
+    (t . (:NoOpt :Vectorize))))  ;; Recursively optimize things ... ;; :TILE, 
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1055,6 +1076,8 @@ for (int i=0; i<32; i+=2)
           (dotimes (i n)
             (incf total (kernel-call (getattr node :kernel-info) runtime node kernel-args)))
         (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime x)) extra-args)
+        ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
+        (format t "Evlauation: ~a(s)~%" total)
         total))))
 
 (defun realize-node-with-autotuning (runtime node args
@@ -1104,6 +1127,11 @@ for (int i=0; i<32; i+=2)
             (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
+;; - [ ] Implement Float4(Upcast) Workload
+;;  - [ ] 先に!sumとかの展開でFailするのを直す
+;;  - [ ] TypeInference+Unrollを再利用することで実装
+;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
+;;  - [ ] TileGPU, VISIBLE=Tに変更する (further vectorized)
 ;; [TODO]
 ;; - [x] Bring Back Metal Renderer
 ;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
@@ -1116,6 +1144,7 @@ for (int i=0; i<32; i+=2)
 ;;  - [ ] Support Loop Fission, and post loop collapse.
 ;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
 ;;  - [ ] How to implement loop coalescing to the band tile?
+;;  - [ ] float4, unroll!
 ;; - Then all have to do is to get optimal kernel!
 ;; - カーネルの分割/融合を正しくサポートする
 ;; - More Transformation Patterns
