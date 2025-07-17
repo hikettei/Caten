@@ -266,10 +266,7 @@
    (queue    :accessor wgpu-queue)))
 
 (defmethod initialize-instance :after ((rt WebGPURuntime) &key)
-  ;; instance
-  (setf (wgpu-instance rt) (%check-null (wgpuCreateInstance (null-pointer))
-                                        "wgpuCreateInstance"))
-  ;; adapter
+  (setf (wgpu-instance rt) (%check-null (wgpuCreateInstance (null-pointer)) "wgpuCreateInstance"))
   (with-foreign-object (opt '(:struct WGPURequestAdapterOptions))
     (setf (foreign-slot-value opt '(:struct WGPURequestAdapterOptions) 'backendType) 0  ; ANY
           (foreign-slot-value opt '(:struct WGPURequestAdapterOptions) 'powerPreference) 2 ; HIGH_PERF
@@ -279,11 +276,9 @@
     (setf (wgpu-adapter rt) (%check-null
                              (wgpuInstanceRequestAdapter (wgpu-instance rt) opt)
                              "wgpuInstanceRequestAdapter")))
-  ;; device
   (setf (wgpu-device rt) (%check-null
                           (wgpuAdapterRequestDevice (wgpu-adapter rt) (null-pointer))
                           "wgpuAdapterRequestDevice"))
-  ;; queue
   (setf (wgpu-queue rt) (wgpuDeviceGetQueue (wgpu-device rt))))
 ;; ───────────────────────────────────────────────────────────────────────────
 ;;  Renderer / Kernel / AutoScheduler
@@ -612,6 +607,6 @@ alias boolean = bool;
                                     (with-foreign-object (cbarr :pointer 1)
                                       (setf (mem-aref cbarr :pointer 0) cb)
                                       (wgpuQueueSubmit q 1 cbarr))
-                                    (wgpuDevicePoll (wgpu-device runtime) t (null-pointer)))))))))))))))
+                                    (wgpuDevicePoll (wgpu-device runtime) t (null-pointer))))))))))))))))
 
 (defmethod kernel-call ((k WebGPUKernel) (rt WebGPURuntime) node args) (apply (webgpu-caller k) rt node args))
