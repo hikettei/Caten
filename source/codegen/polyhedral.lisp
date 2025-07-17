@@ -985,7 +985,7 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
+     ;(make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
@@ -1079,17 +1079,18 @@ Returns T if the current schedule does not break any dependences in dep."
         if (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle band) i))
           collect 1 else collect 0))
 
-(defun schedule-node-band-no-tilegpu-p (band)
+(defun schedule-node-band-no-directive-p (band name)
+  (declare (type string name))
   (labels ((explore (node)
              (when (eql :bool-false (isl::%isl-schedule-node-has-parent (isl::schedule-node-handle node)))
-               (return-from schedule-node-band-no-tilegpu-p t))
+               (return-from schedule-node-band-no-directive-p t))
              (let ((parent (isl::schedule-node-parent node)))
                (case (schedule-node-get-type parent)
                  (:schedule-node-domain (explore parent))
                  (:schedule-node-mark
                   (let ((id (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-schedule-node-mark-get-id (isl::schedule-node-handle parent)))))))
-                    (if (equalp (directive-type id) "TILEGPU")
-                        (return-from schedule-node-band-no-tilegpu-p nil)
+                    (if (equalp (directive-type id) name)
+                        (return-from schedule-node-band-no-directive-p nil)
                         (explore parent))))
                  (otherwise (explore parent))))))
     (explore band)
@@ -1099,7 +1100,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;; TileGPU Can be applied at once
   (when (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2)
     (loop for band in bands for nth upfrom 0
-          for valid-p = (schedule-node-band-no-tilegpu-p band)
+          for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
           for coincident = (schedule-node-band-get-coincident band)
           for split-at-base = (or (position 0 coincident) (length coincident))
           for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
@@ -1159,8 +1160,41 @@ for (int i=0; i<32; i+=2)
               (z      (with-context-nodes (_ (%mod thread (%load (%salloc :dtype :int64) blocksize) :id (car (node-writes (nth 2 innerbands))))))))
          (insert-nodes new-bp (append (list thread) x y z)))))
     new-bp))
-;; [TODO] Loop Fissionしても，各地点のTopへ配置できる。
-(defclass Parallel (OptimizationRule) nil) ;; [TODO] CPU Parallel Using OpenMP
+
+(defclass Parallel (OptimizationRule) ((depth :initarg :depth :accessor parallel-depth))) ;; [TODO] CPU Parallel Using OpenMP
+(defmethod optrule-generate-search-space (poly bands (id (eql :Parallel)))
+  (when (= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
+    (loop for band in bands for nth upfrom 0
+          for valid-p = (schedule-node-band-no-directive-p band "PARALLEL")
+          for coincident = (schedule-node-band-get-coincident band)
+          for split-at = (or (position 0 coincident) (length coincident))
+          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+            collect (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at) :band band :axis nth))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
+  (let* ((depth (or (parallel-depth opt) (schedule-node-get-band-depth (optrule-band opt))))
+         (band (schedule-node-insert-mark
+                (optrule-band opt)
+                (directive->id (directive "PARALLEL" 0 depth nil))))
+         (band (if (parallel-depth opt)
+                   (schedule-node-band-split (schedule-node-get-child band 0) (parallel-depth opt))
+                   band)))
+    (setf
+     (poly-schedule poly)
+     (schedule-node-get-schedule band))))
+
+(defmethod optrule-apply-transform-on-blueprint ((id (eql :PARALLEL)) bands blueprint)
+  (print "BEFORE")
+  (print (length bands))
+  (caten/codegen/blueprint:print-blueprint blueprint t)
+  (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands)))
+  (print "AFTER")
+  (caten/codegen/blueprint:print-blueprint blueprint t)
+  blueprint)
+;; [TODO] Caten Level Loop Collapse
+;; [TODO] Auto Scheduler Loop Collapse (aasm transformation rule!) これ1DになってSimplifyできたら面白そうじゃね?
+(defclass Collapse (OptimizationRule) nil)
+
 ;; [TODO] FlashAttention, This will rewrite a graph
 (defclass FuseWithParent (OptimizationRule) nil)
 (defclass TensorCore (OptimizationRule) nil) ;; TODO
@@ -1178,21 +1212,20 @@ for (int i=0; i<32; i+=2)
               (make-instance 'Vectorize :width size :band band :axis nth))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
-  (let* ((band (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
-         (child (schedule-node-get-child band 0)) ;; [TODO] If the band is too small? ===> @VECTORIZEを展開する時にエラーを出させる+Reject
-         (child (schedule-node-insert-mark child (directive->id (directive "VECTORIZE" (vectorize-width opt) 1 NIL)))))
+  (let* ((child (schedule-node-insert-mark (optrule-band opt) (directive->id (directive "VECTORIZE" (vectorize-width opt) 1 NIL)))))
     (setf (poly-schedule poly) (schedule-node-get-schedule child))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-  (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
   (warn "WIP: Vectorize Rewrite")
   (let ((d (getattr (car bands) :directive)))
-    (let ((bp (caten/aasm::ast-band-unroll
-               blueprint bands
-               (loop for s in bands collect (directive-amount d))
-               :rewriter #'caten/aasm::ast-unroll-body)))
-      (caten/codegen/blueprint:print-blueprint bp t)
-      bp)))
+    (caten/codegen/blueprint:print-blueprint blueprint t)
+    (loop for band in bands do
+      (setf
+       blueprint
+       (caten/aasm::ast-band-unroll blueprint band (list (directive-amount d)) :rewriter #'caten/aasm::ast-unroll-body)))
+    (simplify-ast blueprint) (simplify-ast blueprint)
+    (caten/codegen/blueprint:print-blueprint blueprint t)
+    blueprint))
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
@@ -1201,9 +1234,9 @@ for (int i=0; i<32; i+=2)
 ;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* ;; (n-generation . Candidates)
-  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
+  '((0 . (:Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (t . (:NoOpt :TileGPU :Tile))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+    (t . (:NoOpt :Parallel))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1339,8 +1372,9 @@ for (int i=0; i<32; i+=2)
 ;; - [x] TileGPUの付与について -> ScheduleTreeをRootからTraverseして探索する方法に変える
 ;;   - [x] これによって，複数のTileGPUが付与される。
 ;; - [x] 探索空間下に戻す
-;; - [ ] Measure the score based on GFLOPs
+;; - [x] Measure the score based on GFLOPs
 ;; - [ ] Implement Float4(Upcast) Workload
+;;  - [ ] val_2のIndexingで悩むが，これはUnrollする範囲にEXPR Definitionがあるかどうかで決めれば良い？(Scalar Expr == Let in Common Lisp)
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
 ;;    - [ ] これはLoop Fissionをサポートしていないのが悪い。(FOR(EXPR, ))を満たさないのは。
 ;;    - [ ] !sigmoid -> TypeInference

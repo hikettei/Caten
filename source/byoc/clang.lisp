@@ -14,6 +14,7 @@
    (caller :accessor clang-caller :type function)))
 (define-auto-scheduler Clang-Auto-Scheduler
   :n-profile 1 :per-band-optrules 2
+  :tile-search-space `(8 16 32 64 128 256)
   :ptile-max-rank 1)
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 

@@ -665,3 +665,70 @@ for (int i=0; i<M; i+=32)
             (insert-nodes graph (apply #'append (map 'list #'node-force-number-bypass nodes)))
             graph))))))
 ;; SplitReduce, SyncThreads, SharedMemory
+
+;; Collapse
+(defun ast-band-collapse (graph bands &aux (dtype :int64))
+  "
+for i in range(M):
+  for j in range(N):
+    for k in range(K):
+      A(i, j, k)
+===>
+for x in range(M*N*K):
+  i = x % M
+  j = x / N
+  k = ?
+  A(i, j, k)
+"
+  (declare (type FastGraph graph) (type list bands))
+  (when (= (length bands) 1) (return-from ast-band-collapse graph))
+  ;; [TODO] Loop Interchange?
+  (flet ((maybe-fixnum (x)
+           (if (numberp x)
+               (%load (%salloc :dtype dtype) x)
+               (let ((node (id->value graph x)))
+                 (if (and node (eql (node-type node) :EXPR))
+                     (car (node-reads node))
+                     x)))))
+    (let* ((merged-size-out (gensym "MS"))
+           (ranges (map 'list #'(lambda (x) (id->value graph (car (node-reads x)))) bands))
+           (new-idx (intern (with-output-to-string (out) (dolist (r ranges) (format out "~a" (getattr r :idx))))))
+           (_ (assert (every #'(lambda (x) (eql (node-type x) :RANGE)) ranges)))
+           (merged-size-graph
+             (with-context (_ (%expr (node->id (reduce #'%mul (map 'list #'(lambda (x) (apply #'%idiv (map 'list #'maybe-fixnum (node-reads x)))) ranges))) :out merged-size-out))))
+           (merged-bands-idx (gensym))
+           (merged-bands (with-context (_ (emit (make-node :Render :RANGE (list merged-bands-idx) (list merged-size-out (node->id (%expr (node->id1 (maybe-fixnum 1))))) :idx new-idx :dtype dtype)))))
+           (sizes (map 'list #'(lambda (r) (car (node-reads r))) ranges))
+           (new-body-id (gensym))
+           (new-body
+             ;; [TODO] Compute Step
+             (with-context
+                 (_
+                  (%bind
+                   new-body-id
+                   ;; Rewrite i, j (idx)
+                   (let ((acc (maybe-fixnum 1)) out)
+                     (dolist (sz (reverse sizes))
+                       (push acc out)
+                       (setf acc (%mul (maybe-fixnum acc) (maybe-fixnum sz))))
+                     (append
+                       (loop for r in ranges
+                             for b in bands
+                             for size in sizes
+                             for stride in (reverse out)
+                             do (%bind (car (node-writes r)) (%mul (%mod (%idiv merged-bands-idx stride) size) (second (node-reads r))))
+                                (loop for node in (graph-nodes graph)
+                                      if (or
+                                          (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr r :idx)))
+                                          (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr r :idx))))
+                                        do (%bind (car (node-writes node)) (%mod (%idiv merged-bands-idx stride) size))))
+                     (apply
+                      #'%progn
+                      (list (id->value graph (second (node-reads (car (last bands)))))))))))))
+           (outerband (make-node :Render :FOR (node-writes (car bands))
+                                 (list merged-bands-idx new-body-id) :mark :noopt)))
+      (declare (ignore _))
+      (insert-nodes graph (print (append (graph-nodes merged-size-graph) (graph-nodes new-body) (graph-nodes merged-bands))))
+      (insert-nodes graph (print (list outerband)))
+      (simplify-ast graph)
+      graph)))
