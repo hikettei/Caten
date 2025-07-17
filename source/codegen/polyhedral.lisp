@@ -678,15 +678,9 @@
                  for c in children ;; Reading from bottom
                  for type = (isl::%isl-ast-node-get-type c)
                  for nth upfrom 0
-                 if (or
-                     (and cannot-add-new-loop-mode (find type '(:ast-node-mark :ast-node-for)))
-                     (and (or
-                           (eql type :ast-node-for)
-                           (and (eql type :ast-node-mark) (not (mark-is-tilegpu-p c))))
-                          (nth (1+ nth) children)
-                          (mark-is-tilegpu-p (nth (1+ nth) children))))
+                 if (and cannot-add-new-loop-mode (find type '(:ast-node-mark :ast-node-for)))
                    do (incf n-kernels) (setf cannot-add-new-loop-mode nil)
-                 if (mark-is-tilegpu-p c)
+                 if (or (mark-is-tilegpu-p c) (find type '(:ast-node-for :ast-node-mark)))
                    do (setf cannot-add-new-loop-mode t)
                  do (setf (gethash n-kernels kernels) (append (list c) (gethash n-kernels kernels))))
            (nreverse
@@ -707,7 +701,8 @@
 (defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))
   (when (null scal-ids) (return-from bp-rewrite-scalar->buffer))
-  (let* ((contexts (map 'list #'make-scop-ctx-from-blueprint kernels))
+  (let* ((scal-ids (remove-duplicates scal-ids))
+         (contexts (map 'list #'make-scop-ctx-from-blueprint kernels))
          (expr-subgraphs
            (loop for ctx in contexts for kernel in kernels
                  append
@@ -1041,16 +1036,31 @@ Returns T if the current schedule does not break any dependences in dep."
         if (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle band) i))
           collect 1 else collect 0))
 
+(defun schedule-node-band-no-tilegpu-p (band)
+  (labels ((explore (node)
+             (when (eql :bool-false (isl::%isl-schedule-node-has-parent (isl::schedule-node-handle node)))
+               (return-from schedule-node-band-no-tilegpu-p t))
+             (let ((parent (isl::schedule-node-parent node)))
+               (case (schedule-node-get-type parent)
+                 (:schedule-node-domain (explore parent))
+                 (:schedule-node-mark
+                  (let ((id (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-schedule-node-mark-get-id (isl::schedule-node-handle parent)))))))
+                    (if (equalp (directive-type id) "TILEGPU")
+                        (return-from schedule-node-band-no-tilegpu-p nil)
+                        (explore parent))))
+                 (otherwise (explore parent))))))
+    (explore band)
+    t))
+
 (defmethod optrule-generate-search-space (poly bands (id (eql :TileGPU)))
   ;; TileGPU Can be applied at once
-  (when (and
-         (null (some #'(lambda (x) (typep x 'TileGPU)) (poly-cmd-history poly)))
-         (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2))
+  (when (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2)
     (loop for band in bands for nth upfrom 0
+          for valid-p = (schedule-node-band-no-tilegpu-p band)
           for coincident = (schedule-node-band-get-coincident band)
           for split-at-base = (or (position 0 coincident) (length coincident))
           for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
-          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident split-at (length coincident))))
+          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
             append
             (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
                   do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
@@ -1063,7 +1073,7 @@ Returns T if the current schedule does not break any dependences in dep."
                 (optrule-band opt)
                 (directive->id (directive "TILEGPU" (tile-gpu-local-size opt) depth nil))))
          (band (if (tile-gpu-band-split-at opt)
-                   (schedule-node-band-split band (tile-gpu-band-split-at opt))
+                   (schedule-node-band-split (schedule-node-get-child band 0) (tile-gpu-band-split-at opt))
                    band)))
     (setf
      (poly-schedule poly)
@@ -1150,8 +1160,7 @@ for (int i=0; i<32; i+=2)
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
-    (t . (:NoOpt :TILE))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+    (t . (:NoOpt :TileGPU :Tile))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1242,7 +1251,7 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 1e-5)
+                                       (threshold 0)
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler)))
                                                          
