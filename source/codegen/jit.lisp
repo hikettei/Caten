@@ -141,6 +141,8 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
     (when (>= (ctx:getenv :BEAM) 1) (autotune runtime))
     runtime))
 
+(defparameter *autotune-node-callback* nil)
+(defun register-autotune-node (node) (push node *autotune-node-callback*))
 (defun autotune (runtime)
   ;; An entrypoint for the AutoScheduler
   ;; Optimizing the runtime end-to-end.
@@ -150,7 +152,10 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   ;; [TODO]
   ;; - Implement HashedGraph
   ;; - 入力のSymbolicに応じて変動する。
-  (%autotune runtime))
+  (let ((*autotune-node-callback*))
+    (%autotune runtime)
+    (insert-nodes (runtime-graph runtime) *autotune-node-callback*))
+  (verify-graph (runtime-graph runtime)))
 
 (defun %autotune (runtime)
   "

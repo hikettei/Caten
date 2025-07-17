@@ -33,7 +33,7 @@ KERNEL_ID <- SYNCHRONIZE(KERNEL_ID1, KERNEL_ID2, ..., ARG1, ARG2, ...)
 KERNEL_ID <- KERNEL(KERNEL_ID1, KERNEL_ID2, ..., ARG1, ARG2, ...)
 ```
 "
-	 :slots ((n-kernel-args :type fixnum) (kernel-info) (dtypes :type list) (cached-p :type boolean)))
+	 :slots ((n-kernel-args :type fixnum) (kernel-info) (dtypes :type list) (cached-p :type boolean) (optimized-p :type boolean :initform nil)))
 
 ;; [TODO] Caten Multi GPU IR
 ;; %shared

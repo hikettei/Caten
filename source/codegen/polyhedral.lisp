@@ -1167,7 +1167,7 @@ for (int i=0; i<32; i+=2)
     (loop for gen in next-generations
           if (verify-polyhedral-ir gen) collect gen)))
 
-(defun make-kernel-from-blueprint (base-node kernel-cls base-kernel blueprint nth)
+(defun make-kernel-from-blueprint (base-node kernel-cls base-kernel blueprint nth dep)
   (let* ((args
            (loop for b in (graph-nodes blueprint)
                  if (eql (node-type b) :DEFINE-GLOBAL)
@@ -1179,26 +1179,30 @@ for (int i=0; i<32; i+=2)
                  else
                    collect (car (node-writes arg)))))
     ;; [TODO] Determine write-to, how to do this?
-    (make-node :RUNTIME :KERNEL nil read-args
-               :kernel-info
-               (make-instance
-                kernel-cls
-                :name (intern (format nil "~a_~a" (kernel-name base-kernel) nth))
-                :blueprint blueprint
-                :args args
-                :flops nil))))
+    ($kernel dep read-args
+             (make-instance
+              kernel-cls
+              :name (intern (format nil "~a_~a" (kernel-name base-kernel) nth))
+              :blueprint blueprint
+              :args args
+              :flops nil)
+             :optimized-p t)))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
     (multiple-value-bind (generated-kernels extra-allocs) (get-blueprint-from-polyhedral polyhedral)
       (let ((kernels
-              (loop for kernel in generated-kernels for nth upfrom 0
-                    collect (make-kernel-from-blueprint
-                             node
-                             (class-name (class-of abstract-kernel))
-                             abstract-kernel
-                             kernel
-                             nth))))
+              (loop with dep = (subseq (node-reads node) 0 (getattr node :n-kernel-args))
+                    for kernel in generated-kernels for nth upfrom 0
+                    collect
+                    (let ((kernel (make-kernel-from-blueprint
+                                   node
+                                   (class-name (class-of abstract-kernel))
+                                   abstract-kernel kernel nth dep)))
+                      (setf dep (list (node->id kernel)))
+                      kernel))))
+        (setf (node-writes (car (last kernels))) (copy-list (node-writes node)))
+        (print kernels)
         ;; Save the result for when the polyhedral was selected as a best kernel
         (setf (poly-bp-cache polyhedral) kernels
               (poly-extra-allocs polyhedral) extra-allocs)
@@ -1211,8 +1215,7 @@ for (int i=0; i<32; i+=2)
         (loop for kernel in kernels do
           (caten/codegen/byoc:%render-kernel renderer (getattr kernel :kernel-info)))
         (handler-case
-            (loop for kernel in kernels do
-              (caten/codegen/byoc:%compile-kernel renderer (list (getattr kernel :kernel-info)) nil))
+            (caten/codegen/byoc:%compile-kernel renderer (map 'list #'(lambda (x) (getattr x :kernel-info)) kernels) nil)
           (error (c)
             (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
             (return-from polyhedral-ir-evaluate *+inf*)))
@@ -1226,7 +1229,8 @@ for (int i=0; i<32; i+=2)
                        (if (numberp id) id (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime id)))))
             (dotimes (i n)
               (dolist (node kernels)
-                (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar (node-reads node)))))))
+                (let ((arg-symbols (subseq (node-reads node) (getattr node :n-kernel-args))))
+                  (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
           ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
           (format t "Evlauation: ~a(s)~%" total)
@@ -1245,6 +1249,7 @@ for (int i=0; i<32; i+=2)
   ;; Parameters:
   ;;  - n
   ;; [TODO] Candidates生成するとき，per-band-opt-rulesにしたがって生成して枝分かれを制限する
+  (when (getattr node :optimized-p) (return-from realize-node-with-autotuning t))
   (with-slots ((n caten/codegen/byoc::n-profile) (per-band-optrules caten/codegen/byoc::per-band-optrules)) strategy
     (with-isl-context
       (labels ((make-candidate (polyhedral-ir)
@@ -1269,17 +1274,10 @@ for (int i=0; i<32; i+=2)
           (let ((best-kernel (car beam)))
             (print "BEST KERNEL IS")
             (print best-kernel)
-            (error "FINISHED (TODO: Insert and rewrite graph)")
-            (kernel-employ-blueprint
-             (car best-kernel) node
-             (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))
-             (poly-bp-cache (car best-kernel))
-             base-name base-args)
-            (loop for extra-arg in (poly-extra-allocs (car best-kernel))
-                  do (insert-nodes (uiop:symbol-call :caten/runtime/runtime :runtime-graph runtime) (list extra-arg)))
-            (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
+            (loop for extra-arg in (append (poly-bp-cache (car best-kernel)) (poly-extra-allocs (car best-kernel)))
+                  do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
-            (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
+            t))))))
 ;; [TODO] 戻ったらやること
 ;; - [ ] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
 ;;   - [ ] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
