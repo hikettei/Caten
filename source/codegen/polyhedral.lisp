@@ -10,8 +10,15 @@
 
 (in-package :caten/codegen/polyhedral)
 
-(defparameter *allow-compilation-during-beam* t)
+(defparameter *allow-compilation-error-during-beam* nil)
 (defparameter *+inf* (expt 2 32))
+;; BEAM Search Utils
+(define-condition beam-post-rejection (error)
+  ((reason :initarg :reason))
+  (:documentation
+   "Raised when the conversion from Polyhedral IR to Blueprint
+    after beam search is determined to be invalid, causing result rejection.")
+  (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason))))) 
 ;; ~~ Directive ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Directive ()
   ((type :initarg :type :accessor directive-type)
@@ -828,7 +835,7 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
+     ;; (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
@@ -966,7 +973,7 @@ for (int i=0; i<32; i+=2)
 =>
 
 "
-  (caten/codegen/blueprint:print-blueprint blueprint t)
+  ;; [TODO] Loop FissionされたBlueprintにTILEを適用すると，RANGE expects IDX ... で失敗する。
   (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
   (let* ((new-bp (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
          (innerbands (loop for node in (graph-nodes new-bp)
@@ -1012,9 +1019,15 @@ for (int i=0; i<32; i+=2)
     (setf (poly-schedule poly) (schedule-node-get-schedule child))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-  ;; TODO
-  (Warn "TODO: Vectorize blueprint transformation")
-  blueprint)
+  (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
+  (let ((d (getattr (car bands) :directive)))
+    (let ((bp (caten/aasm::ast-band-unroll
+               blueprint bands
+               (loop for s in bands collect (directive-amount d))
+               :rewriter #'caten/aasm::ast-unroll-body)))
+      (print "VECTORIZE BLUEPRINT")
+      (caten/codegen/blueprint:print-blueprint bp t)
+      bp)))
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
@@ -1026,7 +1039,7 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
-    (t . (:NoOpt :VECTORIZE))))  ;; Recursively optimize things ... ;; :TILE, 
+    (t . (:NoOpt :TILE :VECTORIZE))))  ;; Recursively optimize things ... ;; :TILE, 
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1062,7 +1075,7 @@ for (int i=0; i<32; i+=2)
         ;; 99% of compilation failing is due to scalar -> tensor mutation.
         ;; but 99% of failing case is worthless so we can ignore it.
         (error (c)
-          (funcall (if *allow-compilation-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
+          (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
           (return-from polyhedral-ir-evaluate *+inf*)))
       (format t "~%[Kernel]:~%==========~%")
       ;; (caten/codegen/blueprint::print-blueprint blueprint t)
@@ -1127,6 +1140,13 @@ for (int i=0; i<32; i+=2)
             (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
+;; [TODO] Loop Fission Support
+;; - Loop Fission + TileGPUは失敗する。bcuz:
+;;  - IDXの一つはFOR, もう一つはEXPRが使うから当然
+;;  - ちゃんとカーネルを分離するようにサポートする。
+;;  - その後Parallel, TileGPUが使える
+;;  - Rescheduleにserialize-sccsする分岐を用意する
+;; - [ ] Measure the score based on GFLOPs
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
 ;;    - [ ] !sigmoid -> TypeInference
@@ -1134,7 +1154,7 @@ for (int i=0; i<32; i+=2)
 ;;    - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
 ;;  - [ ] TypeInference+Unrollを再利用することで実装
 ;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
-;;  - [ ] TileGPU, VISIBLE=Tに変更する (further vectorized)
+;;  - [ ] TileGPU, VISIBLE=Tに変更する (so further vectorized)
 ;; [TODO]
 ;; - [x] Bring Back Metal Renderer
 ;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
@@ -1150,12 +1170,6 @@ for (int i=0; i<32; i+=2)
 ;;  - [ ] float4, unroll!
 ;; - Then all have to do is to get optimal kernel!
 ;; - カーネルの分割/融合を正しくサポートする
-;; - More Transformation Patterns
-;;  - TensorCore
-;;  - SIMD
-;;  - !sigmoid+!matmul
-;;  - Metal: Specify Local Size
-;;  - [ ] 
 ;; - Loop Interchange is REQUIRED
 ;; - 4. fix a bug in threefry2x32
 ;; - 5. ループの途中でincf挿入するやつやりたい?
