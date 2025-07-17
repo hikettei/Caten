@@ -108,10 +108,10 @@ disassemble:
     (declare (type Node node))
     (flet ((preprocess-argument (x)
              (if (numberp x) x (runtime-getvar runtime x))))
-      (when (eql (node-type node) :Pause/Backward) ;; A special node to stop the execution
-        (loop for read in (node-reads node) for write in (node-writes node)
-              do (runtime-setvar runtime write (runtime-getvar runtime read)))
-        (return-from runtime-step))
+;;      (when (eql (node-type node) :Pause/Backward) ;; A special node to stop the execution
+;;        (loop for read in (node-reads node) for write in (node-writes node)
+;;              do (runtime-setvar runtime write (runtime-getvar runtime read)))
+;;        (return-from runtime-step))
       (let ((t1 (get-internal-real-time))
             (out (multiple-value-list
                   (handler-bind ((error #'(lambda (c) (error 'runtime-error :runtime runtime :cond c))))
@@ -450,3 +450,10 @@ disassemble:
 
 (defmethod realize-node ((node-id (eql :Where)) (runtime GraphRuntime) node args)
   (map-view runtime (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
+
+(defmethod realize-node ((node-id (eql :SYNCHRONIZE)) (runtime GraphRuntime) node args)
+  (let ((ids (subseq (node-reads node) (getattr node :n-kernel-args))))
+    (apply #'values (map 'list #'(lambda (x) (runtime-getvar runtime x)) ids))))
+
+(defmethod realize-node ((node-id (eql :PAUSE/BACKWARD)) (runtime GraphRuntime) node args)
+  (apply #'values (map 'list #'(lambda (x) (runtime-getvar runtime x)) (node-reads node))))

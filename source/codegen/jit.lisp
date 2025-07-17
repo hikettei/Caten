@@ -119,7 +119,13 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
              renderer
              (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :KERNEL) collect (getattr node :kernel-info))
              nil))
-           (make-runtime runtime-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-type :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-type :params (runtime-params runtime) :renderer renderer))))))
+          ;; Sync ID2Tensor
+          (loop for node in (graph-nodes runtime-graph)
+                if (eql (node-type node) :SYNCHRONIZE) do
+                  (setf (gethash (car (node-writes node)) (runtime-id2tensor runtime))
+                        (gethash (car (subseq (node-reads node) (getattr node :n-kernel-args))) (runtime-id2tensor runtime))))
+          ;; [TODO] Backward Graph Support
+          (make-runtime runtime-graph :fw-outputs (graph-outputs runtime-graph) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-type :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-type :params (runtime-params runtime) :renderer renderer))))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))
   "

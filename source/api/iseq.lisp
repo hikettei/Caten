@@ -511,7 +511,7 @@ An entry point for compiling the given tensors, returning GraphRuntime.
   (maphash
    #'(lambda (k v)
        (let ((var (gethash k (runtime-variables runtime))))
-         (when var (setf (tensor-buffer v) var))))
+         (when (and v var) (setf (tensor-buffer v) var))))
    (runtime-id2tensor runtime)))
   
 (defmethod forward ((runtime GraphRuntime) &rest params)

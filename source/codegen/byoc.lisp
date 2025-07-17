@@ -43,12 +43,12 @@
   (when *autotune-mode-p* (return-from caten/runtime:realize-node (uiop:symbol-call :caten/codegen/polyhedral :realize-node-with-autotuning runtime node args)))
   ;; [TODO] coerce-dtyped-buffer and force scalars to be a buffer? or if there's segv we have to add them.
   (let* ((kernel (caten/air:getattr node :kernel-info))
-         (prg-time (kernel-call kernel runtime node args)))
+         (prg-time (kernel-call kernel runtime node (subseq args (caten/air:getattr node :n-kernel-args)))))
     (when (= (ctx:getenv :PROFILE) 1)
       (incf caten/runtime/profile::*jit-time* prg-time)
       ;; [TODO] Bring back profile-report
       )
-    (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))
+    t))
 ;; ~~ Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph)

@@ -364,5 +364,3 @@ To sort the graph properly, resolve the following isolated graph dependencies.
           (loop for r in (node-reads node)
                 if (and (symbolp r) (null (gethash r defined)))
                   collect r))))
-                
-            
