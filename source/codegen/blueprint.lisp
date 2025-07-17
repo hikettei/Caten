@@ -14,13 +14,6 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:lower-cached-schedule-item
    #:print-blueprint
    #:blueprint-gather-grids)
-  ;; GFlops Mesaurer
-  (:export
-   #:GFlops-Measurer
-   #:GFlops-Measurer-ops
-   #:GFlops-Measurer-succeed-p
-   #:compute-gflops
-   #:schedule-item-gflops)
   ;; Verifier
   (:export #:verify-blueprint #:expr-gather-buffer-loads))
 
@@ -667,47 +660,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
        (f (id->value graph (car (graph-outputs graph))))))
    stream))
 ;; ^ Simplify how to describe write relay
-;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct GFlops-Measurer
-  "A helper object to compute GFlops"
-  (ops (error "flops must occur") :type (or null Expr))
-  (succeed-p t :type boolean))
-(defun cannot-compute-flop () (make-gflops-measurer :ops nil :succeed-p nil))
-(defmethod compute-gflops ((gfm GFlops-Measurer) elapsed params)
-  (when (null (gflops-measurer-succeed-p gfm)) (return-from compute-gflops nil))
-  (assert (gflops-measurer-ops gfm))
-  (when (zerop elapsed) (return-from compute-gflops nil)) ;; Elapsed Time = 0.0
-  (let* ((ops (apply #'expr-realize (gflops-measurer-ops gfm) params))
-         (_ (assert (numberp (tensor-relay-value ops)) () "measure-gflpos: the result is not a number."))
-         (gflops (/ (tensor-relay-value ops) (* elapsed 1e9))))
-    (declare (ignore _))
-    gflops))
-(defmethod schedule-item-flops (node &aux (total-flops))
-  (declare (type node node))
-  (assert (eql (node-type node) :Schedule-Item) () "schedule-item-flops: the node is not a Schedule-Item.")
-  (assert (getattr node :blueprint-base) () ":blueprint-base must be provided!")
-  (loop with bounds = nil
-        for node in (getattr node :blueprint-base)
-        if (eql (node-type node) :FOR)
-          do (let ((size (expr-detach-loop-bound (getattr node :below) :allow-failed t)))
-               ;; The loop must be affine
-               (when (not (expr-equal-to (getattr node :upfrom) 0))
-                 (return-from schedule-item-flops (cannot-compute-flop)))
-               (when (not (expr-equal-to (getattr node :by) 1))
-                 (return-from schedule-item-flops (cannot-compute-flop)))
-               (when (null size) (return-from schedule-item-flops (cannot-compute-flop)))
-               (push (cons node size) bounds))
-        else if (eql (node-type node) :ENDFOR)
-               do (setf bounds (remove (getattr node :idx) bounds :key #'(lambda (x) (getattr (car x) :idx)) :test #'equal))
-        else if (eql (node-type node) :EXPR) do
-          (let ((flop (expr-flops node))
-                (volume (reduce #'expr-mul (map 'list #'cdr bounds))))
-            (push (expr-mul (expr-const flop :int64) volume) total-flops))
-        else
-          do (return-from schedule-item-flops (cannot-compute-flop)))
-  (let ((ops (reduce #'expr-add total-flops)))
-    (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
-    (make-gflops-measurer :ops ops :succeed-p t)))
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun blueprint-gather-grids (blueprint &key (format `(:block :thread)) (max-dimensions 3) (dtype :int64))
   (declare (type Graph blueprint))

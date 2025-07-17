@@ -293,14 +293,10 @@ Only supports the scalar computation because it is intended to identify the same
   (let ((b (expr-truncate x out-dtype)))
     (expr-where (expr-> x b) (expr-add b (expr-const 1 out-dtype)) b)))
 
-(defun expr-flops (expr)
+(defun nodes-flops (nodes)
   "Computes the number of floating-operations in the expression"
-  (declare (type node expr))
-  (assert (eql :expr (node-type expr)))
-  (let ((flops 0)
-        (graph (copy-graph (expr-graph (getattr expr :EXPR)))))
-    (verify-graph graph) ;; Copy and verify the graph to prevent unused ops to be counted.
-    (loop for node in (graph-nodes graph) do
+  (let ((flops 0))
+    (loop for node in nodes do
       (incf
        flops
        (case (node-type node)
@@ -308,7 +304,7 @@ Only supports the scalar computation because it is intended to identify the same
          ((:NEG :RECIP :SIN :EXP2 :LOG2 :SQRT :NOT :ADD :MUL :IDIV :AND :OR :XOR :MAX :GCD :!= :< :CAST :MOD) 1)
          ((:ALLOCATE :WHERE :MOVE :AREF :INDEX-COMPONENTS :LOAD :STORE :VIEW) 0)
          (otherwise
-          (warn "expr-flops: Cannot compute the number of flop for the node ~a. Counted as zero." node)
+;;          (warn "expr-flops: Cannot compute the number of flop for the node ~a. Counted as zero." node)
           0))))
     flops))
 
@@ -335,5 +331,5 @@ Runs the expr with given params.
 (defun expr-realize-as-value (expr &optional params)
   (declare (type Expr expr))
   (let ((val (apply #'expr-realize expr params)))
-    (assert (numberp (caten/runtime:buffer-value val)))
-    (caten/runtime:buffer-value val)))
+    (assert (numberp (uiop:symbol-call :caten/runtime :buffer-value val)))
+    (uiop:symbol-call :caten/runtime :buffer-value val)))

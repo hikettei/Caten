@@ -385,6 +385,7 @@ Constraints:
     (insert-nodes graph (graph-nodes sb)))
   graph)
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Tiling
 (defun ngid (gid suffix) (intern (format nil "~a~a" gid suffix)))
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
@@ -460,15 +461,17 @@ for (int i=0; i<M; i+=32)
         (insert-nodes graph (list body))))
     ;; 3. Replace the access to i -> i + ii
     (loop for band in bands
-          for rng-old = (print (id->value graph (car (node-reads band))))
+          for rng-old = (id->value graph (car (node-reads band)))
           for idx = (car (node-reads band))
           for idx-new = (%add (ngid idx sp) (ngid idx sc) :id idx)
           do (insert-nodes graph (list idx-new))
              (loop for node in (graph-nodes graph)
                    if (or
                        (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx))
-                       (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr rng-old :idx)))
-                       (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr rng-old :idx))))
+                       (when (eql (node-type rng-old) :RANGE)
+                         (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr rng-old :idx))))
+                       (when (eql (node-type rng-old) :RANGE)
+                         (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr rng-old :idx)))))
                      do (let ((idx-new (%add (ngid idx sp) (ngid idx sc) :id (car (node-writes node)))))
                           (insert-nodes graph (list idx-new)))))
     (values graph (nreverse globals) (nreverse locals))))
@@ -519,3 +522,213 @@ for (int i=0; i<M; i+=32)
                         (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size)))) body))))))
         (verify-graph graph)
         graph))))
+;; Unrolling, Upcast, Vectorize, TensorCore
+(defgeneric compute-unroll-reminder (reminder size step n-unroll)
+  (:documentation "Finds the maximum integer which satisfies MOD(SIZE//STEP, n_unroll) == 0"))
+
+(defmethod compute-unroll-reminder ((reminder (eql :idiv)) size step n-unroll)
+  (let* ((id (gensym))
+         (g (with-context (out (%mul step (%mul n-unroll (%idiv (%idiv size step) n-unroll)) :id id)))))
+    (setf (graph-outputs g) (list id))
+    g))
+
+(defun node-force-number-bypass (node)
+  "Inserts %LOAD if the node is trying to load number directly"
+  (when (eql (node-type node) :RANGE) (return-from node-force-number-bypass (list node)))
+  (with-context-nodes
+      (_
+       (loop for r in (node-reads node)
+             for nth upfrom 0
+             if (integerp r) do (setf (nth nth (node-reads node)) (node->id1 (%iconst r)))
+             else if (floatp r) do (setf (nth nth (node-reads node)) (node->id1 (%fconst r)))))
+      (__ (emit node))))
+
+(defun ast-band-children (graph band &key (nodes nil) (seen nil))
+  (labels ((explore (id seen-expr-p &aux (node (id->value graph id)))
+             (when (or (null node) (find id seen)) (return-from explore))
+             (push id seen)
+             (when (eql (node-type node) :EXPR)
+               (if seen-expr-p (return-from explore) (setf seen-expr-p t)))
+             (push node nodes)
+             (mapc #'(lambda (x) (explore x seen-expr-p)) (node-reads node))))
+    (explore (second (node-reads band)) nil))
+  nodes)
+
+(defun ast-unroll-reminder (graph reminder idx offset)
+  "Rewrites the IDX -> IDX+UNROLL_OFFSET"
+  (let ((nodes (apply #'make-graph (ast-band-children graph reminder)))
+        (out (second (node-reads reminder))))
+    (setf (graph-outputs nodes) (list out)
+          nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
+          nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
+    (labels ((%cpy-node (node)
+               (let ((node (copy-node node)))
+                 (setf (node-id node) (gensym "NID"))
+                 node))
+             (newid (id &aux (node (id->value graph id)))
+               (if (and id (eql (node-type node) :RANGE) (eql idx (getattr node :idx)))
+                   offset
+                   (if (eql id idx) offset id)))
+             (clone-graph ()
+               (with-context
+                   (_ (loop for node_ in nodes for node = (%cpy-node node_)
+                            do (setf (node-reads node) (map 'list #'newid (node-reads node))
+                                     (node-writes node) (map 'list #'newid (node-writes node)))
+                               (emit node))))))
+      (insert-nodes graph (graph-nodes (clone-graph)))
+      (%progn out))))
+
+;; Unroll Rewrites
+(defun ast-unroll-body (graph body idx n)
+  "Removes IDX from body by unrolling with N"
+  (declare (type graph graph) (type symbol idx) (type fixnum n))
+  (let ((nodes (apply #'make-graph (ast-band-children graph body)))
+        (out (second (node-reads body)))
+        (args (loop for node in (graph-nodes graph) if (eql (node-type node) :DEFINE-GLOBAL) collect (car (node-writes node)))))
+    (setf (graph-outputs nodes) (list out)
+          nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
+          nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
+    (labels ((%cpy-node (node)
+               (let ((node (copy-node node)))
+                 (setf (node-id node) (gensym "NID"))
+                 node))
+             (is-range-p (node &aux (node (id->value graph node)))
+               (and node (eql (node-type node) :RANGE) (eql idx (getattr node :idx))))
+             (unroll-id (cnt id &aux (val (id->value graph id)))
+               (declare (type fixnum cnt) (type symbol id))
+               (if val
+                   ;; note: variables defined by :DEFINE-GLOBAL is not unrolled
+                   (if (and (find id nodes :key #'node-writes :test #'find) (null (find id args)))
+                       (intern (format nil "~a_~a" id cnt))
+                       id)
+                   id))
+             (unroll-with-count (count &aux (seen (make-hash-table)))
+               (flet ((getid (id cnt)
+                        (or
+                         (gethash id seen)
+                         (setf (gethash id seen)
+                               (if (is-range-p id)
+                                   (node->id1 cnt)
+                                   (unroll-id count id))))))
+                 (with-context
+                   (cnt (%iconst count))
+                   (_ (loop for node_ in nodes for node = (%cpy-node node_)
+                            do (setf (node-reads node) (map 'list #'(lambda (x) (getid x cnt)) (node-reads node))
+                                     (node-writes node) (map 'list #'(lambda (x) (getid x cnt)) (node-writes node)))
+                               (emit node)))))))
+      (apply
+       #'%progn
+       (loop for i upfrom 0 below n
+             for unrolled = (unroll-with-count i)
+             for end = (intern (format nil "~a_~a" out i))
+             do (insert-nodes graph (graph-nodes unrolled))
+             collect end)))))
+;; TODO: Upcast Rewrite
+(defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64) (rewriter #'ast-unroll-body) &aux (n-unroll (car local-sizes)))
+  (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
+  (let ((range (id->value graph (car (node-reads band)))))
+    (assert (and range (eql (node-type range) :RANGE)))
+    (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band local-sizes)
+      ;; The work here is to remove away local-bands
+      ;; also inserting reminder bands in the gloal-bands
+      ;; [TODO] Insert Reminder Statements
+      ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies?
+      ;; note: do not run verify-graph during %ast-band-tile
+      (flet ((expr-out (id &aux (node (id->value graph id)))
+               (if (numberp id)
+                   id
+                   (car (node-reads node)))))
+        (let* ((reminder-graph (compute-unroll-reminder reminder (expr-out (car (node-reads range))) (expr-out (second (node-reads range))) n-unroll))
+               (reminder-expr (%expr (car (graph-outputs reminder-graph))))
+               (new-step (%mul n-unroll (second (node-reads range))))
+               (new-step-expr (%expr (node->id1 new-step)))
+               (idx1 (getattr (id->value graph (car (node-reads (car global-bands)))) :idx))
+               (idx2 (getattr (id->value graph (car (node-reads (car local-bands)))) :idx))
+               (range1 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-expr) (node->id1 new-step-expr))
+                                  :idx idx1 :dtype dtype))
+               (reminder-size-tmp (%neg (car (graph-outputs reminder-graph))))
+               (reminder-size (%add (expr-out (car (node-reads range))) reminder-size-tmp))
+               (reminder-size-expr (%expr (node->id1 reminder-size)))
+               (range2 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-size-expr) (second (node-reads range)))
+                                  :idx idx2 :dtype dtype))
+               (body1 (funcall rewriter graph (car local-bands) idx2 n-unroll)) ;; Unrolled body
+               (body2 (ast-unroll-reminder graph (car local-bands) idx1 (car (graph-outputs reminder-graph)))) ;; Reminder body (idx2 is rewritten as idx2 + reminder_graph.out)
+               (main-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range1) (node->id1 body1)) :mark :noopt))
+               (reminder-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range2) (node->id1 body2)) :mark :noopt))
+               (prgn (%bind (car (node-writes (car global-bands))) (%progn main-band reminder-band))))
+          (let ((nodes
+                  (append
+                   (graph-nodes reminder-graph)
+                   (list new-step new-step-expr reminder-size-tmp reminder-expr reminder-size-expr
+                         body1 body2 range
+                         range1 reminder-size range2 main-band reminder-band prgn))))
+            (insert-nodes graph (apply #'append (map 'list #'node-force-number-bypass nodes)))
+            graph))))))
+;; SplitReduce, SyncThreads, SharedMemory
+
+;; Collapse
+(defun ast-band-collapse (graph bands &key (dtype :int64) (parallel nil))
+  "
+for i in range(M):
+  for j in range(N):
+    for k in range(K):
+      A(i, j, k)
+===>
+for x in range(M*N*K):
+  i = x % M
+  j = x / N
+  k = ?
+  A(i, j, k)
+"
+  (declare (type FastGraph graph) (type list bands))
+  (when (= (length bands) 1) (return-from ast-band-collapse graph))
+  ;; [TODO] Loop Interchange?
+  (flet ((maybe-fixnum (x)
+           (if (numberp x)
+               (%load (%salloc :dtype dtype) x)
+               (let ((node (id->value graph x)))
+                 (if (and node (eql (node-type node) :EXPR))
+                     (car (node-reads node))
+                     x)))))
+    (let* ((merged-size-out (gensym "MS"))
+           (ranges (map 'list #'(lambda (x) (id->value graph (car (node-reads x)))) bands))
+           (new-idx (intern (with-output-to-string (out) (dolist (r ranges) (format out "~a" (getattr r :idx))))))
+           (_ (assert (every #'(lambda (x) (eql (node-type x) :RANGE)) ranges)))
+           (merged-size-graph
+             (with-context (_ (%expr (node->id (reduce #'%mul (map 'list #'(lambda (x) (apply #'%idiv (map 'list #'maybe-fixnum (node-reads x)))) ranges))) :out merged-size-out))))
+           (merged-bands-idx (gensym))
+           (merged-bands (with-context (_ (emit (make-node :Render :RANGE (list merged-bands-idx) (list merged-size-out (node->id (%expr (node->id1 (maybe-fixnum 1))))) :idx new-idx :dtype dtype)))))
+           (sizes (map 'list #'(lambda (r) (car (node-reads r))) ranges))
+           (new-body-id (gensym))
+           (new-body
+             ;; [TODO] Compute Step
+             (with-context
+                 (_
+                  (%bind
+                   new-body-id
+                   ;; Rewrite i, j (idx)
+                   (let ((acc (maybe-fixnum 1)) out)
+                     (dolist (sz (reverse sizes))
+                       (push acc out)
+                       (setf acc (%mul (maybe-fixnum acc) (maybe-fixnum sz))))
+                     (append
+                       (loop for r in ranges
+                             for b in bands
+                             for size in sizes
+                             for stride in (reverse out)
+                             do (%bind (car (node-writes r)) (%mul (%mod (%idiv merged-bands-idx stride) size) (second (node-reads r))))
+                                (loop for node in (graph-nodes graph)
+                                      if (or
+                                          (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr r :idx)))
+                                          (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr r :idx))))
+                                        do (%bind (car (node-writes node)) (%mod (%idiv merged-bands-idx stride) size))))
+                     (apply
+                      #'%progn
+                      (list (id->value graph (second (node-reads (car (last bands)))))))))))))
+           (outerband (make-node :Render :FOR (node-writes (car bands))
+                                 (list merged-bands-idx new-body-id) :mark :noopt :parallel parallel)))
+      (declare (ignore _))
+      (insert-nodes graph (append (graph-nodes merged-size-graph) (graph-nodes new-body) (graph-nodes merged-bands)))
+      (insert-nodes graph (list outerband))
+      (simplify-ast graph)
+      graph)))

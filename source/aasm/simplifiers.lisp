@@ -35,8 +35,10 @@
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value (number ,x))
     (and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))
 
-(defpattern Var (x dtype &key (allow-range nil))
+(defpattern Var (x dtype &key (allow-range nil) (expr t))
   `(or
+    ,@(when expr
+        `((<Rule> :EXPR ((Var ,x ,dtype :expr nil)))))
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value ,x)
     ,@(when allow-range `((<Rule> :RANGE (_ _) :dtype ,dtype :idx ,x)))
     ,@(when (equal x `(= 0))
@@ -235,6 +237,17 @@
     ;;        (:Neg ((:Add ((Const y dtype2) (guard m (eql m p)))) Z))))
     ;; ->
     ;; ((node graph) (when (eql dtype1 dtype2) (with-context-nodes (out (%add (%mul (%load (%salloc :dtype dtype1) (- x y)) P) (%neg Z)))))))
+    ;; A/1 -> A
+    ((:IDIV (x (Var (= 1) _))) -> x)
+    ;; let max(idx) be A, (A/C)%C = A/C
+    ((:Mod ((:IDIV ((:Range ((Var size _ :expr t) (Var step _ :expr t))) (Var c1 _))) (Var c2 _)))
+     ->
+     ((node graph)
+      (when (and (eql c1 c2) (numberp size) (numberp c1))
+        ;; Compute the maximum value of A/C, if it is smaller than C, %mod can be remoevd.
+        (when (<= (/ size c1) c1)
+          (let ((idiv (id->value graph (car (node-reads node)))))
+            (with-context-nodes (_ (%idiv (car (node-reads idiv)) (second (node-reads idiv)) :id (car (node-writes node))))))))))
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
     ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))

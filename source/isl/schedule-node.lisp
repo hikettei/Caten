@@ -151,3 +151,7 @@
 (defun schedule-node-band-split (node pos)
   (declare (type schedule-node node))
   (%make-schedule-node (%isl-schedule-node-band-split (schedule-node-handle (copy node)) pos)))
+
+(define-isl-function schedule-node-parent %isl-schedule-node-parent
+  (:give schedule-node)
+  (:take schedule-node))
