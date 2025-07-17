@@ -18,7 +18,11 @@
 
 ;; [TODO] Remove ./codegen/jit.lisp :JIT_KERNEL after replacing them
 (defnode (:RUNTIME :KERNEL) (RuntimeOps)
-	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
+	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM.
+```
+KERNEL_ID <- KERNEL(KERNEL_ID1, KERNEL_ID2, ..., ARG1, ARG2, ...)
+```
+"
 	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
 ;; [TODO] Caten Multi GPU IR
