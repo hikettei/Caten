@@ -1280,16 +1280,13 @@ for (int i=0; i<32; i+=2)
             (setf (node-reads node) (append (node-reads node) (loop for extra-arg in (poly-extra-allocs (car best-kernel)) collect (car (node-writes extra-arg)))))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
-;; [TODO] Loop Fission Support
-;; [TODO] RuntimeGraphの仕様変えない？
-;; Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。
-;; - KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
-;; - Loop Fission + TileGPUは失敗する。bcuz:
-;;  - IDXの一つはFOR, もう一つはEXPRが使うから当然
-;;  - ちゃんとカーネルを分離するようにサポートする。
-;;  - その後Parallel, TileGPUが使える
-;;  - Rescheduleにserialize-sccsする分岐を用意する
-;;  - 依存関係はKernel呼び出す順番で担保する。
+;; [TODO] 戻ったらやること
+;; - [ ] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
+;;   - [ ] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
+;;   - [ ] RuntimeGraph作れるように。
+;; - [ ] TileGPUの付与について -> ScheduleTreeをRootからTraverseして探索する方法に変える
+;;   - [ ] これによって，複数のTileGPUが付与される。
+;; - [ ] 探索空間下に戻す
 ;; - [ ] Measure the score based on GFLOPs
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
@@ -1300,7 +1297,8 @@ for (int i=0; i<32; i+=2)
 ;;  - [ ] TypeInference+Unrollを再利用することで実装
 ;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
 ;;  - [ ] TileGPU, VISIBLE=Tに変更する (so further vectorized)
-;; [TODO]
+                                        ;
+                                        ; [TODO]
 ;; - [x] Bring Back Metal Renderer
 ;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
 ;; - [x] Define AutoSchedulerConfig
@@ -1467,9 +1465,6 @@ for B_i in blockIdx.y parallel tile_block_ij:64  // 0..1
 
 ;; One week is enough to run FlashAttention for me ...
 ;; [Workload]
-;; - Polyhedral Modelが正しくない気がする
-;; - SearchSpace
-
 ;; - コストモデル, 測定方法はどうでもいい。
 ;; ASTに対する
 ;;   - 探索方法(DFS)
