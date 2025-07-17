@@ -15,6 +15,26 @@
         (load-foreign-library "libnvrtc")
         (load-foreign-library "libcuda"))
     (t (c) (declare (ignore c)))))
+
+(defclass CudaRuntime (GraphRuntime)
+  ((device  :accessor cuda-device)
+   (context :accessor cuda-context)
+   (stream  :accessor cuda-stream)))
+(defclass CudaBuffer (AbstractBuffer) nil)
+(defclass Cuda-Renderer (CStyle-Renderer) nil)
+
+(defclass CudaKernel (AbstractKernel)
+  ((program  :accessor cuda-program)
+   (module   :accessor cuda-module)
+   (fxn      :accessor cuda-fxn)
+   (caller   :accessor cuda-caller)))
+
+(defclass Cuda-Program ()
+  ((module    :accessor cp-module)
+   (fxn       :accessor cp-function)
+   (grid-size :accessor cp-grid-size)
+   (argtypes  :accessor cp-argtypes)))
+
 (defctype CUdevice       :int)
 (defctype CUcontext      :pointer)
 (defctype CUmodule       :pointer)
@@ -88,7 +108,6 @@
 ;; ----------------------------------------------------------------------------------------------------------------
 ;;  CUDA Buffer / Runtime
 ;; ----------------------------------------------------------------------------------------------------------------
-(defclass CudaBuffer (AbstractBuffer) nil)
 
 (defun dtype->cffi (dtype)
   (ecase dtype
@@ -154,11 +173,6 @@
 ;; ----------------------------------------------------------------------------------------------------------------
 ;;  CudaRuntime
 ;; ----------------------------------------------------------------------------------------------------------------
-(defclass CudaRuntime (GraphRuntime)
-  ((device  :accessor cuda-device)
-   (context :accessor cuda-context)
-   (stream  :accessor cuda-stream)))
-
 (defmethod initialize-instance :after ((rt CudaRuntime) &key)
   (check-cuda (cuInit 0) "cuInit")
   (with-foreign-objects ((dev :int) (ctx :pointer) (strm :pointer))
@@ -175,20 +189,6 @@
 ;; ----------------------------------------------------------------------------------------------------------------
 ;; Renderer / Kernel
 ;; ----------------------------------------------------------------------------------------------------------------
-(defclass Cuda-Renderer (CStyle-Renderer) nil)
-
-(defclass CudaKernel (AbstractKernel)
-  ((program  :accessor cuda-program)
-   (module   :accessor cuda-module)
-   (fxn      :accessor cuda-fxn)
-   (caller   :accessor cuda-caller)))
-
-(defclass Cuda-Program ()
-  ((module    :accessor cp-module)
-   (fxn       :accessor cp-function)
-   (grid-size :accessor cp-grid-size)
-   (argtypes  :accessor cp-argtypes)))
-
 ;; -- Auto‑Scheduler -------------------------------------------------------------------------------
 (define-auto-scheduler Cuda-Auto-Scheduler
   :n-profile 1 :per-band-optrules 2

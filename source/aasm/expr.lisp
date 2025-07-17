@@ -335,5 +335,5 @@ Runs the expr with given params.
 (defun expr-realize-as-value (expr &optional params)
   (declare (type Expr expr))
   (let ((val (apply #'expr-realize expr params)))
-    (assert (numberp (caten/runtime:buffer-value val)))
-    (caten/runtime:buffer-value val)))
+    (assert (numberp (uiop:symbol-call :caten/runtime :buffer-value val)))
+    (uiop:symbol-call :caten/runtime :buffer-value val)))
