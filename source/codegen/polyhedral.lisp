@@ -1112,7 +1112,7 @@ for (int i=0; i<32; i+=2)
 ;;  - [x] Provide the directive class, and parse utils
 ;;  - [x] TileGPU is just splitting the band w/ coincidence parts
 ;;  - [ ] Optimization on Reduction
-;;  - [ ] TensorCore, SIMD
+;;  - [ ] TensorCore, SIMD, i.e., float4
 ;;  - [ ] Support Loop Fission, and post loop collapse.
 ;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
 ;;  - [ ] How to implement loop coalescing to the band tile?
