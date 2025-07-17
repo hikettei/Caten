@@ -388,10 +388,9 @@
 (defun pctx-register-gid (pctx id range offset)
   (declare (type parse-ctx pctx) (type symbol id))
   (labels ((find-suite (i cnt)
-             i))
-;;             (if (gethash i (pctx-gid2range pctx))
- ;;                (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
-  ;;               i)))
+             (if (gethash i (pctx-gid2range pctx))
+                 (find-suite (intern (format nil "~a_~a" id cnt)) (1+ cnt))
+                 i)))
     (let ((registered-as (find-suite id 1)) (new-ctx (copy-parse-ctx pctx)))
       (setf (gethash registered-as (pctx-gid2range new-ctx)) range
             (gethash registered-as (pctx-gid2offset new-ctx)) offset
@@ -697,20 +696,79 @@
      bands)
     (simplify-ast blueprint)
     blueprint))
+;; [TODO] Delete
+(defun schedule-get-kernel-count (schedule)
+  (declare (type isl::schedule schedule))
+  (let ((root (schedule-node-get-child (schedule-get-root schedule) 0)))
+    (print (schedule-node-get-type root))
+    (if (eql (schedule-node-get-type root) :schedule-node-sequence)
+        (isl::%isl-schedule-node-n-children (isl::schedule-node-handle root))
+        1)))
+
+(defun get-raw-bp-from-polyhedral (pctx polyhedral)
+  "Convert ISL Polyhedral Representation back to blueprint graph. If loop fission was applied, generates multiple blueprint."
+  (let* ((ast (isl::ast-node-handle (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
+         (type (isl::%isl-ast-node-get-type ast)))
+    (case type
+      (:ast-node-error (isl::isl-error))
+      ((:ast-node-for :ast-node-mark :ast-node-user) ;; they are always single kernel
+       (list (with-blueprint (:noopt t) (%progn (parse-isl-ast pctx ast)))))
+      (:ast-node-if (error ":ast-node-if should not be placed on the root!"))
+      (:ast-node-block ;; they could be divided to multiple kernels, let's check first.
+       (let* ((children (isl::%isl-ast-node-block-get-children ast))
+	      (n        (isl::%isl-ast-node-list-n-ast-node children))
+              (children (loop for i upfrom 0 below n collect (isl::%isl-ast-node-list-get-at children i)))
+              (n-kernels 0)
+              (kernels (make-hash-table)))
+         ;; [TODO] Filter, Filter, TILEGPUはOKのはず。
+         ;; [TODO] MultiKernelで動いてるかテストする！
+         ;; TileGPU is the only trigger to generate multiple kernels
+         ;; まず_gid_p0のコメントアウトしてる部分が悪い
+         ;; BufferRizeの修正も合わせて考えるべき。
+         (loop with cannot-add-new-loop-mode = nil
+               for c in (reverse children) ;; Reading from bottom
+               for type = (isl::%isl-ast-node-get-type c)
+               if (and cannot-add-new-loop-mode (find type '(:ast-node-mark :ast-node-for)))
+                 do (incf n-kernels) (setf cannot-add-new-loop-mode nil)
+               if (and (eql (isl::%isl-ast-node-get-type c) :ast-node-mark)
+                       (let ((d (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id c))))))
+                         (eql :TILEGPU (intern (directive-type d) "KEYWORD"))))
+                 do (setf cannot-add-new-loop-mode t)
+               do (setf (gethash n-kernels kernels) (append (list c) (gethash n-kernels kernels))))
+         (nreverse
+          (loop for i upfrom 0 to n-kernels
+                for kernel-items = (gethash i kernels)
+                collect
+                (with-blueprint (:noopt t) (apply #'%progn (map 'list #'(lambda (x) (parse-isl-ast pctx x)) kernel-items))))))))))
+
+(defun %finalize-blueprint-from-polyhedral (polyhedral pctx kernel)
+  "Convert ISL polyhedral representation back to blueprint graph"
+  (declare (type Polyhedral-IR polyhedral) (type Graph kernel))
+  (multiple-value-bind (new-bp x y)
+      (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
+       pctx
+       (poly-ctx polyhedral)
+       (caten/aasm::ast-simplify-expr-subgraph
+        (caten/aasm::%simplify-ast kernel)))
+    (values (apply-directives new-bp) x y)))
 
 (defun get-blueprint-from-polyhedral (polyhedral)
-  "Convert ISL polyhedral representation back to blueprint graph"
-  (declare (type Polyhedral-IR polyhedral))
-  (let ((ast (->ast (poly-schedule polyhedral) (poly-get-rank polyhedral))))
-    (declare (type isl::ast-node ast))
-    (let ((pctx (make-parse-ctx (poly-blueprint polyhedral))))
-      (multiple-value-bind (new-bp x y)
-          (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
-           pctx
-           (poly-ctx polyhedral)
-           (caten/aasm::ast-simplify-expr-subgraph
-            (with-blueprint () (%progn (parse-isl-ast pctx (isl::ast-node-handle ast))))))
-        (values (apply-directives new-bp) x y)))))
+  (print "Extracting the following Polyhedral IR")
+  (print polyhedral)
+  (let* ((pctx (make-parse-ctx (poly-blueprint polyhedral))) ;; Create a parse ctx from the base blueprint
+         (kernels (get-raw-bp-from-polyhedral pctx polyhedral)))
+    (if (= 1 (length kernels))
+        (%finalize-blueprint-from-polyhedral polyhedral pctx (car kernels))
+        (progn
+          ;; [TODO] 1. Multi Kernel Refactor
+          ;; [TODO] 2. _gid_p0_1のリファクタ (ループごとに全く別のRANGEを挿入する必要がある。This feature is only blocked by Bufferize Right?)
+          ;; 1. Args挿入の判定
+          ;; 2. finalize suru. more bufferize case!
+          ;; 3. Polyhedral, MultiKernel判定をどうにか実装する。
+          (dolist (k kernels)
+            (caten/codegen/blueprint:print-blueprint k t))
+          (print kernels)
+          (error "NOT Ready ....")))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -835,10 +893,11 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     ;; (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
+     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
+     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
+     ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
+     ;(make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0)
+     )))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
@@ -1020,12 +1079,12 @@ for (int i=0; i<32; i+=2)
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
   (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
+  (warn "WIP: Vectorize Rewrite")
   (let ((d (getattr (car bands) :directive)))
     (let ((bp (caten/aasm::ast-band-unroll
                blueprint bands
                (loop for s in bands collect (directive-amount d))
                :rewriter #'caten/aasm::ast-unroll-body)))
-      (print "VECTORIZE BLUEPRINT")
       (caten/codegen/blueprint:print-blueprint bp t)
       bp)))
 ;; RootがReschedule->Reorderなら...的な話かも
@@ -1039,7 +1098,7 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
-    (t . (:NoOpt :TILE :VECTORIZE))))  ;; Recursively optimize things ... ;; :TILE, 
+    (t . (:NoOpt :TILE))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1149,6 +1208,7 @@ for (int i=0; i<32; i+=2)
 ;; - [ ] Measure the score based on GFLOPs
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
+;;    - [ ] これはLoop Fissionをサポートしていないのが悪い。(FOR(EXPR, ))を満たさないのは。
 ;;    - [ ] !sigmoid -> TypeInference
 ;;    - [ ] Range Repro ->
 ;;    - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
