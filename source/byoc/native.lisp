@@ -211,14 +211,14 @@
                       (let ((val (id->value graph step)))
                         (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
                         (setf step (e (car (node-reads val))))))
-                    ;; [TODO] parallel!
-                    (if (eql step 1)
-                        `(dotimes (,(const bind) ,size) ,(r body))
-                        (let ((tmp (gensym)))
-                          ;; for (i=0; i<125; i+=64) 64,
-                          `(dotimes (,tmp (floor ,size ,step))
-                             (let ((,(const bind) (* ,tmp ,step)))
-                               ,(r body))))))))
+                    (let ((dotimes (if (eql 1 (getattr node :parallel)) 'lparallel:pdotimes 'dotimes)))
+                      (if (eql step 1)
+                          `(,dotimes (,(const bind) ,size) ,(r body))
+                          (let ((tmp (gensym)))
+                            ;; for (i=0; i<125; i+=64) 64,
+                            `(,dotimes (,tmp (floor ,size ,step))
+                               (let ((,(const bind) (* ,tmp ,step)))
+                                 ,(r body)))))))))
                (:IF
                 (multiple-value-bind (cond body) (apply #'values (node-reads node))
                   (setf cond (id->value graph cond))

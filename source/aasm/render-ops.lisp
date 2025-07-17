@@ -667,7 +667,7 @@ for (int i=0; i<M; i+=32)
 ;; SplitReduce, SyncThreads, SharedMemory
 
 ;; Collapse
-(defun ast-band-collapse (graph bands &aux (dtype :int64))
+(defun ast-band-collapse (graph bands &key (dtype :int64) (parallel nil))
   "
 for i in range(M):
   for j in range(N):
@@ -726,9 +726,9 @@ for x in range(M*N*K):
                       #'%progn
                       (list (id->value graph (second (node-reads (car (last bands)))))))))))))
            (outerband (make-node :Render :FOR (node-writes (car bands))
-                                 (list merged-bands-idx new-body-id) :mark :noopt)))
+                                 (list merged-bands-idx new-body-id) :mark :noopt :parallel parallel)))
       (declare (ignore _))
-      (insert-nodes graph (print (append (graph-nodes merged-size-graph) (graph-nodes new-body) (graph-nodes merged-bands))))
-      (insert-nodes graph (print (list outerband)))
+      (insert-nodes graph (append (graph-nodes merged-size-graph) (graph-nodes new-body) (graph-nodes merged-bands)))
+      (insert-nodes graph (list outerband))
       (simplify-ast graph)
       graph)))

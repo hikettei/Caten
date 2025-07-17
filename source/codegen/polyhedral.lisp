@@ -1184,12 +1184,8 @@ for (int i=0; i<32; i+=2)
      (schedule-node-get-schedule band))))
 
 (defmethod optrule-apply-transform-on-blueprint ((id (eql :PARALLEL)) bands blueprint)
-  (print "BEFORE")
-  (print (length bands))
   (caten/codegen/blueprint:print-blueprint blueprint t)
-  (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands)))
-  (print "AFTER")
-  (caten/codegen/blueprint:print-blueprint blueprint t)
+  (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands) :parallel 1))
   blueprint)
 ;; [TODO] Caten Level Loop Collapse
 ;; [TODO] Auto Scheduler Loop Collapse (aasm transformation rule!) これ1DになってSimplifyできたら面白そうじゃね?
