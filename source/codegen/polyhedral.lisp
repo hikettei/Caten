@@ -87,7 +87,6 @@
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
    (blueprint :accessor poly-blueprint :initarg :blueprint)
    (ctx :accessor poly-ctx :initarg :ctx)
-   (extra-kernel-args :accessor poly-extra-kernel-args :initform nil)
    (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)
    (strategy :accessor poly-strategy :initarg :strategy)
    (bp-cache :accessor poly-bp-cache)))
@@ -590,7 +589,7 @@
               (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
         node))))
 
-(defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0) (extra-allocs) (extra-args))
+(defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
     (let ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
@@ -607,6 +606,7 @@
                  (when (> (length acc-scope) (length expr-scope)) (return-from invalid-scope-p t))
                  ;; grid id is unique in the blueprint, we can use it.
                  (loop for acc in acc-scope for expr in expr-scope
+                       ;; [TODO] make it idx
                        when (not (eql (node-id (getf acc :range-node)) (node-id (getf expr :range-node)))) do (return-from invalid-scope-p t))
                  nil)
                (mutate-to-tensor-p (id &aux (acc (id->value blueprint id)) (users (get-users id)) (visited (make-hash-table)))
@@ -620,65 +620,17 @@
                          ;; Compare the scope of (lookup acc) and (lookup expr)
                          (when (invalid-scope-p acc-scope (lookup expr))
                            (return-from mutate-to-tensor-p t))) ;; if theres at least one violation
-                 nil)
-               (id->tensor-info (id &aux (acc (id->value blueprint id)) (node (id->value blueprint (car (node-reads acc)))))
-                 (assert (eql :EXPR (node-type acc)))
-                 (values (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) (lookup acc) acc))
-               (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
-               (compute-idx (acc loops stride
-                             &aux
-                               (acc (or (find-expr-from-user acc) acc))
-                               (args (gethash (node-id acc) (pctx-expr2args parse-ctx))))
-                 (declare (ignore loops))
-                 ;; (assert (= (length args) (length stride)))
-                 (dolist (arg args) (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
-                 (reduce
-                  #'%add
-                  (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg)))))
-               (reg-alloc (node) (push node extra-args) node)
-               (make-new-aref (acc write-to scal-id stride loops)
-                 (with-context (out (%aref scal-id (compute-idx acc loops stride) :out write-to))))
-               (make-new-aref-bind (acc write-to scal-id stride loops base-read)
-                 (with-context (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value scal-id)) (compute-idx acc loops stride) :out write-to))))
-               (make-new-initializer (acc write-to argname stride loops dtype form)
-                 ;; [TODO] %global w/ :tmp
-                 (with-context
-                     (out
-                      (%expr
-                       (node->id
-                        (%setf (%aref (reg-alloc (%global argname dtype t)) (compute-idx acc loops stride)) form))
-                       :out write-to)))))
-        (maphash
-         #'(lambda (previously-scalar rewrite-context)
-             (when (mutate-to-tensor-p previously-scalar)
-               (let ((shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
-                     (argname (swpid previously-scalar "tmp")))
-                 (multiple-value-bind (dtype loops acc) (id->tensor-info previously-scalar)
-                   (assert (= (length shape) (length stride)))
-                   (push (%alloc (length shape) shape stride :dtype dtype :id argname) extra-allocs)
-                   ;; Rewrite the definition
-                   (insert-nodes blueprint (graph-nodes (make-new-initializer acc previously-scalar argname stride loops dtype (car (node-reads acc)))))
-                   ;; Rewrite the users of val_2
-                   (labels ((newid (base-node x)
-                              (if (eql x previously-scalar)
-                                  (let ((id (swpid previously-scalar count)))
-                                    (incf count)
-                                    (insert-nodes blueprint (graph-nodes (make-new-aref base-node id argname stride loops)))
-                                    id)
-                                  (let ((node (id->value blueprint x))) ;; handling bind
-                                    (if (or (null node) (not (eql (node-type node) :BIND)) (not (eql (getattr node :value) previously-scalar)))
-                                        x
-                                        (let ((id (swpid previously-scalar count)))
-                                          (incf count)
-                                          (insert-nodes blueprint (graph-nodes (make-new-aref-bind base-node id argname stride loops (car (node-reads node)))))
-                                          id))))))
-                     (loop for node in (graph-nodes blueprint)
-                           ;; Rewrite the user/incl bind
-                           if (or (eql (node-type node) :EXPR) (not (eql (node-class node) :Render))) do
-                             (setf (node-reads node) (map 'list #'(lambda (x) (newid node x)) (node-reads node)))))))))
-         (ctx-scal->access ctx))
-        (simplify-ast blueprint)
-        (values blueprint extra-allocs extra-args)))))
+                 nil))
+        (let ((rewrite-ids))
+          (maphash
+           #'(lambda (previously-scalar rewrite-context)
+               (declare (ignore rewrite-context))
+               (when (id->value blueprint previously-scalar)
+                 (when (mutate-to-tensor-p previously-scalar)
+                   (push previously-scalar rewrite-ids))))
+           (ctx-scal->access ctx))
+          (let ((extra-allocs (bp-rewrite-scalar->buffer parse-ctx ctx (list blueprint) rewrite-ids)))
+            (values blueprint extra-allocs)))))))
 
 (defun apply-directives (blueprint)
   (let ((bands (make-hash-table)))
@@ -709,7 +661,7 @@
       (:ast-node-block ;; they could be divided to multiple kernels, let's check first.
        (let* ((children (isl::%isl-ast-node-block-get-children ast))
 	      (n        (isl::%isl-ast-node-list-n-ast-node children))
-              (children (loop for i upfrom 0 below n collect (isl::%isl-ast-node-list-get-at children i)))
+              (children (reverse (loop for i upfrom 0 below n collect (isl::%isl-ast-node-list-get-at children i))))
               (n-kernels 0)
               (kernels (make-hash-table)))
          ;; [TODO] Filter, Filter, TILEGPUはOKのはず。
@@ -717,35 +669,43 @@
          ;; TileGPU is the only trigger to generate multiple kernels
          ;; まず_gid_p0のコメントアウトしてる部分が悪い
          ;; BufferRizeの修正も合わせて考えるべき。
-         (loop with cannot-add-new-loop-mode = nil
-               for c in (reverse children) ;; Reading from bottom
-               for type = (isl::%isl-ast-node-get-type c)
-               if (and cannot-add-new-loop-mode (find type '(:ast-node-mark :ast-node-for)))
-                 do (incf n-kernels) (setf cannot-add-new-loop-mode nil)
-               if (and (eql (isl::%isl-ast-node-get-type c) :ast-node-mark)
-                       (let ((d (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id c))))))
-                         (eql :TILEGPU (intern (directive-type d) "KEYWORD"))))
-                 do (setf cannot-add-new-loop-mode t)
-               do (setf (gethash n-kernels kernels) (append (list c) (gethash n-kernels kernels))))
-         (nreverse
-          (loop for i upfrom 0 to n-kernels
-                for kernel-items = (gethash i kernels)
-                collect
-                (with-blueprint (:noopt t) (apply #'%progn (map 'list #'(lambda (x) (parse-isl-ast pctx x)) kernel-items))))))))))
+         (flet ((mark-is-tilegpu-p (mark)
+                  (and (eql (isl::%isl-ast-node-get-type mark) :ast-node-mark)
+                       (let ((d (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id mark))))))
+                         (eql :TILEGPU (intern (directive-type d) "KEYWORD"))))))
+           (loop with cannot-add-new-loop-mode = nil
+                 for c in children ;; Reading from bottom
+                 for type = (isl::%isl-ast-node-get-type c)
+                 for nth upfrom 0
+                 if (or
+                     (and cannot-add-new-loop-mode (find type '(:ast-node-mark :ast-node-for)))
+                     (and (or
+                           (eql type :ast-node-for)
+                           (and (eql type :ast-node-mark) (not (mark-is-tilegpu-p c))))
+                          (nth (1+ nth) children)
+                          (mark-is-tilegpu-p (nth (1+ nth) children))))
+                   do (incf n-kernels) (setf cannot-add-new-loop-mode nil)
+                 if (mark-is-tilegpu-p c)
+                   do (setf cannot-add-new-loop-mode t)
+                 do (setf (gethash n-kernels kernels) (append (list c) (gethash n-kernels kernels))))
+           (nreverse
+            (loop for i upfrom 0 to n-kernels
+                  for kernel-items = (gethash i kernels)
+                  collect
+                  (with-blueprint (:noopt t) (apply #'%progn (map 'list #'(lambda (x) (parse-isl-ast pctx x)) kernel-items)))))))))))
 
 (defun %finalize-blueprint-from-polyhedral (polyhedral pctx kernel)
   "Convert ISL polyhedral representation back to blueprint graph"
   (declare (type Polyhedral-IR polyhedral) (type Graph kernel))
-  (multiple-value-bind (new-bp x y)
+  (multiple-value-bind (new-bp extra-allocs)
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
-       pctx
-       (poly-ctx polyhedral)
-       (caten/aasm::ast-simplify-expr-subgraph
-        (caten/aasm::%simplify-ast kernel)))
-    (values (apply-directives new-bp) x y)))
+       pctx (poly-ctx polyhedral)
+       (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast kernel)))
+    (values (apply-directives new-bp) extra-allocs)))
 
 (defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))
+  (when (null scal-ids) (return-from bp-rewrite-scalar->buffer))
   (let* ((contexts (map 'list #'make-scop-ctx-from-blueprint kernels))
          (expr-subgraphs
            (loop for ctx in contexts for kernel in kernels
@@ -818,14 +778,16 @@
                 (loop for node in (graph-nodes blueprint)
                       ;; Case1. the user of scal-id
                       if (or (eql (node-type node) :EXPR) (not (eql (node-class node) :Render)))
-                        do (setf (node-reads node) (map 'list #'(lambda (x) (newid node x)) (node-reads node)))
+                        do (let ((node (copy-node node)))
+                             (setf (node-reads node) (map 'list #'(lambda (x) (newid node x)) (node-reads node)))
+                             (insert-nodes blueprint (list node)))
                            ;; Case2. BIND(val_8, value=val_2) (insert the bind itself)
                            ;; Rewrite :BIND if there is no accumlator (if there is accumlator, :DEFINE-GLOBAL won't be purged)
                       if (and (eql (node-type node) :BIND) (eql scal-id (getattr node :value)))
                         do (if (id->value blueprint (car (node-reads node))) ;; two case: the reductor is defined in the same group, or
                                (insert-nodes blueprint (make-new-aref-bind (car (node-writes node)) argname (car (node-reads node)) acc stride node))
-                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node))))))))
-        (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes))))))
+                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node)))))))))))
+  (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes)))
 
 (defun get-blueprint-from-polyhedral (polyhedral)
   (print "Extracting the following Polyhedral IR")
@@ -833,7 +795,8 @@
   (let* ((pctx (make-parse-ctx (poly-blueprint polyhedral))) ;; Create a parse ctx from the base blueprint
          (kernels (get-raw-bp-from-polyhedral pctx polyhedral)))
     (if (= 1 (length kernels))
-        (%finalize-blueprint-from-polyhedral polyhedral pctx (car kernels))
+        (multiple-value-bind (bp allocs) (%finalize-blueprint-from-polyhedral polyhedral pctx (car kernels))
+          (values (list bp) allocs))
         (let* ((all-nodes (apply #'append (map 'list #'graph-nodes kernels)))
                (all-nodes (loop for n in all-nodes if (not (eql (node-class n) :Render)) collect n))
                (common-buffer-among-kernels ;; a list of buffers which must be mutated into :DEFINE-GLOBAL
@@ -843,23 +806,21 @@
                  ;; If the symbol was used as :BIND, replace them w/ :value
                  (loop for c in common-buffer-among-kernels
                        for user = (find c all-nodes :test #'find :key #'node-reads)
-                       do (assert user) (print user)
+                       do (assert user)
                        if (eql (node-type user) :BIND) collect (getattr user :value) else collect c)))
-          ;; この時点で，ARGSを書き換える。
           ;; Bufferizeは，Skipするケースへ分岐する。この分岐が正しく動けばOK
           ;; Bufferize
+          (print common-buffer-among-kernels)
           (let ((extra-allocs (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)))
-
-            )
-          ;; [TODO] 1. Multi Kernel Refactor
-          ;; [TODO] 2. _gid_p0_1のリファクタ (ループごとに全く別のRANGEを挿入する必要がある。This feature is only blocked by Bufferize Right?)
-          ;; 1. Args挿入の判定
-          ;; 2. finalize suru. more bufferize case!
-          ;; 3. Polyhedral, MultiKernel判定をどうにか実装する。
-          ;; Loop Fissionすると，完全に無意味なMOVEが生成されたりする。これがあったら，カーネルを削除する。
-          (dolist (k kernels)
-            (caten/codegen/blueprint:print-blueprint k t))
-          (error "NOT Ready ....")))))
+            (print extra-allocs)
+            (values
+             (loop for kernel in kernels
+                   collect
+                   (multiple-value-bind (k alcs) (%finalize-blueprint-from-polyhedral polyhedral pctx kernel)
+                     (dolist (a alcs) (push a extra-allocs))
+                     k))
+             ;; Loop Fissionすると，完全に無意味なMOVEが生成されたりする。これがあったら，カーネルを削除する。
+             (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -1206,42 +1167,70 @@ for (int i=0; i<32; i+=2)
     (loop for gen in next-generations
           if (verify-polyhedral-ir gen) collect gen)))
 
-(defun kernel-employ-blueprint (poly node renderer blueprint base-kernel-name base-kernel-args)
-  (setf (kernel-blueprint (getattr node :kernel-info)) blueprint
-        (kernel-args (getattr node :kernel-info)) (append base-kernel-args (poly-extra-kernel-args poly))
-        (kernel-name (getattr node :kernel-info)) (intern (format nil "~a_BEAM_~a" base-kernel-name (gensym))))
-  (caten/codegen/blueprint:print-blueprint blueprint t)
-  (caten/codegen/byoc:%render-kernel renderer (getattr node :kernel-info))
-  (caten/codegen/byoc:%compile-kernel renderer (list (getattr node :kernel-info)) nil)
-  node)
+(defun make-kernel-from-blueprint (base-node kernel-cls base-kernel blueprint nth)
+  (let* ((args
+           (loop for b in (graph-nodes blueprint)
+                 if (eql (node-type b) :DEFINE-GLOBAL)
+                   collect b))
+         (read-args
+           (loop for arg in args
+                 if (find (car (node-writes arg)) (node-writes base-node))
+                   collect (intern (format nil "~a_dst" (car (node-writes arg))))
+                 else
+                   collect (car (node-writes arg)))))
+    ;; [TODO] Determine write-to, how to do this?
+    (make-node :RUNTIME :KERNEL nil read-args
+               :kernel-info
+               (make-instance
+                kernel-cls
+                :name (intern (format nil "~a_~a" (kernel-name base-kernel) nth))
+                :blueprint blueprint
+                :args args
+                :flops nil))))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
-    (multiple-value-bind (blueprint extra-allocs extra-args) (get-blueprint-from-polyhedral polyhedral)
-      (setf (poly-extra-allocs polyhedral) extra-allocs
-            (poly-extra-kernel-args polyhedral) extra-args
-            (poly-bp-cache polyhedral) blueprint)
-      (handler-case (kernel-employ-blueprint polyhedral node renderer blueprint base-name base-args)
-        ;; 99% of compilation failing is due to scalar -> tensor mutation.
-        ;; but 99% of failing case is worthless so we can ignore it.
-        (error (c)
-          (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
-          (return-from polyhedral-ir-evaluate *+inf*)))
-      (format t "~%[Kernel]:~%==========~%")
-      ;; (caten/codegen/blueprint::print-blueprint blueprint t)
-      (print (reverse (poly-cmd-history polyhedral)))
-      (format t "~%===========~%")
-      (let* ((extra-args
-              (loop for arg in (poly-extra-allocs polyhedral)
-                    collect (uiop:symbol-call :caten/runtime/runtime :realize-node :Allocate runtime arg (node-reads arg))))
-             (kernel-args (append args extra-args))
-             (total 0.0))
-          (dotimes (i n)
-            (incf total (kernel-call (getattr node :kernel-info) runtime node kernel-args)))
-        (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime x)) extra-args)
-        ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
-        (format t "Evlauation: ~a(s)~%" total)
-        total))))
+    (multiple-value-bind (generated-kernels extra-allocs) (get-blueprint-from-polyhedral polyhedral)
+      (let ((kernels
+              (loop for kernel in generated-kernels for nth upfrom 0
+                    collect (make-kernel-from-blueprint
+                             node
+                             (class-name (class-of abstract-kernel))
+                             abstract-kernel
+                             kernel
+                             nth))))
+        ;; Save the result for when the polyhedral was selected as a best kernel
+        (setf (poly-bp-cache polyhedral) kernels
+              (poly-extra-allocs polyhedral) extra-allocs)
+        (format t "~%[Kernel]:~%==========~%")
+        (loop for nth upfrom 0 for blueprint in kernels do
+          (format t "~ath:~%~%" nth)
+          (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) t))
+        (print (reverse (poly-cmd-history polyhedral)))
+        (format t "~%===========~%")
+        (loop for kernel in kernels do
+          (caten/codegen/byoc:%render-kernel renderer (getattr kernel :kernel-info)))
+        (handler-case
+            (loop for kernel in kernels do
+              (caten/codegen/byoc:%compile-kernel renderer (list (getattr kernel :kernel-info)) nil))
+          (error (c)
+            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
+            (return-from polyhedral-ir-evaluate *+inf*)))
+        (let* ((extra-args
+                 (loop for arg in (poly-extra-allocs polyhedral)
+                       collect (cons (car (node-writes arg)) (uiop:symbol-call :caten/runtime/runtime :realize-node :Allocate runtime arg (node-reads arg)))))
+               (total 0.0))
+          (flet ((getvar (id)
+                   (if (find id extra-args :key #'car)
+                       (cdr (find id extra-args :key #'car))
+                       (if (numberp id) id (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime id)))))
+            (dotimes (i n)
+              (dolist (node kernels)
+                (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar (node-reads node)))))))
+          ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
+          (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
+          (format t "Evlauation: ~a(s)~%" total)
+          total)))))
 
 (defun realize-node-with-autotuning (runtime node args
                                      &aux
@@ -1280,6 +1269,7 @@ for (int i=0; i<32; i+=2)
           (let ((best-kernel (car beam)))
             (print "BEST KERNEL IS")
             (print best-kernel)
+            (error "FINISHED (TODO: Insert and rewrite graph)")
             (kernel-employ-blueprint
              (car best-kernel) node
              (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))
@@ -1291,11 +1281,15 @@ for (int i=0; i<32; i+=2)
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
 ;; [TODO] Loop Fission Support
+;; [TODO] RuntimeGraphの仕様変えない？
+;; Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。
+;; - KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
 ;; - Loop Fission + TileGPUは失敗する。bcuz:
 ;;  - IDXの一つはFOR, もう一つはEXPRが使うから当然
 ;;  - ちゃんとカーネルを分離するようにサポートする。
 ;;  - その後Parallel, TileGPUが使える
 ;;  - Rescheduleにserialize-sccsする分岐を用意する
+;;  - 依存関係はKernel呼び出す順番で担保する。
 ;; - [ ] Measure the score based on GFLOPs
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
