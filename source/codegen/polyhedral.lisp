@@ -593,7 +593,7 @@
 (defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)) (count 0) (extra-allocs) (extra-args))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
-    (let* ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
+    (let ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
       (labels ((lookup (node) (reverse (gethash (node-id node) node-to-loops)))
                (find-expr-from-user (user)
                  (loop for expr in expr-subgraphs
@@ -696,14 +696,6 @@
      bands)
     (simplify-ast blueprint)
     blueprint))
-;; [TODO] Delete
-(defun schedule-get-kernel-count (schedule)
-  (declare (type isl::schedule schedule))
-  (let ((root (schedule-node-get-child (schedule-get-root schedule) 0)))
-    (print (schedule-node-get-type root))
-    (if (eql (schedule-node-get-type root) :schedule-node-sequence)
-        (isl::%isl-schedule-node-n-children (isl::schedule-node-handle root))
-        1)))
 
 (defun get-raw-bp-from-polyhedral (pctx polyhedral)
   "Convert ISL Polyhedral Representation back to blueprint graph. If loop fission was applied, generates multiple blueprint."
@@ -752,6 +744,91 @@
         (caten/aasm::%simplify-ast kernel)))
     (values (apply-directives new-bp) x y)))
 
+(defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids)
+  (declare (type list scal-ids))
+  ;; TODO
+  ;; バグを減らすため，^のbufferifyを廃止する。
+  ;; また，extra-argsを廃止し，普通に毎回新しいAbstractKernelを生成するように変更。
+  (let* ((contexts (map 'list #'make-scop-ctx-from-blueprint kernels))
+         (expr-subgraphs
+           (loop for ctx in contexts for kernel in kernels
+                 append
+                 (loop for expr in (reverse (ctx-exprs ctx))
+                       collect (cons expr (caten/aasm::ast-expr-graph kernel expr))))))
+    (dolist (scal-id scal-ids)
+      (labels ((lookup (node)
+                 (loop for ctx in contexts
+                       if (gethash (node-id node) (ctx-node-to-loops ctx)) do
+                         (return-from lookup (gethash (node-id node) (ctx-node-to-loops ctx)))))
+               (find-expr-from-user (user)
+                 (loop for expr in expr-subgraphs
+                       if (find (node-id user) (graph-nodes (cdr expr)) :key #'node-id)
+                         do (return-from find-expr-from-user (car expr))))
+               (id->value-from-kernels (id)
+                 (loop for k in kernels
+                       for v = (id->value k id)
+                       if v do (return-from id->value-from-kernels v)))
+               (id->tensor-info (id &aux (acc (id->value-from-kernels id)) (node (id->value-from-kernels (car (node-reads acc)))))
+                 (assert (eql :EXPR (node-type acc)))
+                 (values (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) (lookup acc) acc))
+               (compute-idx (acc stride load-node
+                             &aux
+                               (acc (or (find-expr-from-user acc) acc))
+                               (load-node (or (find-expr-from-user load-node) load-node))
+                               (acc-args (gethash (node-id acc) (pctx-expr2args parse-ctx)))
+                               (load-args (gethash (node-id load-node) (pctx-expr2args parse-ctx))))
+                 ;; [TODO] LoopInterchangeされた時，load-argsをpermuteする必要がある！
+                 ;; [TODO] ↑忘れないで！！
+                 (let ((args (subseq load-args 0 (length acc-args))))
+                   (dolist (arg args)
+                     (map 'list #'(lambda (x) (emit x)) (graph-nodes (cdr arg))))
+                   (reduce
+                    #'%add
+                    (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg))))))
+               (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
+               (make-new-aref (id read-from acc stride load-node)
+                 (with-context-nodes
+                     (out (%aref read-from (compute-idx acc stride load-node) :out id))))
+               (make-new-aref-bind (id bind-as base-read acc stride load-node)
+                 (with-context-nodes
+                     (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value bind-as)) (compute-idx acc stride load-node) :out id))))
+               (make-new-initializer (read-from acc stride form load-node)
+                 (with-context-nodes
+                     (out (%expr (node->id (%setf (%aref read-from (compute-idx acc stride load-node)) form)) :out scal-id)))))
+        (multiple-value-bind (dtype loops acc) (id->tensor-info scal-id)
+          ;; [TODO] Get Shape/Stride
+          ;; [TODO] Create extra alloc inserted to tuned runtime graph
+          ;; (%alloc (length shape) shape stride :dtype dtype :id argname)
+          (assert (and dtype loops acc) () "Could not find the definition of scalar ~a" scal-id)
+          (dolist (blueprint kernels)
+            (let* ((rewrite-context (gethash scal-id (ctx-scal->access ctx)))
+                   (shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
+                   (argname (swpid scal-id "tmp")) (defglobal (%global argname dtype t)) (count 0))
+              (assert rewrite-context)
+              ;; Rewrite the definition of scal-id if it exists in current blueprint
+              (insert-nodes blueprint (list defglobal))
+              (when (id->value blueprint scal-id)
+                ;; Rewrite {val_2 = EXPR(0.0)} -> {val_2 = (%aref val2_tmp ...)}
+                (insert-nodes blueprint (make-new-initializer argname acc stride (car (node-reads acc)) acc)))
+              ;; Rewrite the user of scal-id
+              (labels ((newid (node x)
+                         (if (eql x scal-id)
+                             (let ((id (swpid scal-id count)))
+                               (incf count)
+                               (insert-nodes blueprint (make-new-aref id argname acc stride node))
+                               id)
+                             x)))
+                (loop for node in (graph-nodes blueprint)
+                      ;; Case1. the user of scal-id
+                      if (or (eql (node-type node) :EXPR) (not (eql (node-class node) :Render)))
+                        do (setf (node-reads node) (map 'list #'(lambda (x) (newid node x)) (node-reads node)))
+                           ;; Case2. BIND(val_8, value=val_2) (insert the bind itself)
+                           ;; Rewrite :BIND if there is no accumlator (if there is accumlator, :DEFINE-GLOBAL won't be purged)
+                      if (and (eql (node-type node) :BIND) (eql scal-id (getattr node :value)))
+                        do (if (id->value blueprint (car (node-reads node))) ;; two case: the reductor is defined in the same group, or
+                               (insert-nodes blueprint (make-new-aref-bind (car (node-writes node)) argname (car (node-reads node)) acc stride node))
+                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node))))))))))))
+
 (defun get-blueprint-from-polyhedral (polyhedral)
   (print "Extracting the following Polyhedral IR")
   (print polyhedral)
@@ -759,15 +836,29 @@
          (kernels (get-raw-bp-from-polyhedral pctx polyhedral)))
     (if (= 1 (length kernels))
         (%finalize-blueprint-from-polyhedral polyhedral pctx (car kernels))
-        (progn
+        (let* ((all-nodes (apply #'append (map 'list #'graph-nodes kernels)))
+               (all-nodes (loop for n in all-nodes if (not (eql (node-class n) :Render)) collect n))
+               (common-buffer-among-kernels ;; a list of buffers which must be mutated into :DEFINE-GLOBAL
+                 (loop for kernel in kernels
+                       append (graph-get-undefined-variables kernel)))
+               (common-buffer-among-kernels
+                 ;; If the symbol was used as :BIND, replace them w/ :value
+                 (loop for c in common-buffer-among-kernels
+                       for user = (find c all-nodes :test #'find :key #'node-reads)
+                       do (assert user) (print user)
+                       if (eql (node-type user) :BIND) collect (getattr user :value) else collect c)))
+          ;; この時点で，ARGSを書き換える。
+          ;; Bufferizeは，Skipするケースへ分岐する。この分岐が正しく動けばOK
+          ;; Bufferize
+          (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)
           ;; [TODO] 1. Multi Kernel Refactor
           ;; [TODO] 2. _gid_p0_1のリファクタ (ループごとに全く別のRANGEを挿入する必要がある。This feature is only blocked by Bufferize Right?)
           ;; 1. Args挿入の判定
           ;; 2. finalize suru. more bufferize case!
           ;; 3. Polyhedral, MultiKernel判定をどうにか実装する。
+          ;; Loop Fissionすると，完全に無意味なMOVEが生成されたりする。これがあったら，カーネルを削除する。
           (dolist (k kernels)
             (caten/codegen/blueprint:print-blueprint k t))
-          (print kernels)
           (error "NOT Ready ....")))))
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()

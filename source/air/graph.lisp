@@ -353,3 +353,16 @@ To sort the graph properly, resolve the following isolated graph dependencies.
 	       (mapc #'explore (node-reads node)))))
     (explore from)
     nil))
+
+(defmethod graph-get-undefined-variables ((Graph graph))
+  (let ((defined (make-hash-table)))
+    (loop for node in (graph-nodes graph) do
+      (loop for w in (node-writes node) do
+        (setf (gethash w defined) t)))
+    (loop for node in (graph-nodes graph)
+          append
+          (loop for r in (node-reads node)
+                if (and (symbolp r) (null (gethash r defined)))
+                  collect r))))
+                
+            
