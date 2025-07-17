@@ -1230,9 +1230,9 @@ for (int i=0; i<32; i+=2)
 ;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* ;; (n-generation . Candidates)
-  '((0 . (:Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
+  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (t . (:NoOpt :Parallel))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+    (t . (:NoOpt :Parallel :TileGPU))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1369,6 +1369,8 @@ for (int i=0; i<32; i+=2)
 ;;   - [x] これによって，複数のTileGPUが付与される。
 ;; - [x] 探索空間下に戻す
 ;; - [x] Measure the score based on GFLOPs
+;; - [ ] Parallel+TILE is not working
+;; - [ ] LoopCollapse Standalone
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] val_2のIndexingで悩むが，これはUnrollする範囲にEXPR Definitionがあるかどうかで決めれば良い？(Scalar Expr == Let in Common Lisp)
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
@@ -1562,7 +1564,7 @@ for B_i in blockIdx.y parallel tile_block_ij:64  // 0..1
 ;;   - What is SUBSET?
 ;; - Ops.TRANSFER的なのを実装する (n-layered memory caching arch)
 ;;   - [ ] SIMD/Warp
-;;   - [ ] 
+;;   - [ ]
 
 ;; Optimization is applied into:
 ;; - 最適なループ形状 + :AREF={CACHE, NOOPT}の空間を探索？
