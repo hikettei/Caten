@@ -405,11 +405,11 @@
 
 (defun parse-isl-ast-mark (ctx ast)
   (declare (type cffi:foreign-pointer ast))
+  (incf (pctx-band-cnt ctx))
   (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
          (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast)))
          (depth (directive-depth directive))
-         (band-id (intern (format nil "B~a" (pctx-band-cnt ctx)))))
-    (incf (pctx-band-cnt ctx))
+         (band-id (intern (format nil "B~a" (1- (pctx-band-cnt ctx))))))
     (labels ((rec (node count)
                (declare (type node node node) (type fixnum count))
                (assert (eql (node-type node) :FOR))
@@ -966,6 +966,8 @@ for (int i=0; i<32; i+=2)
 =>
 
 "
+  (caten/codegen/blueprint:print-blueprint blueprint t)
+  (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
   (let* ((new-bp (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
          (innerbands (loop for node in (graph-nodes new-bp)
                            if (and (eql (node-type node) :SPACE) (eql (getattr node :level) :thread))
@@ -1007,14 +1009,12 @@ for (int i=0; i<32; i+=2)
   (let* ((band (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
          (child (schedule-node-get-child band 0)) ;; [TODO] If the band is too small? ===> @VECTORIZEを展開する時にエラーを出させる+Reject
          (child (schedule-node-insert-mark child (directive->id (directive "VECTORIZE" (vectorize-width opt) 1 NIL)))))
-    (setf (poly-schedule poly) (schedule-node-get-schedule child))
-    (print "VECTORIZED")
-    (print poly)))
+    (setf (poly-schedule poly) (schedule-node-get-schedule child))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-  (print bands)
-  (print blueprint)
-  (error "NOT READY!"))
+  ;; TODO
+  (Warn "TODO: Vectorize blueprint transformation")
+  blueprint)
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
@@ -1026,7 +1026,7 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (1 . (:NoOpt :TileGPU)) ;; Early determine the parallel axis
-    (t . (:NoOpt :Tile))))  ;; Recursively optimize things ... ;; :TILE, 
+    (t . (:NoOpt :VECTORIZE))))  ;; Recursively optimize things ... ;; :TILE, 
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1129,6 +1129,8 @@ for (int i=0; i<32; i+=2)
             (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))))))
 ;; - [ ] Implement Float4(Upcast) Workload
 ;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
+;;    - [ ] !sigmoid -> TypeInference
+;;    - [ ] Range Repro ->
 ;;    - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
 ;;  - [ ] TypeInference+Unrollを再利用することで実装
 ;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
