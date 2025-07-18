@@ -35,7 +35,7 @@
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value (number ,x))
     (and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))
 
-(defpattern Var (x dtype &key (allow-range nil) (expr t))
+(defpattern Var (x dtype &key (allow-range nil) (expr nil))
   `(or
     ,@(when expr
         `((<Rule> :EXPR ((Var ,x ,dtype :expr nil)))))

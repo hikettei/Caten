@@ -126,12 +126,11 @@
              (form (caten-jit-style-handler style code)))
         (trivia:match form
           ((list* 'defun kernel-name (list* args) body)
-           (print
-            `(defun ,kernel-name (,@(map 'list #'second args))
-               (caten/aasm:with-blueprint ()
-                 ,(expand-args
-                   args
-                   `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body)))))))
+           `(defun ,kernel-name (,@(map 'list #'second args))
+              (caten/aasm:with-blueprint ()
+                ,(expand-args
+                  args
+                  `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))))
           (_
            (error "@caten.jit: nothing to capture? The code should start w/ defun."))))))
 ;; tests
@@ -144,56 +143,57 @@
                           (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
     (let ((scale (/ 1.0 (sqrt (scast D :float32))))
           (outer (* batch n head)))
-      (for idx = (Range outer 1) do
-           (let ((tmp idx)
-                 (i (mod tmp N))
-                 (tmp (idiv tmp N))
-                 (h (mod tmp HEAD))
-                 (tmp (idiv tmp HEAD))
-                 (b tmp)
-                 (q-base-idx (* D (+ i (* n (+ (* b head) h)))))
-                 (k-base-idx (* D (* n (+ (* b head) h))))
-                 (v-base-idx (* D (* n (+ (* b head) h))))
-                 (o-base-idx (* D (+ i (* n (+ (* b head) h)))))
-                 (row-m (aref M (+ i (* n (+ (* b head) h)))))
-                 (row-l (aref L (+ i (* n (+ (* b head) h))))))
-             (for j = (Range N 1) do
-                  (with-locals ((dot 0.0))
-                    (for dth = (Range D 1) do
-                         (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
-                    (let ((S (* dot scale))
-                          (new-max (max row-m S))
-                          (exp-prev (exp (- row-m new-max)))
-                          (exp-cur (exp (- S new-max)))
-                          (l-new (+ (* exp-prev row-l) exp-cur)))
-                      (for dth1 = (Range D 1) do
-                           (setf (aref O (+ o-base-idx dth1))
-                                 (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row-l (aref O (+ o-base-idx dth1)))) l-new)))
-                      (setf row-m new-max
-                            row-l l-new))))
-             (setf
-              (aref M (+ i (* n (+ (* b head) h)))) row-m
-              (aref L (+ i (* n (+ (* b head) h)))) row-l)))))})
+      (for b = (Range BATCH 1) do
+           (for h = (Range Head 1) do
+                (for i = (Range N 1) do
+                     (let ((q-base-idx (* D (+ i (* N (+ (* b head) h)))))
+                           (k-base-idx (* D (* N (+ (* b head) h))))
+                           (v-base-idx (* D (* N (+ (* b head) h))))
+                           (o-base-idx (* D (+ i (* N (+ (* b head) h)))))
+                           (row-m (aref M (+ i (* N (+ (* b head) h)))))
+                           (row-l (aref L (+ i (* N (+ (* b head) h))))))
+                       (for j = (Range N 1) do
+                            (with-locals ((dot 0.0))
+                              (for dth = (Range D 1) do
+                                   (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
+                              (let ((S (* dot scale))
+                                    (new-max (max row-m S))
+                                    (exp-prev (exp (- row-m new-max)))
+                                    (exp-cur (exp (- S new-max)))
+                                    (l-new (+ (* exp-prev row-l) exp-cur)))
+                                (for dth1 = (Range D 1) do
+                                     (setf (aref O (+ o-base-idx dth1))
+                                           (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row-l (aref O (+ o-base-idx dth1)))) l-new)))
+                                (setf row-m new-max
+                                      row-l l-new))))
+                       (setf
+                        (aref M (+ i (* n (+ (* b head) h)))) row-m
+                        (aref L (+ i (* n (+ (* b head) h)))) row-l)))))))})
 
 ;; TODO: Construct Graph w/ Forward
 (defun test-flash-attention (&key (batch 1) (head 8) (n 10) (d 10))
-  (caten/codegen/blueprint:print-blueprint (sumreduce (caten/api:make-tensor (list 10 10))) t)
-  (caten/codegen/blueprint:print-blueprint
-   (flash-attention
-    (caten/api:make-tensor (list batch head n d))
-    (caten/api:make-tensor (list batch head n d))
-    (caten/api:make-tensor (list batch head n d))
-    (caten/api:make-tensor (list batch head n d))
-    (caten/api:make-tensor (list batch head n))
-    (caten/api:make-tensor (list batch head n)))
-   t))
+  (let ((ast (sumreduce (caten/api:make-tensor (list 10 10)))))
+    (caten/aasm:simplify-ast ast)
+    (caten/air:pprint-graph ast)
+    (caten/codegen/blueprint:print-blueprint ast t))
+  (let ((ast
+          (flash-attention
+           (caten/api:make-tensor (list batch head n d))
+           (caten/api:make-tensor (list batch head n d))
+           (caten/api:make-tensor (list batch head n d))
+           (caten/api:make-tensor (list batch head n d))
+           (caten/api:make-tensor (list batch head n))
+           (caten/api:make-tensor (list batch head n)))))
+    (caten/aasm:simplify-ast ast)
+    (caten/aasm:simplify-ast ast)
+    (caten/codegen/blueprint:print-blueprint ast t)))
 
 (progn
   @caten.jit () {
   (defun sumreduce ((Pointer X Type (A B)))
     (with-locals ((acc 0.0))
       (for idx = (Range (* A B) 1) do
-           (setf acc (+ acc (aref X idx))))
+           (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
 
 ;; Variable, Bind
