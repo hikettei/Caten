@@ -45,7 +45,7 @@
 
 }
 ```")
-    ((ctx style)
+    ((ctx &key (style :lisp))
       (let* ((code (directive-context-code ctx))
              (pos-first-char (position-if #'(lambda (x) (and (not (char= x #.(aref " " 0))) (not (char= x #\newline)))) code))
              (pos-last-char (position-if #'(lambda (x) (and (not (char= x #.(aref " " 0))) (not (char= x #\newline)))) (reverse code)))
@@ -54,45 +54,107 @@
                        (subseq code 1 (1- (length code)))
                        code))
              (form (caten-jit-style-handler style code)))
-        (print form)
-        nil)))
-
+        (trivia:match form
+          ((list* 'defun kernel-name (list* args) body)
+;;           (print kernel-name)
+           (print `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body)))
+           nil
+           )
+          (_
+           (error "@caten.jit: nothing to capture? The code should start w/ defun."))))))
+;; tests
 (in-caten-toplevel)
 
+(defun jit-rewrite (form)
+  ;; [TODO] Make it readable, hackable, 
+  (trivia:match form
+    ((list* 'for idx '= (list 'Range size step) 'do rest)
+     (let* ((range-id (gensym (symbol-name idx))))
+       `(caten/aasm::%range
+         ',idx ,(jit-rewrite size)
+         (let ((,idx ',range-id))
+           (caten/aasm:%progn ,@(map 'list #'jit-rewrite rest)))
+         :step ,(jit-rewrite step)
+         :rid ',range-id)))
+    ((list* 'let (list* forms) body)
+     `(let (,@(loop for form in forms collect (list (car form) (jit-rewrite (second form)))))
+        (caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
+    ((list* 'with-locals (list* forms) body)
+     `(let (,@(loop for form in forms collect (list (car form) `(caten/aasm:%expr ,(jit-rewrite (second form)) :out ',(car form)))))
+        (caten/aasm:%progn
+         ,@(map 'list #'car forms)
+         ,@(map 'list #'jit-rewrite body))))
+    ((list* 'setf rest)
+     (assert (= 0 (mod (length rest) 2)))
+     `(caten/aasm:%progn
+       ,@(loop while rest
+               for bind = (jit-rewrite (pop rest)) for value = (pop rest) for tmp = (gensym)
+               collect
+               `(let ((,tmp (caten/aasm:%setf ,bind ,(jit-rewrite value))))
+                  ,(when (symbolp bind)
+                     `(setf
+                       ,bind
+                       (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',bind))))
+                  ,tmp))))
+    ((list 'aref name idx) `(caten/aasm:%aref ,name ,(jit-rewrite idx)))
+    ;; Operator rewriting
+    ((list* '+ rest) `(reduce #'caten/aasm:%add (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* '- rest) `(reduce #'caten/aasm:%sub (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* '* rest) `(reduce #'caten/aasm:%mul (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* '/ rest) `(reduce #'caten/aasm:%div (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* 'idiv rest) `(reduce #'caten/aasm:%idiv (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* 'mod rest) `(reduce #'caten/aasm:%mod (list ,@(map 'list #'jit-rewrite rest))))
+    ((list 'sqrt x) `(caten/aasm:%sqrt ,(jit-rewrite x)))
+    
+    ((list 'coerce val type-to) `(caten/aasm:%cast ,(jit-rewrite val) ,type-to))
+    
+    (_
+     (if (listp form)
+         `(,(car form) ,@(map 'list #'jit-rewrite (cdr form)))
+         form))))
+
 (progn
-  @caten.jit (:lisp) {
-  (defun flash-attention (Q<T>[Batch Head N D] K<T>[Batch Head N D] V<T>[Batch Head N D]
-                          O<Float>[BATCH Head N D] L<Float>[Batch Head N] M<Float>[Batch Head N])
-    (let ((scale (/ 1.0 (sqrt (coerce D 'single-float))))
+  @caten.jit () {
+  (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D)) (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
+    (let ((scale (/ 1.0 (sqrt (coerce D :float32))))
           (outer (* batch n head)))
-      (for idx = (Range 0 outer) do
-           (let* ((tmp idx)
-                  (i (mod tmp N))
-                  (tmp (/ tmp N))
-                  (h (mod tmp HEAD))
-                  (tmp (/ tmp HEAD))
-                  (b tmp)
-                  (q-base-idx (* D (+ i (* n (+ (* b head) h)))))
-                  (k-base-idx (* D (* n (+ (* b head) h))))
-                  (v-base-idx (* D (* n (+ (* b head) h))))
-                  (o-base-idx (* D (+ i (* n (+ (* b head) h)))))
-                  (row-m (aref M (+ i (* n (+ (* b head) h)))))
-                  (row-l (aref L (+ i (* n (+ (* b head) h))))))
-             (for j = (Range 0 N 1) do
-                  (let ((dot 0.0))
-                    (for dth = (Range 0 D 1) do
+      (for idx = (Range outer 1) do
+           (let ((tmp idx)
+                 (i (mod tmp N))
+                 (tmp (idiv tmp N))
+                 (h (mod tmp HEAD))
+                 (tmp (idiv tmp HEAD))
+                 (b tmp)
+                 (q-base-idx (* D (+ i (* n (+ (* b head) h)))))
+                 (k-base-idx (* D (* n (+ (* b head) h))))
+                 (v-base-idx (* D (* n (+ (* b head) h))))
+                 (o-base-idx (* D (+ i (* n (+ (* b head) h)))))
+                 (row-m (aref M (+ i (* n (+ (* b head) h)))))
+                 (row-l (aref L (+ i (* n (+ (* b head) h))))))
+             (for j = (Range N 1) do
+                  (with-locals ((dot 0.0))
+                    (for dth = (Range D 1) do
                          (setf dot (+ dot (* (aref Q (+ q-base-idx d)) (aref K (+ k-base-idx d))))))
-                    (let* ((S (* dot scale))
-                           (new-max (max row-m S))
-                           (exp-prev (exp (- row-m new-max)))
-                           (exp-cur (exp (- S new-max)))
-                           (l-new (+ (* exp-prev row-l) exp-cur)))
-                      (for dth = (Range 0 D 1) do
+                    (let ((S (* dot scale))
+                          (new-max (max row-m S))
+                          (exp-prev (exp (- row-m new-max)))
+                          (exp-cur (exp (- S new-max)))
+                          (l-new (+ (* exp-prev row-l) exp-cur)))
+                      (for dth = (Range D 1) do
                            (setf (aref O (+ o-base-idx d))
                                  (/ (+ (* exp-cur (aref V (+ v-base-idx d))) (* exp-prev row-l (aref O (+ o-base-idx d)))) l-new)))
                       (setf row-m new-max
                             row-l l-new))))
              (setf
               (aref M (+ i (* n (+ (* b head) h)))) row-m
-              (aref L (+ i (* n (+ (* b head) h)))) row-l)))))
-  })
+              (aref L (+ i (* n (+ (* b head) h)))) row-l)))))})
+
+(progn
+  @caten.jit () {
+  (defun flash-attention ((Pointer X Type (A B)))
+    (with-locals ((acc 0.0))
+      (for idx = (Range (* A B) 1) do
+           (setf acc (+ acc (aref X idx))))
+      (setf (aref X 0) acc)))})
+
+;; Variable, Bind

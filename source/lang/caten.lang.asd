@@ -2,7 +2,7 @@
   :description "caten.lang provides a beautiful integration w/ Common Lisp Frontend enabled by @caten reader macro."
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
-  ("with-c-syntax" "named-readtables" "cl-ppcre" "trivia" "alexandria" "yacc")
+  ("caten.api" "with-c-syntax" "named-readtables" "cl-ppcre" "trivia" "alexandria" "yacc")
   :serial t
   :components ((:file "package")
                (:file "feature")
