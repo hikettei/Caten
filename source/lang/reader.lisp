@@ -48,14 +48,15 @@ Returns three values: OPERATION, PARAMS, and CODE. If not matched, returns the o
           (error "@caten macro parse error: Expected '{' after reading parameters, but none was found.
 Please ensure the directive follows the syntax: @caten.<operation>(params){...}
 "))
-        (let ((code (read-delimited-stream stream #\{ #\})))
-          (read-char stream) ;; Consume the closing brace '}' marking the end of the code block
+        (let ((code (read-delimited-stream stream #\{ #\}))
+              (params (handler-case (read-from-string params)
+                        (error (c) (error "@caten macro parse error: Cannot parse params \"~a\" due to~%:~a" params c)))))
           ;; Return three values: operation, parameters, and code block content
+          ;; (print operation) (print params) (print code)
           (print "PARSED")
           (print operation)
           (print params)
           (print code)
-          (values operation params code)
           operator)))))
 
 (named-readtables:defreadtable caten
@@ -65,7 +66,7 @@ Please ensure the directive follows the syntax: @caten.<operation>(params){...}
 (named-readtables:in-readtable caten)
 
 (progn
-  @caten.jit (style=(c)) {
+  @caten.jit (:style c) {
     {
     CODE
     }
@@ -78,4 +79,5 @@ Please ensure the directive follows the syntax: @caten.<operation>(params){...}
 ;; We have a C -> Lisp Compiler
 ;; i.e.: We can translate Lisp -> Blueprint Compiler
 ;; And we have a both of C, Lisp, Frontend
-;; Twitterに乗っけたい
+;; Readmeに乗っける
+;; Export to JSON (Compiled Code)
