@@ -25,7 +25,7 @@ Currently following features are available:~%~a"
              (with-output-to-string (out)
                (maphash #'(lambda (x y) (format out "@caten.~(~a~)~%```~%~a~%```~%" x y)) *feature-docstring-table*)))))
 
-(defmacro define-caten-feature ((name &key (docstring "No docstring is provided")) (&rest args) &body body)
+(defmacro define-caten-feature ((name &key (docstring "No docstring is provided")) ((&rest args) &body body))
   "Defines a caten feature macro which is expanded by ```@caten.<name>(...) { ...} syntax```
 The expander function is called as (lambda (directive-ctx &rest args) body) The body must return a s-expression
 which is evaluated in the compilation time."
