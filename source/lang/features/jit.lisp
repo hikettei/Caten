@@ -64,7 +64,7 @@
        ,@(loop while rest
                for bind = (jit-rewrite (pop rest)) for value = (pop rest) for tmp = (gensym)
                collect
-               `(let ((,tmp (caten/aasm:%setf ,bind ,(jit-rewrite value))))
+               `(let ((,tmp (caten/aasm:%expr (caten/aasm::node->id1 (caten/aasm:%setf ,bind ,(jit-rewrite value))))))
                   ,(when (symbolp bind)
                      `(setf
                        ,bind
@@ -127,7 +127,7 @@
           ((list* 'defun kernel-name (list* args) body)
            (print
             `(defun ,kernel-name (,@(map 'list #'second args))
-               (caten/aasm:with-blueprint (:noopt t)
+               (caten/aasm:with-blueprint ()
                  ,(expand-args
                    args
                    `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body)))))))
@@ -159,15 +159,15 @@
              (for j = (Range N 1) do
                   (with-locals ((dot 0.0))
                     (for dth = (Range D 1) do
-                         (setf dot (+ dot (* (aref Q (+ q-base-idx d)) (aref K (+ k-base-idx d))))))
+                         (setf dot (+ dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
                     (let ((S (* dot scale))
                           (new-max (max row-m S))
                           (exp-prev (exp (- row-m new-max)))
                           (exp-cur (exp (- S new-max)))
                           (l-new (+ (* exp-prev row-l) exp-cur)))
-                      (for dth = (Range D 1) do
-                           (setf (aref O (+ o-base-idx d))
-                                 (/ (+ (* exp-cur (aref V (+ v-base-idx d))) (* exp-prev row-l (aref O (+ o-base-idx d)))) l-new)))
+                      (for dth1 = (Range D 1) do
+                           (setf (aref O (+ o-base-idx dth1))
+                                 (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row-l (aref O (+ o-base-idx dth1)))) l-new)))
                       (setf row-m new-max
                             row-l l-new))))
              (setf
