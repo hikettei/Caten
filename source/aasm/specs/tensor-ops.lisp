@@ -140,7 +140,7 @@ out = log2(x);
 out = sqrt(x);
 ```
 "
-         :type-relay #'unary-type-relay)
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :NOT) (UnaryOps JITAble)
 	 "The node :NOT computes the logical-not of the given tensor if the input is a boolean, otherwise (integer) computes a bitwise-not.

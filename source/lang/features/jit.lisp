@@ -76,6 +76,7 @@
     ((list* '- rest) `(reduce #'caten/aasm:%sub (list ,@(map 'list #'jit-rewrite rest))))
     ((list* '* rest) `(reduce #'caten/aasm:%mul (list ,@(map 'list #'jit-rewrite rest))))
     ((list* '/ rest) `(reduce #'caten/aasm:%div (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* 'max rest) `(reduce #'caten/aasm:%max (list ,@(map 'list #'jit-rewrite rest))))
     ((list* 'idiv rest) `(reduce #'caten/aasm:%idiv (list ,@(map 'list #'jit-rewrite rest))))
     ((list* 'mod rest) `(reduce #'caten/aasm:%mod (list ,@(map 'list #'jit-rewrite rest))))
     ((list 'sqrt x) `(caten/aasm:%sqrt ,(jit-rewrite x)))
@@ -126,7 +127,7 @@
           ((list* 'defun kernel-name (list* args) body)
            (print
             `(defun ,kernel-name (,@(map 'list #'second args))
-               (caten/aasm:with-blueprint ()
+               (caten/aasm:with-blueprint (:noopt t)
                  ,(expand-args
                    args
                    `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body)))))))
@@ -176,14 +177,15 @@
 ;; TODO: Construct Graph w/ Forward
 (defun test-flash-attention (&key (batch 1) (head 8) (n 10) (d 10))
   (caten/codegen/blueprint:print-blueprint (sumreduce (caten/api:make-tensor (list 10 10))) t)
-  
-  (flash-attention
-   (caten/api:make-tensor (list batch head n d))
-   (caten/api:make-tensor (list batch head n d))
-   (caten/api:make-tensor (list batch head n d))
-   (caten/api:make-tensor (list batch head n d))
-   (caten/api:make-tensor (list batch head n))
-   (caten/api:make-tensor (list batch head n))))
+  (caten/codegen/blueprint:print-blueprint
+   (flash-attention
+    (caten/api:make-tensor (list batch head n d))
+    (caten/api:make-tensor (list batch head n d))
+    (caten/api:make-tensor (list batch head n d))
+    (caten/api:make-tensor (list batch head n d))
+    (caten/api:make-tensor (list batch head n))
+    (caten/api:make-tensor (list batch head n)))
+   t))
 
 (progn
   @caten.jit () {
