@@ -2,6 +2,6 @@
   :description "Extra Frontend for Caten. It translates CStyle Code into blueprint"
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
-  ("caten.api" "with-c-syntax")
+  ("with-c-syntax" "named-readtables")
   :serial t
   :components ((:file "package")))
