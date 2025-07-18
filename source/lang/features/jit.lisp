@@ -39,32 +39,6 @@
   (error "NOT READY")
   (caten/lang.jit.clang-helper::string->common-lisp code))
 
-(define-caten-feature (jit :docstring "
-```
-@caten.jit(:style style :n-profile) {
-
-}
-```")
-    ((ctx &key (style :lisp))
-      (let* ((code (directive-context-code ctx))
-             (pos-first-char (position-if #'(lambda (x) (and (not (char= x #.(aref " " 0))) (not (char= x #\newline)))) code))
-             (pos-last-char (position-if #'(lambda (x) (and (not (char= x #.(aref " " 0))) (not (char= x #\newline)))) (reverse code)))
-             (code (subseq code pos-first-char (- (length code) pos-last-char)))
-             (code (if (and (char= (aref code 0) #\") (char= (aref code (1- (length code))) #\"))
-                       (subseq code 1 (1- (length code)))
-                       code))
-             (form (caten-jit-style-handler style code)))
-        (trivia:match form
-          ((list* 'defun kernel-name (list* args) body)
-;;           (print kernel-name)
-           (print `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body)))
-           nil
-           )
-          (_
-           (error "@caten.jit: nothing to capture? The code should start w/ defun."))))))
-;; tests
-(in-caten-toplevel)
-
 (defun jit-rewrite (form)
   ;; [TODO] Make it readable, hackable, 
   (trivia:match form
@@ -77,10 +51,10 @@
          :step ,(jit-rewrite step)
          :rid ',range-id)))
     ((list* 'let (list* forms) body)
-     `(let (,@(loop for form in forms collect (list (car form) (jit-rewrite (second form)))))
+     `(let* (,@(loop for form in forms collect (list (car form) (jit-rewrite (second form)))))
         (caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
     ((list* 'with-locals (list* forms) body)
-     `(let (,@(loop for form in forms collect (list (car form) `(caten/aasm:%expr ,(jit-rewrite (second form)) :out ',(car form)))))
+     `(let* (,@(loop for form in forms collect (list (car form) `(caten/aasm:%expr ,(jit-rewrite (second form)) :out ',(car form)))))
         (caten/aasm:%progn
          ,@(map 'list #'car forms)
          ,@(map 'list #'jit-rewrite body))))
@@ -105,18 +79,65 @@
     ((list* 'idiv rest) `(reduce #'caten/aasm:%idiv (list ,@(map 'list #'jit-rewrite rest))))
     ((list* 'mod rest) `(reduce #'caten/aasm:%mod (list ,@(map 'list #'jit-rewrite rest))))
     ((list 'sqrt x) `(caten/aasm:%sqrt ,(jit-rewrite x)))
+    ((list 'exp x) `(caten/aasm:%exp2 (caten/aasm:%mul ,(jit-rewrite x) ,(jit-rewrite (/ (log 2))))))
     
-    ((list 'coerce val type-to) `(caten/aasm:%cast ,(jit-rewrite val) ,type-to))
+    ((list 'scast val type-to) `(caten/aasm:%cast (caten/aasm:%load (caten/aasm:%salloc :dtype ,type-to) 0.0) ,(jit-rewrite val) ,type-to))
     
     (_
      (if (listp form)
          `(,(car form) ,@(map 'list #'jit-rewrite (cdr form)))
          form))))
 
+(defun expand-args (rest-args body)
+  (if rest-args
+      (let ((args (car rest-args)))
+        (trivia:match args
+          ((list 'Pointer bind dtype (list* shape))
+           `(multiple-value-bind (,bind ,dtype ,@shape)
+                (values
+                 (caten/aasm:%global ',bind (caten/api:tensor-dtype ,bind) t)
+                 (caten/api:tensor-dtype ,bind)
+                 ,@(loop for s in shape for nth upfrom 0
+                         collect `(caten/aasm:%load (caten/aasm:%salloc :dtype :int64) (nth ,nth (caten/api:tensor-shape ,bind)))))
+                ,(expand-args (cdr rest-args) body)))
+          (_
+           (error "Not a valid argument form: ~a" args))))
+      body))
+
+(define-caten-feature (jit :docstring "
+```
+@caten.jit(:style style :n-profile) {
+
+}
+```")
+    ((ctx &key (style :lisp))
+      (let* ((code (directive-context-code ctx))
+             (pos-first-char (position-if #'(lambda (x) (and (not (char= x #.(aref " " 0))) (not (char= x #\newline)))) code))
+             (pos-last-char (position-if #'(lambda (x) (and (not (char= x #.(aref " " 0))) (not (char= x #\newline)))) (reverse code)))
+             (code (subseq code pos-first-char (- (length code) pos-last-char)))
+             (code (if (and (char= (aref code 0) #\") (char= (aref code (1- (length code))) #\"))
+                       (subseq code 1 (1- (length code)))
+                       code))
+             (form (caten-jit-style-handler style code)))
+        (trivia:match form
+          ((list* 'defun kernel-name (list* args) body)
+           (print
+            `(defun ,kernel-name (,@(map 'list #'second args))
+               (caten/aasm:with-blueprint ()
+                 ,(expand-args
+                   args
+                   `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body)))))))
+          (_
+           (error "@caten.jit: nothing to capture? The code should start w/ defun."))))))
+;; tests
+(in-caten-toplevel)
+
 (progn
   @caten.jit () {
-  (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D)) (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
-    (let ((scale (/ 1.0 (sqrt (coerce D :float32))))
+  (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
+                          (Pointer O Type (Batch Head N D))
+                          (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
+    (let ((scale (/ 1.0 (sqrt (scast D :float32))))
           (outer (* batch n head)))
       (for idx = (Range outer 1) do
            (let ((tmp idx)
@@ -151,7 +172,7 @@
 
 (progn
   @caten.jit () {
-  (defun flash-attention ((Pointer X Type (A B)))
+  (defun sumreduce ((Pointer X Type (A B)))
     (with-locals ((acc 0.0))
       (for idx = (Range (* A B) 1) do
            (setf acc (+ acc (aref X idx))))
