@@ -22,7 +22,7 @@
 ;; and get optimized kernel for any language
 
 ;;; ~~ Any language ==> Common Lisp Translator ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *supported-styles* `(:c :lisp))
+(defparameter *supported-styles* `(:lisp))
 
 (defgeneric caten-jit-style-handler (style-id code))
 
@@ -61,7 +61,38 @@
 
 (progn
   @caten.jit (:lisp) {
-  (defun a ()
-    a
-    )
+  (defun flash-attention (Q<T>[Batch Head N D] K<T>[Batch Head N D] V<T>[Batch Head N D]
+                          O<Float>[BATCH Head N D] L<Float>[Batch Head N] M<Float>[Batch Head N])
+    (let ((scale (/ 1.0 (sqrt (coerce D 'single-float))))
+          (outer (* batch n head)))
+      (for idx = (Range 0 outer) do
+           (let* ((tmp idx)
+                  (i (mod tmp N))
+                  (tmp (/ tmp N))
+                  (h (mod tmp HEAD))
+                  (tmp (/ tmp HEAD))
+                  (b tmp)
+                  (q-base-idx (* D (+ i (* n (+ (* b head) h)))))
+                  (k-base-idx (* D (* n (+ (* b head) h))))
+                  (v-base-idx (* D (* n (+ (* b head) h))))
+                  (o-base-idx (* D (+ i (* n (+ (* b head) h)))))
+                  (row-m (aref M (+ i (* n (+ (* b head) h)))))
+                  (row-l (aref L (+ i (* n (+ (* b head) h))))))
+             (for j = (Range 0 N 1) do
+                  (let ((dot 0.0))
+                    (for dth = (Range 0 D 1) do
+                         (setf dot (+ dot (* (aref Q (+ q-base-idx d)) (aref K (+ k-base-idx d))))))
+                    (let* ((S (* dot scale))
+                           (new-max (max row-m S))
+                           (exp-prev (exp (- row-m new-max)))
+                           (exp-cur (exp (- S new-max)))
+                           (l-new (+ (* exp-prev row-l) exp-cur)))
+                      (for dth = (Range 0 D 1) do
+                           (setf (aref O (+ o-base-idx d))
+                                 (/ (+ (* exp-cur (aref V (+ v-base-idx d))) (* exp-prev row-l (aref O (+ o-base-idx d)))) l-new)))
+                      (setf row-m new-max
+                            row-l l-new))))
+             (setf
+              (aref M (+ i (* n (+ (* b head) h)))) row-m
+              (aref L (+ i (* n (+ (* b head) h)))) row-l)))))
   })
