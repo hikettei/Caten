@@ -27,7 +27,7 @@
 (defun read-caten-directive (stream char &aux (definition "CATEN."))
   "Parse a reader macro of the following form:
 ```lisp
-@caten.<operation_name>(params){
+@caten.<feat_name>(params){
 PROGRAM
 }
 ```
@@ -38,26 +38,21 @@ Returns three values: OPERATION, PARAMS, and CODE. If not matched, returns the o
     ;; Verify that the operator symbol begins with 'caten.', indicating a caten directive
     (unless caten-p (return-from read-caten-directive operator))
     (let* ((dot-pos (position #\. opname))
-           (operation (subseq opname (1+ dot-pos)))
+           (feat-name (subseq opname (1+ dot-pos)))
            (next1 (progn (consume-whitespace-until stream #\() (peek-char nil stream nil nil))))
       (unless (char= next1 #\()
-        (error "@caten macro parse error: After reading operator '~a', expected '(' but found '~a'. Please follow the syntax: @caten.<operation>(params){...}" operator next1))
+        (error "@caten macro parse error: After reading operator '~a', expected '(' but found '~a'. Please follow the syntax: @caten.<feat_namen>(params){...}" operator next1))
       (let ((params (read-delimited-stream stream #\( #\))))
         (consume-whitespace-until stream #\{)
         (unless (char= (peek-char nil stream nil nil) #\{) ;; Ensure the next character is the opening brace '{' that begins the code block
           (error "@caten macro parse error: Expected '{' after reading parameters, but none was found.
-Please ensure the directive follows the syntax: @caten.<operation>(params){...}
+Please ensure the directive follows the syntax: @caten.<feat_name>(params){...}
 "))
         (let ((code (read-delimited-stream stream #\{ #\}))
               (params (handler-case (read-from-string params)
                         (error (c) (error "@caten macro parse error: Cannot parse params \"~a\" due to~%:~a" params c)))))
           ;; Return three values: operation, parameters, and code block content
-          ;; (print operation) (print params) (print code)
-          (print "PARSED")
-          (print operation)
-          (print params)
-          (print code)
-          operator)))))
+          (apply (get-feature-expander-macro (intern feat-name "KEYWORD")) (append (list (make-directive-context :code code :params params)) params)))))))
 
 (named-readtables:defreadtable caten
   (:merge :standard)
