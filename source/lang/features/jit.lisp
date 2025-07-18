@@ -54,7 +54,7 @@
      `(let* (,@(loop for form in forms collect (list (car form) (jit-rewrite (second form)))))
         (caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
     ((list* 'with-locals (list* forms) body)
-     `(let* (,@(loop for form in forms collect (list (car form) `(caten/aasm:%expr ,(jit-rewrite (second form)) :out ',(car form)))))
+     `(let* (,@(loop for form in forms collect (list (car form) `(caten/aasm:%expr (caten/aasm::node->id1 ,(jit-rewrite (second form))) :out ',(car form)))))
         (caten/aasm:%progn
          ,@(map 'list #'car forms)
          ,@(map 'list #'jit-rewrite body))))
@@ -68,7 +68,7 @@
                   ,(when (symbolp bind)
                      `(setf
                        ,bind
-                       (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',bind))))
+                       (caten/aasm::node->id1 (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',bind)))))
                   ,tmp))))
     ((list 'aref name idx) `(caten/aasm:%aref ,name ,(jit-rewrite idx)))
     ;; Operator rewriting
@@ -82,7 +82,10 @@
     ((list 'exp x) `(caten/aasm:%exp2 (caten/aasm:%mul ,(jit-rewrite x) ,(jit-rewrite (/ (log 2))))))
     
     ((list 'scast val type-to) `(caten/aasm:%cast (caten/aasm:%load (caten/aasm:%salloc :dtype ,type-to) 0.0) ,(jit-rewrite val) ,type-to))
-    
+    ((number x)
+     (if (integerp form)
+         `(caten/aasm:%load (caten/aasm:%salloc :dtype :int64) ,form)
+         `(caten/aasm:%load (caten/aasm:%salloc :dtype :float32) ,form)))
     (_
      (if (listp form)
          `(,(car form) ,@(map 'list #'jit-rewrite (cdr form)))
@@ -169,6 +172,18 @@
              (setf
               (aref M (+ i (* n (+ (* b head) h)))) row-m
               (aref L (+ i (* n (+ (* b head) h)))) row-l)))))})
+
+;; TODO: Construct Graph w/ Forward
+(defun test-flash-attention (&key (batch 1) (head 8) (n 10) (d 10))
+  (caten/codegen/blueprint:print-blueprint (sumreduce (caten/api:make-tensor (list 10 10))) t)
+  
+  (flash-attention
+   (caten/api:make-tensor (list batch head n d))
+   (caten/api:make-tensor (list batch head n d))
+   (caten/api:make-tensor (list batch head n d))
+   (caten/api:make-tensor (list batch head n d))
+   (caten/api:make-tensor (list batch head n))
+   (caten/api:make-tensor (list batch head n))))
 
 (progn
   @caten.jit () {
