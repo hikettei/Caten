@@ -73,6 +73,7 @@
     ((list 'aref name idx) `(caten/aasm:%aref ,name ,(jit-rewrite idx)))
     ;; Operator rewriting
     ((list* '+ rest) `(reduce #'caten/aasm:%add (list ,@(map 'list #'jit-rewrite rest))))
+    ((list '+= a b)  `(caten/aasm:%add ,(jit-rewrite a) ,(jit-rewrite b) :reduction t))
     ((list* '- rest) `(reduce #'caten/aasm:%sub (list ,@(map 'list #'jit-rewrite rest))))
     ((list* '* rest) `(reduce #'caten/aasm:%mul (list ,@(map 'list #'jit-rewrite rest))))
     ((list* '/ rest) `(reduce #'caten/aasm:%div (list ,@(map 'list #'jit-rewrite rest))))
@@ -159,7 +160,7 @@
              (for j = (Range N 1) do
                   (with-locals ((dot 0.0))
                     (for dth = (Range D 1) do
-                         (setf dot (+ dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
+                         (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
                     (let ((S (* dot scale))
                           (new-max (max row-m S))
                           (exp-prev (exp (- row-m new-max)))
