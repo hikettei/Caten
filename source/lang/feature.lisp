@@ -16,7 +16,7 @@
 (defgeneric get-feature-expander-macro (dispatcher-id)
   (:documentation "The method `get-feature-expander-macro` return a lambda function which returns a s-expression for the feature"))
 
-(defmethod get-feature-expander-macro :around (dispatcher-id)
+(defmethod get-feature-expander-macro (dispatcher-id)
   (if (next-method-p)
       (call-next-method)
       (error "@caten macro parse error: The feature @caten.~(~a~) is not defined.~%

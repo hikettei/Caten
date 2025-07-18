@@ -48,15 +48,17 @@ Returns three values: OPERATION, PARAMS, and CODE. If not matched, returns the o
           (error "@caten macro parse error: Expected '{' after reading parameters, but none was found.
 Please ensure the directive follows the syntax: @caten.<feat_name>(params){...}
 "))
-        (let ((code (read-delimited-stream stream #\{ #\}))
-              (params (handler-case (read-from-string params)
-                        (error (c) (error "@caten macro parse error: Cannot parse params \"~a\" due to~%:~a" params c)))))
+        (let* ((code (read-delimited-stream stream #\{ #\}))
+               (code (subseq code 1 (1- (length code)))) ;; Trim { } from the code
+               (params (handler-case (read-from-string params)
+                         (error (c) (error "@caten macro parse error: Cannot parse params \"~a\" due to~%:~a" params c)))))
           ;; Return three values: operation, parameters, and code block content
           (apply (get-feature-expander-macro (intern feat-name "KEYWORD")) (append (list (make-directive-context :code code :params params)) params)))))))
 
 (named-readtables:defreadtable caten
   (:merge :standard)
-  (:macro-char #\@ #'read-caten-directive t))
+  (:macro-char #\@ #'read-caten-directive t)
+  (:dispatch-macro-char #\# #\{ #'with-c-syntax.core::read-in-c-syntax))
 
 (defmacro in-caten-toplevel ()
   `(named-readtables:in-readtable caten))
