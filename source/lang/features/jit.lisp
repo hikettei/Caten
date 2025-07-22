@@ -1,21 +1,3 @@
-(defpackage :caten/lang.jit.clang-helper
-  (:use :cl))
-(in-package :caten/lang.jit.clang-helper)
-
-(named-readtables:in-readtable with-c-syntax:with-c-syntax-readtable)
-(defun string->common-lisp (code &key (n 1))
-  (declare (type string code))
-  (let ((code (format nil "~a ~%}#" code)))
-    (with-input-from-string (stream code)
-      (let* ((level (or n with-c-syntax.core::*with-c-syntax-reader-level*))
-             (readtable-case (or with-c-syntax.core::*with-c-syntax-reader-case*
-                                 (with-c-syntax.core::readtable-case *readtable*)))
-             (readtable (with-c-syntax.core::find-c-readtable level readtable-case))
-             (with-c-syntax.core::*previous-readtable* *readtable*)
-             (tokens (with-c-syntax.core::tokenize-source stream t readtable)))
-        (with-c-syntax.core::expand-c-syntax
-         (with-c-syntax.core::preprocessor tokens level readtable-case nil) t)))))
-
 (in-package :caten/lang)
 ;; @caten.jit creates blueprint graph from ANSI Common Lisp Program
 ;; Also by translating C code into Common Lisp (using with-c-syntax) ultimately it allows to embody C code in Common Lisp
@@ -36,8 +18,7 @@
     (error (c) (error "@caten.jit(:lisp,...): Failed to parse the code due to:~%  ~a" c))))
 
 (defmethod caten-jit-style-handler ((style-id (eql :c)) code)
-  (error "NOT READY")
-  (caten/lang.jit.clang-helper::string->common-lisp code))
+  (error "NOT READY"))
 
 (trivia:defpattern Sym (to-what) ;; Compares the symbol-name
   `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,(symbol-name to-what))))))

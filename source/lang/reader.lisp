@@ -57,23 +57,9 @@ Please ensure the directive follows the syntax: @caten.<feat_name>(params){...}
 
 (named-readtables:defreadtable caten
   (:merge :standard)
-  (:macro-char #\@ #'read-caten-directive t)
-  (:dispatch-macro-char #\# #\{ #'with-c-syntax.core::read-in-c-syntax))
+  (:macro-char #\@ #'read-caten-directive t))
 
 (defmacro in-caten-toplevel ()
   `(named-readtables:in-readtable caten))
-;; We have a C -> Lisp Compiler
-;; i.e.: We can translate Lisp -> Blueprint Compiler
-;; And we have a both of C, Lisp, Frontend
-;; Readmeに乗っける
-;; Export to JSON (Compiled Code)
-
-;; lang.lisp: APIs for constructing blueprint
 ;; TODO:
 ;; https://github.com/ruricolist/infix-math
-;; TileLangLike
-;; FlashAttention Benchmark
-;; Reduction Resolver
-;; Create caten/lang
-  ;; Not in References
-  ;; TODO: Delete CStyle
