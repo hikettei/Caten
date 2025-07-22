@@ -62,8 +62,6 @@ Please ensure the directive follows the syntax: @caten.<feat_name>(params){...}
 
 (defmacro in-caten-toplevel ()
   `(named-readtables:in-readtable caten))
-
-
 ;; We have a C -> Lisp Compiler
 ;; i.e.: We can translate Lisp -> Blueprint Compiler
 ;; And we have a both of C, Lisp, Frontend
@@ -78,4 +76,4 @@ Please ensure the directive follows the syntax: @caten.<feat_name>(params){...}
 ;; Reduction Resolver
 ;; Create caten/lang
   ;; Not in References
-  ;;
+  ;; TODO: Delete CStyle

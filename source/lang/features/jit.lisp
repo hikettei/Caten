@@ -127,10 +127,12 @@
         (trivia:match form
           ((list* 'defun kernel-name (list* args) body)
            `(defun ,kernel-name (,@(map 'list #'second args))
-              (caten/aasm:with-blueprint ()
-                ,(expand-args
-                  args
-                  `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))))
+              (caten/api::%forward-with-captured-graph
+               (caten/aasm:with-blueprint ()
+                 ,(expand-args
+                   args
+                   `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
+               ,@(map 'list #'second args))))
           (_
            (error "@caten.jit: nothing to capture? The code should start w/ defun."))))))
 ;; tests
@@ -171,10 +173,16 @@
                         (aref L (+ i (* n (+ (* b head) h)))) row-l)))))))})
 
 ;; TODO: Construct Graph w/ Forward
-(defun test-flash-attention (&key (batch 1) (head 8) (n 10) (d 10))
+;; TODO: Make it forwardable
+(defun test-flash-attention (&key (batch 10) (head 8) (n 128) (d 512))
   (let ((ast (sumreduce (caten/api:make-tensor (list 10 10)))))
+    (print ast)))
+;;    (caten/aasm:simplify-ast ast)
+;;    (caten/air:pprint-graph ast)
+;;    (caten/codegen/blueprint:print-blueprint ast t))
+  (let ((ast (Gemm (caten/api:make-tensor (list 128 128)) (caten/api:make-tensor (list 128 128)) (caten/api:make-tensor (list 128 128)))))
+    (print ast)
     (caten/aasm:simplify-ast ast)
-    (caten/air:pprint-graph ast)
     (caten/codegen/blueprint:print-blueprint ast t))
   (let ((ast
           (flash-attention
@@ -190,10 +198,18 @@
 
 (progn
   @caten.jit () {
+  (defun Gemm ((Pointer X Type (M N)) (Pointer Y Type (N K)) (Pointer Z Type (M K)))
+    (for i = (Range 0 M) do
+         (for j = (Range 0 K) do
+              (with-locals ((acc 0.0))
+                (for k = (Range 0 N) do
+                     (setf acc (+ acc (* (aref X (+ (* N i) k)) (aref Y (+ (* K k) j))))))
+                (setf (aref Z (+ (* K i) j)) acc)))))})
+
+(progn
+  @caten.jit () {
   (defun sumreduce ((Pointer X Type (A B)))
     (with-locals ((acc 0.0))
       (for idx = (Range (* A B) 1) do
            (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
-
-;; Variable, Bind

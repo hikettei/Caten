@@ -138,7 +138,8 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
    ;;  (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Compiling ~a kernels ..." (count-if #'(lambda (x) (eql (node-type x) :JIT_KERNEL)) (graph-nodes graph))))
     ;; [TODO] Use Runtime instead of renderer when doing %compile-kernel
     (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "Completed"))
-    (when (>= (ctx:getenv :BEAM) 1) (autotune runtime))
+    (when (and (>= (ctx:getenv :BEAM) 1) (get-backend-jit-p (ctx:getenv :BACKEND)))
+      (autotune runtime))
     runtime))
 
 (defparameter *autotune-node-callback* nil)

@@ -140,7 +140,7 @@
           collect node
         else
           collect (make-node-pointing-to-nth node (tensor-nth-output tensor))))
-
+;; [TODO] Simplify the logic, redefine lower as lower(Graph{n-1}, prev_inputs) -> Graph{n}
 (defun %lower-iseq (session iseq &key (no-verify nil) (simplifiers *external-simplifiers*))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
   (declare (type compiler-session session)

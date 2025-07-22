@@ -818,3 +818,46 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
 "
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
+;; ~~ CapturedKernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Synchronize (Func) ((time :initarg :time :accessor synchronize-time-at)))
+(defmethod forward ((op Synchronize) &rest inputs) (st "A[~] B[~] -> A[~]" (inputs)))
+(defmethod backward ((op Synchronize) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
+(defmethod lower ((op Synchronize) &rest nodes)
+  (assert (= 2 (length nodes)))
+  (multiple-value-bind (after-kernel before-kernel) (apply #'values nodes)
+    (declare (ignore after-kernel))
+    (with-context (out ($sync (list (synchronize-time-at op)) (node-writes before-kernel))))))
+
+(defclass CapturedKernel (Func)
+  ((time :initarg :time)
+   (blueprint :initarg :blueprint :accessor captured-kernel-blueprint :type Graph)
+   (kernel :initarg :kernel :accessor captured-kernel-kernel)))
+
+(defun %forward-with-captured-graph (captured-graph &rest inputs)
+  (let ((kernel (caten/codegen/byoc:get-backend-kernel (ctx:getenv :BACKEND)))
+        (time (gensym "CT")))
+    (assert kernel () "CapturedKernel: Current backend ~a does not support code generation!" (ctx:getenv :BACKEND))
+    (let ((inputs-after-ops
+            (multiple-value-list
+             (apply #'forward (make-instance 'CapturedKernel :blueprint captured-graph :kernel kernel :time time) inputs))))
+      (apply #'values (map 'list #'(lambda (x y) (forward (make-instance 'Synchronize :time time) x y)) inputs-after-ops inputs)))))
+
+(defmethod forward ((op CapturedKernel) &rest inputs)
+  (apply #'values (loop for out in inputs collect (st "A[~] -> A[~]" (out)))))
+(defmethod backward ((op CapturedKernel) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
+(defmethod lower ((op CapturedKernel) &rest nodes)
+  ;; [TODO] Synchronize!
+  (with-slots ((blueprint blueprint) (kernel kernel) (time time)) op
+    ;; [TODO] The order of nodes vs the order of Blueprint Kernels
+    (with-context
+        (kernel
+         ($kernel
+          nil (map 'list (compose #'car #'node-writes) nodes)
+          (make-instance kernel
+                         :name (gensym)
+                         :args (loop for node in (graph-nodes blueprint)
+                                     if (eql (node-type node) :DEFINE-GLOBAL)
+                                       collect node)
+                         :flops (caten/codegen/polyhedral:schedule-item-gflops blueprint)
+                         :blueprint blueprint)
+          :optimized-p nil :out time)))))

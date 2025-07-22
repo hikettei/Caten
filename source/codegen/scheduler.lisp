@@ -297,8 +297,8 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
                    if (and v (symbolp l)) collect (cons v view))))
       (loop for node in (graph-nodes graph)
             for nth fixnum upfrom 0 do
-              (assert (= (length (the list (node-reads node))) (length (the list (getattr node :_read_views)))))
-              (setf (gethash (node-id node) in-degrees) (butseen (node-reads node) (getattr node :_read_views)))
+              ;; (assert (= (length (the list (node-reads node))) (length (the list (getattr node :_read_views)))))
+              (setf (gethash (node-id node) in-degrees) (butseen (node-reads node) (getattr node :_read_views :allow-undefined t)))
               (when (and backward backward-pos (> nth backward-pos))
                 ;; If PAUSE/BACKWARD is defined, nodes placed after it must be realized after :PAUSE/BACKWARD.
                 (push (cons backward nil) (gethash (node-id node) in-degrees))
@@ -329,13 +329,14 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
         (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
     ;; Ensure there's no symbolic incremental for the auto scheduler.
     (dolist (node (group-items group))
-      (loop for r in (append (node-reads node) (node-writes node))
-            for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-            do (setf (gethash r id2type) rt)
-            if rt do
-              (when (> (tensor-relay-nrank rt) 0)
-                (setf full-scalar-p nil))
-              (setf rank (max rank (tensor-relay-nrank rt)))))
+      (when (typep (node-attr node) 'JITAble)
+        (loop for r in (append (node-reads node) (node-writes node))
+              for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+              do (setf (gethash r id2type) rt)
+              if rt do
+                (when (> (tensor-relay-nrank rt) 0)
+                  (setf full-scalar-p nil))
+                (setf rank (max rank (tensor-relay-nrank rt))))))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :type
                (cond
@@ -878,7 +879,8 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
   (declare (type Graph schedule-graph))
   (let ((caten/aasm:*ctx* (make-graph)))
     (labels ((e (node)
-               (setf (node-type-relay node) nil (getattr node :_read_views) nil)
+               (when (typep (node-attr node) 'JITAble)
+                 (setf (node-type-relay node) nil (getattr node :_read_views) nil))
                (caten/aasm:emit node))
              (tgensym () (prog1 (intern (format nil "T~a" count)) (incf count)))
              (explore (id &aux (node (id->value schedule-graph id)))
