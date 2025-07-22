@@ -14,10 +14,10 @@
 ;; Allow @caten.jit reader macro
 (in-caten-toplevel)
 ;; [TODO]
-;; - !randを修正する ...
-;; - FlashAttentionを動作させる
-;; - Benchmark Place
-(progn
+;; - [ ] !randを修正する ...
+;; - [ ] FlashAttentionを動作させる
+;; - [ ] Benchmark Place
+(progn ;; Tips: EmacsでC-c C-cできるようにprognで@caten.jit () { }を囲っておく
   @caten.jit () {
   (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
                           (Pointer O Type (Batch Head N D))
@@ -30,40 +30,34 @@
                      (let ((q-base-idx (* D (+ i (* N (+ (* b head) h)))))
                            (k-base-idx (* D (* N (+ (* b head) h))))
                            (v-base-idx (* D (* N (+ (* b head) h))))
-                           (o-base-idx (* D (+ i (* N (+ (* b head) h)))))
-                           (row-m (aref M (+ i (* N (+ (* b head) h)))))
-                           (row-l (aref L (+ i (* N (+ (* b head) h))))))
-                       (for j = (Range N 1) do
-                            (with-locals ((dot 0.0))
-                              (for dth = (Range D 1) do
-                                   (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
-                              (let ((S (* dot scale))
-                                    (new-max (max row-m S))
-                                    (exp-prev (exp (- row-m new-max)))
-                                    (exp-cur (exp (- S new-max)))
-                                    (l-new (+ (* exp-prev row-l) exp-cur)))
-                                (for dth1 = (Range D 1) do
-                                     (setf (aref O (+ o-base-idx dth1))
-                                           (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row-l (aref O (+ o-base-idx dth1)))) l-new)))
-                                (setf row-m new-max
-                                      row-l l-new))))
-                       (setf
-                        (aref M (+ i (* n (+ (* b head) h)))) row-m
-                        (aref L (+ i (* n (+ (* b head) h)))) row-l)))))))})
+                           (o-base-idx (* D (+ i (* N (+ (* b head) h))))))
+                       (with-locals ((row-m (aref M (+ i (* N (+ (* b head) h)))))
+                                     (row-l (aref L (+ i (* N (+ (* b head) h))))))
+                         (for j = (Range N 1) do
+                              (with-locals ((dot 0.0))
+                                (for dth = (Range D 1) do
+                                     (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
+                                (let ((S (* dot scale))
+                                      (new-max (max row-m S))
+                                      (exp-prev (exp (- row-m new-max)))
+                                      (exp-cur (exp (- S new-max)))
+                                      (l-new (+ (* exp-prev row-l) exp-cur)))
+                                  (for dth1 = (Range D 1) do
+                                       (setf (aref O (+ o-base-idx dth1))
+                                             (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row-l (aref O (+ o-base-idx dth1)))) l-new)))
+                                  (setf row-m new-max
+                                        row-l l-new))))
+                         (setf
+                          (aref M (+ i (* n (+ (* b head) h)))) row-m
+                          (aref L (+ i (* n (+ (* b head) h)))) row-l))))))))})
 
-;; TODO: Construct Graph w/ Forward
-;; TODO: Make it forwardable
 (defun test-flash-attention (&key (batch 10) (head 8) (n 128) (d 512))
-  (let ((ast (sumreduce (caten/api:make-tensor (list 10 10)))))
-    (print ast))
-  (let ((ast (Gemm (caten/api:make-tensor (list 128 128)) (caten/api:make-tensor (list 128 128)) (caten/api:make-tensor (list 128 128)))))
-    (print ast))
-  (let ((ast
-          (flash-attention
-           (caten/api:make-tensor (list batch head n d))
-           (caten/api:make-tensor (list batch head n d))
-           (caten/api:make-tensor (list batch head n d))
-           (caten/api:make-tensor (list batch head n d))
-           (caten/api:make-tensor (list batch head n))
-           (caten/api:make-tensor (list batch head n)))))
-    (print ast)))
+  (multiple-value-bind (q k v o l m)
+      (flash-attention
+       (caten/api:make-tensor (list batch head n d))
+       (caten/api:make-tensor (list batch head n d))
+       (caten/api:make-tensor (list batch head n d))
+       (caten/api:make-tensor (list batch head n d))
+       (caten/api:make-tensor (list batch head n))
+       (caten/api:make-tensor (list batch head n)))
+    o))
