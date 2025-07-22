@@ -1116,7 +1116,7 @@ Returns T if the current schedule does not break any dependences in dep."
                   do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
                      if (or (null max-threads) (<= (expt size split-at) max-threads))
                        collect
-                  (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
+                       (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
   (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
