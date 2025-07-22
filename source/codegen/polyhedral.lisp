@@ -1110,7 +1110,7 @@ Returns T if the current schedule does not break any dependences in dep."
           for coincident = (schedule-node-band-get-coincident band)
           for split-at-base = (or (position 0 coincident) (length coincident))
           for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
-          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+          if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
             append
             (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
                   do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
