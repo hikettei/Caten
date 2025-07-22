@@ -10,6 +10,9 @@
   (:use :cl :caten/api :caten/lang))
 
 (in-package :caten-lang-example)
+
+(setf (ctx:getenv :BACKEND) "NATIVE") ;; Caten/Lang requires JIT enabled backend
+
 ;; [Introduction]
 ;; Caten/Lang is an experimental, second frontend contrasting with Caten/API.
 ;; - Caten/API automatically generates optimal kernels from NumPy-style computation graphs.
@@ -43,18 +46,35 @@
 ;;   - Our low-level IR can automatically parallelize access patterns like [i] -> [i-1] within mathematically valid bounds.
 ;;   - We want to leverage this capability to the fullest.
 
-;; 
+;; Caten/Lang can be directly embedded into Common Lisp code.
+;; TopLevel is implemented as a reader macro.
+;; (in-caten-toplevel) adds the readtable ’caten/lang:caten to the current readtables.
 (in-caten-toplevel)
 
-;; - [ ] n-profileなど設定機能の追加 (BEAM)
-;; - [ ] Provide a decent test.
+;; This will introduce a new syntax:
+;; ```
+;; @caten.<feature_name> (args) { CODE }
+;; ```
+;; - JIT is implemented as <feature_name> = jit.
+;; - You can pass style=<language> to specify how jit parses the code
+
+@caten.jit (:style :lisp) {
+(defun example ((Pointer X Type (A)))
+  (for idx = (Range A 1) do
+       (setf (aref A idx) (sin (aref A idx)))))
+}
+
+;; My recommended style is to wrap @caten.jit with (progn ...)
+;; This will explict code blocks to your editor and you can do C-c C-c
 (progn
-  @caten.jit () {
+  @caten.jit (:style :lisp) {
   (defun sumreduce ((Pointer X Type (A B)))
     (with-locals ((acc 0.0))
       (for idx = (Range (* A B) 1) do
            (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
+
+(print (caten (SumReduce (make-tensor `(10 10) :initial-element 1.0))))
 
 (progn
   @caten.jit () {
@@ -70,3 +90,5 @@
 (defun !matmul-jit (a b)
   (let ((out (st "A[i j] B[j k] -> A[i k]" (a b))))
     (Gemm out a b)))
+
+;; fix: !rand
