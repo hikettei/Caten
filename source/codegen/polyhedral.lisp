@@ -1104,7 +1104,8 @@ Returns T if the current schedule does not break any dependences in dep."
 (defmethod optrule-generate-search-space (poly bands (id (eql :TileGPU)))
   ;; TileGPU Can be applied at once
   (when (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2)
-    (loop for band in bands for nth upfrom 0
+    (loop with max-threads = (slot-value (poly-strategy poly) 'caten/codegen/byoc::local-max)
+          for band in bands for nth upfrom 0
           for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
           for coincident = (schedule-node-band-get-coincident band)
           for split-at-base = (or (position 0 coincident) (length coincident))
@@ -1113,7 +1114,8 @@ Returns T if the current schedule does not break any dependences in dep."
             append
             (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
                   do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
-                  collect
+                     if (or (null max-threads) (<= (expt size split-at) (apply #'* max-threads)))
+                       collect
                   (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
