@@ -601,7 +601,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-;;      (print-blueprint (caten/aasm::simplify-ast (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx)) base-graph schedule-graph)) t)
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
             (getattr schedule-item :blueprint) (caten/aasm::%simplify-ast (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx)) base-graph schedule-graph))))))

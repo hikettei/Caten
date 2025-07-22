@@ -77,7 +77,8 @@
                        result)))))
               ((guard id (typep id 'symbol))
                `((let* ((val (id->value ,graph-bind ,id)))
-                   (when (and val (not (eql (node-id val) (node-id ,bind))))
+                   ;; EXPR should not removed from the graph
+                   (when (and val (not (eql (node-id val) (node-id ,bind))) (not (eql (node-type val) :EXPR)))
                      (let ((val (copy-node val)))
                        (setf (node-id val) (gensym "NID"))
                        (assert (= 1 (length (the list (node-writes val))) (length (the list (node-writes ,bind)))) () "-> symbol should only support when (length writes) == 1~%~a" ,graph-bind)
