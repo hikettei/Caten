@@ -269,7 +269,8 @@ Constraints:
            (split-parent (parents &aux (results) (tmp))
              (declare (type list parents results tmp))
              (loop for p in parents
-                   if (render-p p) do (when tmp (push (reverse tmp) results)) (push p results) (setf tmp nil)
+                   ;; Split the PROGN w/ RenderNode (Except for RANGE, RANGE should be always paired w/ FOR but INDEX-COMPONENTS also uses it)
+                   if (and (render-p p) (not (eql (node-type p) :RANGE))) do (when tmp (push (reverse tmp) results)) (push p results) (setf tmp nil)
                      else do (push p tmp))
              (when tmp (push (reverse tmp) results))
              (reverse results))
