@@ -12,7 +12,9 @@
 (in-package :caten-flash-attention)
 
 (in-caten-toplevel)
-
+;; TODO
+;; - 1. Compare the outputs
+;; - 2. まずLispで動かす
 (progn
   @caten.jit () {
   (defun flash_attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
@@ -32,7 +34,7 @@
                          (for j = (Range N 1) do
                               (with-locals ((dot 0.0))
                                 (for dth = (Range D 1) do
-                                     (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx (* D dth)))))))
+                                     (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx (* D j) dth))))))
                                 (let ((S (* dot scale))
                                       (new-max (max row_m S))
                                       (exp-prev (exp (- row_m new-max)))
@@ -40,7 +42,7 @@
                                       (l-new (+ (* exp-prev row_l) exp-cur)))
                                   (for dth1 = (Range D 1) do
                                        (setf (aref O (+ o-base-idx dth1))
-                                             (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1)))) l-new)))
+                                             (/ (+ (* exp-cur (aref V (+ v-base-idx (* j D) dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1)))) l-new)))
                                   (setf row_m new-max
                                         row_l l-new))))
                          (setf
