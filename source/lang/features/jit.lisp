@@ -47,6 +47,7 @@
   (trivia:match form
     ((list* (Sym for) idx (Sym =) (list (Sym Range) size step) (Sym do) rest)
      (let* ((range-id (gensym (symbol-name idx))))
+       (when (eql size 0) (warn "Detected an empty range: ~a.~%Range is defined as (Range SIZE STEP)" size))
        `(caten/aasm::%range
          ',idx ,(jit-rewrite size)
          (let ((,idx ',range-id))

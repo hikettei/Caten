@@ -65,6 +65,7 @@
 }
 
 ;; My recommended style is to wrap @caten.jit with (progn ...)
+;; This will force your editor to recognise code blocks and you can do C-c C-c
 ;; This will explict code blocks to your editor and you can do C-c C-c
 (progn
   @caten.jit (:style :lisp) {
@@ -80,10 +81,10 @@
   @caten.jit () {
   (defun Gemm ((Pointer Z Type (M K)) (Pointer X Type (M N)) (Pointer Y Type (N K)))
     ;; [Note] Why nothing is scheduled?
-    (for i = (Range 0 M) do
-         (for j = (Range 0 K) do
+    (for i = (Range M 1) do
+         (for j = (Range K 1) do
               (with-locals ((acc 0.0))
-                (for k = (Range 0 N) do
+                (for k = (Range N 1) do
                      (setf acc (+ acc (* (aref X (+ (* N i) k)) (aref Y (+ (* K k) j))))))
                 (setf (aref Z (+ (* K i) j)) acc)))))})
 
