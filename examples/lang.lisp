@@ -74,7 +74,7 @@
       (for idx = (Range (* A B) 1) do
            (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
-;; TODO (caten (!matmul-jit (ax+b `(3 3) 1 0) (ax+b `(3 3) 1 0)))
+;; TODO: Fix (caten (!matmul-jit (ax+b `(3 3) 1 0) (ax+b `(3 3) 1 0)))
 (print (caten (SumReduce (make-tensor `(100 100) :initial-element 1.0))))
 
 (progn
@@ -91,11 +91,3 @@
 (defun !matmul-jit (a b)
   (let ((out (st "A[i j] B[j k] -> A[i k]" (a b))))
     (Gemm out a b)))
-
-;; fix: !rand
-;; todo: add this to readme
-;; merge this to main (see develop...)
-;; todo: add tensor-schedule
-;; todo: scheduler should consider the tpsort and $sync
-;; todo: beam beautiful logging
-;; todo: introduce LAUNCH?
