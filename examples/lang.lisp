@@ -92,3 +92,7 @@
     (Gemm out a b)))
 
 ;; fix: !rand
+;; todo: add this to readme
+;; merge this to main (see develop...)
+;; todo: add tensor-schedule
+;; todo: scheduler should consider the tpsort and $sync

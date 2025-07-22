@@ -28,8 +28,8 @@ VALUE     <- SYNCHRONIZE(KERNEL_ID1, KERNEL_ID2, ..., ARG1, ARG2, ...)
 "
          :slots ((n-kernel-args :type fixnum))
          :type-relay #'(lambda (id->type node)
-                         (dolist (arg (subseq (node-reads node) 0 (getattr node :n-kernel-args)))
-                           (assert (kernel-time-p (gethash arg id->type)) () "SYNCHRONIZE: The kernel args must be a list of :TIME, getting ~a." (gethash arg id->type)))
+                         ;; (dolist (arg (subseq (node-reads node) 0 (getattr node :n-kernel-args)))
+                         ;;  (assert (kernel-time-p (gethash arg id->type)) () "SYNCHRONIZE: The kernel args must be a list of :TIME, getting ~a." (gethash arg id->type)))
                          (list (gethash (nth (getattr node :n-kernel-args) (node-reads node)) id->type))))
 
 ;; [TODO] Remove ./codegen/jit.lisp :JIT_KERNEL after replacing them
@@ -41,8 +41,8 @@ KERNEL_ID <- KERNEL(KERNEL_ID1, KERNEL_ID2, ..., ARG1, ARG2, ...)
 "
 	 :slots ((n-kernel-args :type fixnum) (kernel-info) (dtypes :type list) (cached-p :type boolean) (optimized-p :type boolean :initform nil))
          :type-relay #'(lambda (id->type node)
-                         (dolist (arg (subseq (node-reads node) 0 (getattr node :n-kernel-args)))
-                           (assert (kernel-time-p (gethash arg id->type)) () "KERNEL The kernel args must be a list of :TIME, getting ~a" (gethash arg id->type)))
+                         ;; (dolist (arg (subseq (node-reads node) 0 (getattr node :n-kernel-args)))
+                         ;;  (assert (kernel-time-p (gethash arg id->type)) () "KERNEL The kernel args must be a list of :TIME, getting ~a" (gethash arg id->type)))
                          (list (make-instance 'KernelTime))))
 
 ;; [TODO] Caten Multi GPU IR

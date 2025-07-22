@@ -860,7 +860,8 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
     (with-context
         (kernel
          ($kernel
-          nil (map 'list (compose #'car #'node-writes) nodes)
+          (map 'list (compose #'car #'node-writes) nodes)
+          (map 'list (compose #'car #'node-writes) nodes)
           (make-instance kernel
                          :name (gensym (format nil "captured_~a" name))
                          :args (loop for node in (graph-nodes blueprint)
