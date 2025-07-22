@@ -11,13 +11,9 @@
 
 (in-package :caten-flash-attention)
 
-;; Allow @caten.jit reader macro
 (in-caten-toplevel)
-;; [TODO]
-;; - [ ] !randを修正する ...
-;; - [ ] FlashAttentionを動作させる
-;; - [ ] Benchmark Place
-(progn ;; Tips: EmacsでC-c C-cできるようにprognで@caten.jit () { }を囲っておく
+
+(progn
   @caten.jit () {
   (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
                           (Pointer O Type (Batch Head N D))
@@ -31,25 +27,25 @@
                            (k-base-idx (* D (* N (+ (* b head) h))))
                            (v-base-idx (* D (* N (+ (* b head) h))))
                            (o-base-idx (* D (+ i (* N (+ (* b head) h))))))
-                       (with-locals ((row-m (aref M (+ i (* N (+ (* b head) h)))))
-                                     (row-l (aref L (+ i (* N (+ (* b head) h))))))
+                       (with-locals ((row_m (aref M (+ i (* N (+ (* b head) h)))))
+                                     (row_l (aref L (+ i (* N (+ (* b head) h))))))
                          (for j = (Range N 1) do
                               (with-locals ((dot 0.0))
                                 (for dth = (Range D 1) do
                                      (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx dth))))))
                                 (let ((S (* dot scale))
-                                      (new-max (max row-m S))
-                                      (exp-prev (exp (- row-m new-max)))
+                                      (new-max (max row_m S))
+                                      (exp-prev (exp (- row_m new-max)))
                                       (exp-cur (exp (- S new-max)))
-                                      (l-new (+ (* exp-prev row-l) exp-cur)))
+                                      (l-new (+ (* exp-prev row_l) exp-cur)))
                                   (for dth1 = (Range D 1) do
                                        (setf (aref O (+ o-base-idx dth1))
-                                             (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row-l (aref O (+ o-base-idx dth1)))) l-new)))
-                                  (setf row-m new-max
-                                        row-l l-new))))
+                                             (/ (+ (* exp-cur (aref V (+ v-base-idx dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1)))) l-new)))
+                                  (setf row_m new-max
+                                        row_l l-new))))
                          (setf
-                          (aref M (+ i (* n (+ (* b head) h)))) row-m
-                          (aref L (+ i (* n (+ (* b head) h)))) row-l))))))))})
+                          (aref M (+ i (* n (+ (* b head) h)))) row_m
+                          (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
 (defun test-flash-attention (&key (batch 10) (head 8) (n 128) (d 512))
   (multiple-value-bind (q k v o l m)
@@ -60,4 +56,6 @@
        (caten/api:make-tensor (list batch head n d))
        (caten/api:make-tensor (list batch head n))
        (caten/api:make-tensor (list batch head n)))
-    o))
+    (caten o)))
+
+;; (test-flash-attention)
