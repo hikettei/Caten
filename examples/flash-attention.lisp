@@ -13,47 +13,10 @@
 
 ;; Allow @caten.jit reader macro
 (in-caten-toplevel)
-
 ;; [TODO]
-;; - 両方作る:
-;;   - 1. AutoSchedulerのIntroduction
-;;   - 2. FlashAttentionのExample
-;; - 一時的なものなので，ちゃんとしたエラー検知，Specs, Docsを作る
-;; - Shape検査
-;; - CStyle!
-;; - n-profile increase
 ;; - !randを修正する ...
-;; - Implement Test (Written in Common Lisp)
-
-(progn
-  @caten.jit () {
-  (defun Gemm ((Pointer Z Type (M K)) (Pointer X Type (M N)) (Pointer Y Type (N K)))
-    ;; [Note] Why nothing is scheduled?
-    (for i = (Range 0 M) do
-         (for j = (Range 0 K) do
-              (with-locals ((acc 0.0))
-                (for k = (Range 0 N) do
-                     (setf acc (+ acc (* (aref X (+ (* N i) k)) (aref Y (+ (* K k) j))))))
-                (setf (aref Z (+ (* K i) j)) acc)))))})
-
-(defun !matmul-jit (a b)
-  (let ((out (st "A[i j] B[j k] -> A[i k]" (a b))))
-    (Gemm out a b)))
-
-;; [TODO] Future Work
-;; !matmul-jit + Activation, etc, fusion
-(progn
-  @caten.jit () {
-  (defun sumreduce ((Pointer X Type (A B)))
-    (with-locals ((acc 0.0))
-      (for idx = (Range (* A B) 1) do
-           (setf acc (+= acc (aref X idx))))
-      (setf (aref X 0) acc)))})
-
-;; [TODO] Search Space
-;; - [ ] TileND
-;; - [ ] 
-
+;; - FlashAttentionを動作させる
+;; - Benchmark Place
 (progn
   @caten.jit () {
   (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
