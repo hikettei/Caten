@@ -15,6 +15,9 @@
 (in-caten-toplevel)
 
 ;; [TODO]
+;; - 両方作る:
+;;   - 1. AutoSchedulerのIntroduction
+;;   - 2. FlashAttentionのExample
 ;; - 一時的なものなので，ちゃんとしたエラー検知，Specs, Docsを作る
 ;; - Shape検査
 ;; - CStyle!
@@ -37,9 +40,8 @@
   (let ((out (st "A[i j] B[j k] -> A[i k]" (a b))))
     (Gemm out a b)))
 
-;; [TODO]
+;; [TODO] Future Work
 ;; !matmul-jit + Activation, etc, fusion
-
 (progn
   @caten.jit () {
   (defun sumreduce ((Pointer X Type (A B)))
@@ -47,6 +49,10 @@
       (for idx = (Range (* A B) 1) do
            (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
+
+;; [TODO] Search Space
+;; - [ ] TileND
+;; - [ ] 
 
 (progn
   @caten.jit () {
