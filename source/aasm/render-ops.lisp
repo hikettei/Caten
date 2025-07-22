@@ -249,12 +249,38 @@ Constraints:
 (defun ast-exprify-tensor-graph (base-graph dg sink-map &aux (exprs))
   (declare (type FastGraph dg) (type hash-table sink-map))
   (labels ((exprify (id &aux (name (gensym "E")))
-             (push (%expr name :out id) exprs)
-             (let ((out-node (id->value dg id)))
+             (let ((expr (%expr name :out id))
+                   (out-node (id->value dg id)))
+               (push expr exprs)
                (setf (node-writes out-node) (list name))
-               (insert-nodes base-graph (list out-node)))))
+               (insert-nodes base-graph (list expr out-node)))))
     (mapc #'exprify (hash-table-keys sink-map)))
-  exprs)
+  ;; Sort Exprs
+  (let ((in-degree (make-hash-table)) (out-degree (make-hash-table)) (seen (make-hash-table))
+        (queue) (sorted))
+    (loop for node in (graph-nodes base-graph)
+          when (and (eql (node-type node) :EXPR) (null (find (node-id node) exprs :key #'node-id))) do
+            (setf (gethash (node-id node) seen) t))
+    (loop for expr in exprs
+          for expr-graph = (ast-expr-graph base-graph expr :include-expr t) do
+            (setf (gethash (node-id expr) in-degree)
+                  (loop for node in (graph-nodes expr-graph)
+                        if (and (eql (node-type node) :EXPR) (null (gethash (node-id node) seen)))
+                          collect node)
+                  (gethash (node-id expr) in-degree) (remove-duplicates (gethash (node-id expr) in-degree) :key #'node-id))
+            (loop for r in (gethash (node-id expr) in-degree)
+                  if (null (find (node-id r) (gethash (node-id r) out-degree) :key #'node-id)) do
+                    (push expr (gethash (node-id r) out-degree))))
+    (loop for expr in exprs
+          if (null (gethash (node-id expr) in-degree)) do (push expr queue))
+    (loop while queue for expr = (pop queue) do
+      (push expr sorted)
+      (dolist (adj (gethash (node-id expr) out-degree))
+        (setf (gethash (node-id adj) in-degree) (remove (node-id expr) (gethash (node-id adj) in-degree) :key #'node-id))
+        (when (null (gethash (node-id adj) in-degree)) (push adj queue)))
+      (remhash (node-id expr) out-degree))
+    (assert (= (length sorted) (length exprs)))
+    (reverse sorted)))
 
 (defun exprify-ast (graph &aux (seen nil))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
@@ -293,12 +319,13 @@ Constraints:
   ;; [TODO]ここでPrognのChildがEXPRじゃないとError
   graph)
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast-expr-graph (graph expr &aux (seen nil) (nodes))
+(defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
   (assert (eql :EXPR (node-type expr)))
   (labels ((explore (id &aux (node (id->value graph id)))
              (when (or (null node) (find id seen)) (return-from explore))
-             (when (eql (node-type node) :EXPR) (return-from explore))
+             (when (eql (node-type node) :EXPR) (when include-expr (push node nodes)) (return-from explore))
+             (push id seen)
              (push node nodes)
              (mapc #'explore (node-reads node))))
     (explore (car (node-reads expr))))
@@ -311,6 +338,7 @@ Constraints:
   (labels ((explore (id &aux (node (id->value graph id)))
              (when (or (null node) (find id seen)) (return-from explore))
              (when (eql (node-type node) :EXPR) (return-from explore))
+             (push id seen)
              (push node nodes)
              (mapc #'explore (node-reads node))))
     (explore id))
