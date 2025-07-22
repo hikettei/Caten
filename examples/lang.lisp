@@ -80,7 +80,6 @@
 (progn
   @caten.jit () {
   (defun Gemm ((Pointer Z Type (M K)) (Pointer X Type (M N)) (Pointer Y Type (N K)))
-    ;; [Note] Why nothing is scheduled?
     (for i = (Range M 1) do
          (for j = (Range K 1) do
               (with-locals ((acc 0.0))
