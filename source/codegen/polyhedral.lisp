@@ -1114,7 +1114,7 @@ Returns T if the current schedule does not break any dependences in dep."
             append
             (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
                   do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
-                     if (or (null max-threads) (<= (expt size split-at) (apply #'* max-threads)))
+                     if (or (null max-threads) (<= (expt size split-at) max-threads))
                        collect
                   (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
 
