@@ -49,21 +49,38 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
-(defstruct Config (batch 30) (head 4) (n 3) (d 16))
+(defstruct Config (batch 30) (head 4) (n 3) (d 16) (q) (k) (v))
+(defparameter *config* (make-config))
+
 (defmethod make-inputs-from-config ((config Config))
-  (with-slots ((batch batch) (head head) (n n) (d d)) config
+  (with-slots ((batch batch) (head head) (n n) (d d) (q q) (k k) (v v)) config
     (ctx:with-contextvar (:BEAM 0)
       (values
-       (proceed (!rand `(,batch ,head ,n ,d))) ;; Q
-       (proceed (!rand `(,batch ,head ,n ,d))) ;; K
-       (proceed (!rand `(,batch ,head ,n ,d))) ;; V
+       (setf q (or q (proceed (!rand `(,batch ,head ,n ,d))))) ;; Q
+       (setf k (or k (proceed (!rand `(,batch ,head ,n ,d))))) ;; K
+       (setf v (or v (proceed (!rand `(,batch ,head ,n ,d))))) ;; V
        (make-tensor `(,batch ,head ,n ,d))
        (make-tensor (list batch head n))
        (make-tensor (list batch head n))))))
 
-(defun test-flash-attention (config)
+(defun scaled-dot-product-attention (query key value &optional mask)
+  (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
+    (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
+
+(defun naive-attention (config)
+  (multiple-value-bind (q k v) (make-inputs-from-config config)
+    (scaled-dot-product-attention q k v)))
+
+(defun flash-attention (config)
   (multiple-value-bind (q k v o l m) (make-inputs-from-config config)
     (multiple-value-bind (q k v o l m) (flash_attention q k v o l m)
-      (caten o))))
+      o)))
+
+(defun benchmark (&key (impls (list #'naive-attention #'flash-attention)) (n 10) &aux (results))
+  (loop for impl in impls
+        for kernel = (caten (funcall impl *config*)) do
+          (forward kernel)
+          (push (list impl (forward kernel) (caten/runtime/profile:with-real-time (dotimes (i n) (forward kernel)))) results))
+  results)
 
 ;; (test-flash-attention)
