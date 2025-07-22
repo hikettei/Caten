@@ -10,15 +10,44 @@
   (:use :cl :caten/api :caten/lang))
 
 (in-package :caten-lang-example)
-;; [TODO] Caten/Langはまだ開発中の機能です。Productionには以下を追加したい。
-;; - [ ] きちんとした構文エラー検知，Specs, Docsの作成
-;; - [ ] LanguageはHackable
-;; - [ ] Arefの自動計算
-;; - [ ] C言語，Pythonなど外部の言語からのLowering
-;; - [ ] n-profileなど設定機能の追加 (BEAM)
-;; - [ ] Provide a decent test.
+;; [Introduction]
+;; Caten/Lang is an experimental, second frontend contrasting with Caten/API.
+;; - Caten/API automatically generates optimal kernels from NumPy-style computation graphs.
+;; - Caten/Lang allows you to describe memory accesses with C-style explicit loops.
+;; [What we want to build]
+;; Caten/Lang ultimately aims to construct a workflow like the one shown below.
+;; ==[caten/lang workflow]================================================================================
+;; | [Common Lisp Code]  -- [ preprocessor(:LISP)   ] -*                                                 |
+;; |                                                   |                                                 |
+;; |  [C Code (TODO)]    -- [ preprocessor(:C)      ] -* => <Lisp Tiny IR> => [Translator] => <Blueprint>|
+;; |                                                   |                                                 |
+;; |[Python Code (TODO)] -- [ preprocessor(:PYTHON) ] -*                                                 |
+;; |(*) preprocessor = caten/lang:caten-jit-style-handler method                                         |
+;; =====================================================================================================
+;; [What is missing?]
+;; *WARNING* To bring Caten/Lang to production-level quality, the following features are missing (welcome to open a PR!):
+;; - [ ] Language features
+;;   - [ ] Define language specification and write documentation
+;;   - [ ] Error detection (line numbers, a beautiful error display like Coalton, type checking)
+;;   - [ ] Automatic Aref/Stride calculation (keep NDArray directly)
+;;   - [ ] Automatic loop-bound checking (using the polyhedral model)
+;;   - [ ] Shape validation
+;; - [ ] Language frontends from C and Python
+;;   - [ ] In particular, aim to support running all PolyBench benchmarks from C code
+;; - [ ] Quality
+;;   - [ ] Comprehensive feature tests
+;; [Why Caten/Lang was needed?]
+;; - To express complex linear algebra operations that are difficult in NumPy-style.
+;; - Our low-level IR adopts the polyhedral model.
+;;   - 99% of array processing is affine.
+;;   - Our low-level IR can automatically parallelize access patterns like [i] -> [i-1] within mathematically valid bounds.
+;;   - We want to leverage this capability to the fullest.
+
+;; 
 (in-caten-toplevel)
 
+;; - [ ] n-profileなど設定機能の追加 (BEAM)
+;; - [ ] Provide a decent test.
 (progn
   @caten.jit () {
   (defun sumreduce ((Pointer X Type (A B)))
