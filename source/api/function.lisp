@@ -839,6 +839,7 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
    (kernel :initarg :kernel :accessor captured-kernel-kernel)))
 
 (defun %forward-with-captured-graph (name captured-graph nametable order &rest inputs)
+  (dotimes (i 2) (caten/aasm:simplify-ast captured-graph))
   (let ((kernel (caten/codegen/byoc:get-backend-kernel (ctx:getenv :BACKEND)))
         (time (gensym "CT")))
     (assert kernel () "CapturedKernel: Current backend ~a does not support code generation!" (ctx:getenv :BACKEND))
