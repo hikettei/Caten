@@ -49,7 +49,7 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
-(defstruct Config (batch 1) (head 4) (n 3) (d 16))
+(defstruct Config (batch 30) (head 4) (n 3) (d 16))
 (defmethod make-inputs-from-config ((config Config))
   (with-slots ((batch batch) (head head) (n n) (d d)) config
     (ctx:with-contextvar (:BEAM 0)
@@ -60,11 +60,10 @@
        (make-tensor `(,batch ,head ,n ,d))
        (make-tensor (list batch head n))
        (make-tensor (list batch head n))))))
-       
 
 (defun test-flash-attention (config)
   (multiple-value-bind (q k v o l m) (make-inputs-from-config config)
-    (multiple-value-bind (q k v o l m) (flash_attention q k v o l (!mul m (caten/api::make-scalar 0)))
+    (multiple-value-bind (q k v o l m) (flash_attention q k v o l m)
       (caten o))))
 
 ;; (test-flash-attention)
