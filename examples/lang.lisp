@@ -74,7 +74,7 @@
       (for idx = (Range (* A B) 1) do
            (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
-
+;; TODO (caten (!matmul-jit (ax+b `(3 3) 1 0) (ax+b `(3 3) 1 0)))
 (print (caten (SumReduce (make-tensor `(100 100) :initial-element 1.0))))
 
 (progn
@@ -84,8 +84,8 @@
     (for i = (Range M 1) do
          (for j = (Range K 1) do
               (with-locals ((acc 0.0))
-                (for k = (Range N 1) do
-                     (setf acc (+ acc (* (aref X (+ (* N i) k)) (aref Y (+ (* K k) j))))))
+                (for kk = (Range N 1) do
+                     (setf acc (+ acc (* (aref X (+ (* N i) kk)) (aref Y (+ (* K kk) j))))))
                 (setf (aref Z (+ (* K i) j)) acc)))))})
 
 (defun !matmul-jit (a b)

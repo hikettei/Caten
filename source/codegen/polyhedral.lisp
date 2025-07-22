@@ -410,11 +410,16 @@
    Returns a Polyhedral-IR object."
   (declare (type Graph blueprint))
   ;; Extract domain, reads, writes
+  ;; [TODO] Handler-case-bind and add a warning
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
-         (reads/writes (extract-accesses ctx blueprint)))
-    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule ctx strategy)))
+         (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
+    (handler-case (setf reads (union-map-from-str (car reads/writes))
+                        writes (union-map-from-str (cdr reads/writes)))
+      (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
+Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
+    (make-polyhedral-ir blueprint domain reads writes schedule ctx strategy)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
