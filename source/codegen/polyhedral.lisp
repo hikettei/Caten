@@ -50,7 +50,7 @@
                     (reduce
                      #'caten/aasm/expr:expr-mul
                      (loop for loop-info in (gethash (node-id expr) (ctx-node-to-loops ctx))
-                           for loop = (print (getf loop-info :for-node))
+                           for loop = (getf loop-info :for-node)
                            for range = (id->value blueprint (car (node-reads loop)))
                            for size = (car (node-reads range))
                            for step = (second (node-reads range))

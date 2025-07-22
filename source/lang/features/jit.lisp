@@ -48,7 +48,7 @@
          ',idx ,(jit-rewrite size)
          (let ((,idx ',range-id))
            (caten/aasm:%progn ,@(map 'list #'jit-rewrite rest)))
-         :step ,(jit-rewrite step)
+         :step ,(if (numberp step) step (jit-rewrite step))
          :rid ',range-id)))
     ((list* 'let (list* forms) body)
      `(let* (,@(loop for form in forms collect (list (car form) (jit-rewrite (second form)))))
@@ -93,18 +93,21 @@
          `(,(car form) ,@(map 'list #'jit-rewrite (cdr form)))
          form))))
 
-(defun expand-args (rest-args body)
+(defun expand-args (table-place rest-args body)
   (if rest-args
       (let ((args (car rest-args)))
         (trivia:match args
           ((list 'Pointer bind dtype (list* shape))
-           `(multiple-value-bind (,bind ,dtype ,@shape)
-                (values
-                 (caten/aasm:%global ',bind (caten/api:tensor-dtype ,bind) t)
-                 (caten/api:tensor-dtype ,bind)
-                 ,@(loop for s in shape for nth upfrom 0
-                         collect `(caten/aasm:%load (caten/aasm:%salloc :dtype :int64) (nth ,nth (caten/api:tensor-shape ,bind)))))
-                ,(expand-args (cdr rest-args) body)))
+           (let ((placeholder (gensym)))
+             `(let ((,placeholder (gensym ,(format nil "special_~a_" bind))))
+                (multiple-value-bind (,bind ,dtype ,@shape)
+                    (values
+                     (caten/aasm:%global ,placeholder (caten/api:tensor-dtype ,bind) t)
+                     (caten/api:tensor-dtype ,bind)
+                     ,@(loop for s in shape for nth upfrom 0
+                             collect `(caten/aasm:%load (caten/aasm:%salloc :dtype :int64) (nth ,nth (caten/api:tensor-shape ,bind)))))
+                  (setf (gethash ',bind ,table-place) ,placeholder)
+                  ,(expand-args table-place (cdr rest-args) body)))))
           (_
            (error "Not a valid argument form: ~a" args))))
       body))
@@ -126,13 +129,18 @@
              (form (caten-jit-style-handler style code)))
         (trivia:match form
           ((list* 'defun kernel-name (list* args) body)
-           `(defun ,kernel-name (,@(map 'list #'second args))
-              (caten/api::%forward-with-captured-graph
-               (caten/aasm:with-blueprint ()
-                 ,(expand-args
-                   args
-                   `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
-               ,@(map 'list #'second args))))
+           (let ((table-tmp (gensym)))
+             `(defun ,kernel-name (,@(map 'list #'second args) &aux (,table-tmp (make-hash-table)))
+                (caten/api::%forward-with-captured-graph
+                 ',kernel-name
+                 (caten/aasm:with-blueprint ()
+                   ,(expand-args
+                     table-tmp
+                     args
+                     `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
+                 ,table-tmp
+                 ',(map 'list #'second args)
+                 ,@(map 'list #'second args)))))
           (_
            (error "@caten.jit: nothing to capture? The code should start w/ defun."))))))
 ;; tests

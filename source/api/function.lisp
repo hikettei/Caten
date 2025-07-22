@@ -819,42 +819,49 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
 ;; ~~ CapturedKernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Synchronize (Func) ((time :initarg :time :accessor synchronize-time-at)))
-(defmethod forward ((op Synchronize) &rest inputs) (st "A[~] B[~] -> A[~]" (inputs)))
+(defclass Synchronize (Func)
+  ((time :initarg :time :accessor synchronize-time-at)
+   (out :initarg :out :accessor synchronize-out-at :initform nil)))
+(defmethod forward ((op Synchronize) &rest inputs)
+  (ecase (length inputs)
+    (1 (st "A[~] -> A[~]" (inputs)))
+    (2 (st "A[~] B[~] -> A[~]" (inputs)))))
 (defmethod backward ((op Synchronize) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
 (defmethod lower ((op Synchronize) &rest nodes)
-  (assert (= 2 (length nodes)))
-  (multiple-value-bind (after-kernel before-kernel) (apply #'values nodes)
-    (declare (ignore after-kernel))
-    (with-context (out ($sync (list (synchronize-time-at op)) (node-writes before-kernel))))))
+  (ecase (length nodes)
+    (1 (with-context (out ($sync nil (node-writes (car nodes)) :out (or (synchronize-out-at op) (gensym))))))
+    (2 (with-context (out ($sync (list (synchronize-time-at op)) (node-writes (second nodes))))))))
 
 (defclass CapturedKernel (Func)
-  ((time :initarg :time)
+  ((time :initarg :time) (name :initarg :name)
    (blueprint :initarg :blueprint :accessor captured-kernel-blueprint :type Graph)
+   (nametable :initarg :nametable) (name-order :initarg :name-order)
    (kernel :initarg :kernel :accessor captured-kernel-kernel)))
 
-(defun %forward-with-captured-graph (captured-graph &rest inputs)
+(defun %forward-with-captured-graph (name captured-graph nametable order &rest inputs)
   (let ((kernel (caten/codegen/byoc:get-backend-kernel (ctx:getenv :BACKEND)))
         (time (gensym "CT")))
     (assert kernel () "CapturedKernel: Current backend ~a does not support code generation!" (ctx:getenv :BACKEND))
-    (let ((inputs-after-ops
-            (multiple-value-list
-             (apply #'forward (make-instance 'CapturedKernel :blueprint captured-graph :kernel kernel :time time) inputs))))
+    (let* ((inputs
+             (loop for input in inputs for name in order
+                   for valid-name = (or (gethash name nametable) (error ""))
+                   collect (forward (make-instance 'Synchronize :out valid-name) input)))
+           (inputs-after-ops
+             (multiple-value-list
+              (apply #'forward (make-instance 'CapturedKernel :name name :blueprint captured-graph :nametable nametable :name-order order :kernel kernel :time time) inputs))))
       (apply #'values (map 'list #'(lambda (x y) (forward (make-instance 'Synchronize :time time) x y)) inputs-after-ops inputs)))))
 
 (defmethod forward ((op CapturedKernel) &rest inputs)
   (apply #'values (loop for out in inputs collect (st "A[~] -> A[~]" (out)))))
 (defmethod backward ((op CapturedKernel) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
 (defmethod lower ((op CapturedKernel) &rest nodes)
-  ;; [TODO] Synchronize!
-  (with-slots ((blueprint blueprint) (kernel kernel) (time time)) op
-    ;; [TODO] The order of nodes vs the order of Blueprint Kernels
+  (with-slots ((blueprint blueprint) (name name) (kernel kernel) (nametable nametable) (name-order name-order) (time time)) op
     (with-context
         (kernel
          ($kernel
           nil (map 'list (compose #'car #'node-writes) nodes)
           (make-instance kernel
-                         :name (gensym)
+                         :name (gensym (format nil "captured_~a" name))
                          :args (loop for node in (graph-nodes blueprint)
                                      if (eql (node-type node) :DEFINE-GLOBAL)
                                        collect node)

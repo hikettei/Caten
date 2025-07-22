@@ -74,10 +74,13 @@
       (when (eql (node-type node) :Load)
         (when (symbolp (getattr node :value))
           (setf (gethash (getattr node :value) alias-table) (getattr node :value)))))
-    (labels ((val-gensym (id)
+    (labels ((str-begin-with (str case)
+               (and (>= (length str) (length case)) (equalp case (subseq str 0 (length case)))))
+             (val-gensym (id)
 	       (if (symbolp id)
 		   (or
 		    (gethash id alias-table)
+                    (when (str-begin-with (symbol-name id) "special_") id)
 		    (let ((new-id (intern (format nil "val_~a" val-count))))
 		      (setf (gethash id alias-table) new-id)
 		      (incf val-count)
@@ -86,7 +89,7 @@
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
                (or
-                (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))
+                (str-begin-with str "TID") (str-begin-with str "SID")
                 ;; Setting AUTO_SCHEDULER=1 also requires variable names to be in camel_snake format. (due to ISL format)
                 ;; If a variable is in kebab_snake format, you must rename it to a unique name.
                 (when (and (= (ctx:getenv :AUTO_SCHEDULER) 1) (not (string= str (ensure-string-as-compilable str))))
