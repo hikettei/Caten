@@ -750,7 +750,7 @@ Returns the index components of the tensor. object can be either of tensor or li
 (defmethod !index-components ((tensor Tensor))
   (forward (make-instance 'IndexComponents) tensor))
 (defmethod !index-components ((shape list))
-  (forward (make-instance 'IndexComponents) (make-tensor shape)))
+  (forward (make-instance 'IndexComponents) (make-tensor shape :dtype :int64)))
 
 ;; ~~~ Bitwise ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name op lisp doc)
