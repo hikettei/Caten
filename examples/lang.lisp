@@ -74,7 +74,7 @@
            (setf acc (+= acc (aref X idx))))
       (setf (aref X 0) acc)))})
 
-(print (caten (SumReduce (make-tensor `(10 10) :initial-element 1.0))))
+(print (caten (SumReduce (make-tensor `(100 100) :initial-element 1.0))))
 
 (progn
   @caten.jit () {
@@ -96,3 +96,5 @@
 ;; merge this to main (see develop...)
 ;; todo: add tensor-schedule
 ;; todo: scheduler should consider the tpsort and $sync
+;; todo: beam beautiful logging
+;; todo: introduce LAUNCH?

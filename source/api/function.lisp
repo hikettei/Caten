@@ -843,7 +843,7 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
   (let ((kernel (caten/codegen/byoc:get-backend-kernel (ctx:getenv :BACKEND)))
         (time (gensym "CT")))
     (assert kernel () "CapturedKernel: Current backend ~a does not support code generation!" (ctx:getenv :BACKEND))
-    (let* ((inputs
+    (let* ((inputs ;; rename input ids
              (loop for input in inputs for name in order
                    for valid-name = (or (gethash name nametable) (error ""))
                    collect (forward (make-instance 'Synchronize :out valid-name) input)))
@@ -857,16 +857,20 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
 (defmethod backward ((op CapturedKernel) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
 (defmethod lower ((op CapturedKernel) &rest nodes)
   (with-slots ((blueprint blueprint) (name name) (kernel kernel) (nametable nametable) (name-order name-order) (time time)) op
-    (with-context
-        (kernel
-         ($kernel
-          (map 'list (compose #'car #'node-writes) nodes)
-          (map 'list (compose #'car #'node-writes) nodes)
-          (make-instance kernel
-                         :name (gensym (format nil "captured_~a" name))
-                         :args (loop for node in (graph-nodes blueprint)
-                                     if (eql (node-type node) :DEFINE-GLOBAL)
-                                       collect node)
-                         :flops (caten/codegen/polyhedral:schedule-item-gflops blueprint)
-                         :blueprint blueprint)
-          :optimized-p nil :out time)))))
+    (let ((args (loop for node in (graph-nodes blueprint)
+                      if (eql (node-type node) :DEFINE-GLOBAL)
+                        collect node))
+          (id->node (make-hash-table)))
+      (loop for name in name-order for node in nodes do
+        (setf (gethash (gethash name nametable) id->node) node))
+      (with-context
+          (kernel
+           ($kernel
+            (map 'list #'(lambda (x) (or (gethash (car (node-writes x)) id->node) (error ""))) args)
+            (map 'list #'(lambda (x) (or (gethash (car (node-writes x)) id->node) (error ""))) args)
+            (make-instance kernel
+                           :name (gensym (format nil "captured_~a" name))
+                           :args args
+                           :flops (caten/codegen/polyhedral:schedule-item-gflops blueprint)
+                           :blueprint blueprint)
+            :optimized-p nil :out time))))))

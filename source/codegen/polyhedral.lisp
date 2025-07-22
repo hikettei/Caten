@@ -1268,7 +1268,8 @@ for (int i=0; i<32; i+=2)
               :blueprint blueprint
               :args args
               :flops (kernel-flops base-kernel))
-             :optimized-p t)))
+             :optimized-p t
+             :out (car (node-writes base-node)))))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))

@@ -878,9 +878,18 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
 (defun schedule-graph->runtime-graph (schedule-graph base-graph kernel &aux (visited (make-hash-table)) (count 0))
   (declare (type Graph schedule-graph))
   (let ((caten/aasm:*ctx* (make-graph)))
-    (labels ((e (node)
+    (labels ((newid (id)
+               (or
+                (let ((v (id->value schedule-graph id)))
+                  (when v
+                    (let ((newid (gethash (node-id v) visited)))
+                      (when newid
+                        (car (node-writes (caten/aasm:emit ($sync (list newid) (list id) :out (gensym "S")))))))))
+                id))
+             (e (node)
                (when (typep (node-attr node) 'JITAble)
                  (setf (node-type-relay node) nil (getattr node :_read_views) nil))
+               (setf (node-reads node) (map 'list #'newid (node-reads node)))
                (caten/aasm:emit node))
              (tgensym () (prog1 (intern (format nil "T~a" count)) (incf count)))
              (explore (id &aux (node (id->value schedule-graph id)))
