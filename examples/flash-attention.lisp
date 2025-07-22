@@ -15,7 +15,7 @@
 
 (progn
   @caten.jit () {
-  (defun flash-attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
+  (defun flash_attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
                           (Pointer O Type (Batch Head N D))
                           (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
     (let ((scale (/ 1.0 (sqrt (scast D :float32))))
@@ -47,9 +47,9 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
-(defun test-flash-attention (&key (batch 10) (head 8) (n 128) (d 512))
+(defun test-flash-attention (&key (batch 1) (head 4) (n 3) (d 16))
   (multiple-value-bind (q k v o l m)
-      (flash-attention
+      (flash_attention
        (caten/api:make-tensor (list batch head n d))
        (caten/api:make-tensor (list batch head n d))
        (caten/api:make-tensor (list batch head n d))
