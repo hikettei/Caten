@@ -1197,7 +1197,7 @@ for (int i=0; i<32; i+=2)
   (let* ((depth (or (parallel-depth opt) (schedule-node-get-band-depth (optrule-band opt))))
          (band (schedule-node-insert-mark
                 (optrule-band opt)
-                (directive->id (directive "PARALLEL" 0 depth nil))))
+                (directive->id (directive "PARALLEL" 0 depth t))))
          (band (if (parallel-depth opt)
                    (schedule-node-band-split (schedule-node-get-child band 0) (parallel-depth opt))
                    band)))

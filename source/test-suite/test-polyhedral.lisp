@@ -242,8 +242,35 @@
                    (:Expr (_)) ;; Store Function
                    )))
                :parallel (= 1))))))))
-  ;; TODO test w/ tile, vectorize
-  )
+  (testing "Parallelize+Tile"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 2 (get-depth (getband gemm 0))))
+         (let ((ij-band (getband gemm 0)))
+           (setf gemm (apply-optimization gemm (make-instance 'Parallel :depth 2 :band ij-band :axis 1)))
+           (setf gemm (apply-optimization gemm (make-instance 'Tile :size 4 :band (getband gemm 0) :axis 1)))
+           (print gemm)
+           ))
+        ((new-kernels extra-allocs)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          (let ((gemm (car new-kernels)))
+            (print-blueprint gemm t)
+            ;; [TODO] 後でテストちゃんと書く，どう検証すべきかわかんね
+            (ok
+             (bp-match-p
+              gemm
+              (:FOR
+               ((:RANGE ((Var 300 _) (Var 1 _)))
+                (:PROGN
+                  ((:EXPR ((Var 0.0 _))) ;; Accumlation Loader
+                   (:FOR ((:RANGE ((Var 20 _) (Var 1 _))) _)) ;; WMMA
+                   (:Expr (_)) ;; Store Function
+                   )))
+               :parallel (= 1)))))))))
+
+;; (deftest
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
 ;; Needed for finding an optimal kernel FINISH by (07/27)
@@ -252,12 +279,13 @@
 ;; - [x] Tile
 ;; - [x] TileGPU
 ;; - [ ] Parallel
-;; - [ ] Vectorize
-;; - [ ] Unroll
+;; - [ ] Vectorize (--> :SEPARATEでInnerBandのみで実装できるか。)
+;; - [ ] Unroll    (--> :SEPARATEでInnerBandのみの実装できるか。)
 ;; - [ ] TensorCore
 ;; - [ ] SplitReduce
 ;; - [ ] 必要か微妙: Collapse
 ;; - [ ] 全部探索空間に入れてBEAM
+;; - [ ] TileしてParentにMarkしてはいけない。
 
 ;; - [ ] TODO: Insert Markする時は先にTileしてから！
 ;; - [ ] We Want To Have:
