@@ -1369,6 +1369,22 @@ for (int i=0; i<32; i+=2)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
+;; [TODO]
+;; BEAM Enhancements
+;; - [ ] Transform More Things on ISL
+;;  - [ ] Unroll
+;;    - [ ] Scalarifyが完全に邪魔
+;;    - [ ] Vectorizeも
+;;    - [ ] TensorCore検索
+;;  - [ ] TileGPU
+;;  - [ ] Coalesce
+;;  - [ ] Shared Memory, ReduceSplit
+;;  - [ ] Interchange
+;; - [ ] More Beautiful Logger
+;; - [ ] Support Symbolics
+
+
+
 ;; [TODO] 戻ったらやること
 ;; - [x] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
 ;;   - [x] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
