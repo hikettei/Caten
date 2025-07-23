@@ -14,7 +14,7 @@
        (unless ,noopt (setf graph (%simplify-ast graph)))
        graph)))
 ;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %expr (name &key (out (gensym "EXPR"))) (emit (make-node :Render :EXPR (list out) (list name))))
+(defun %expr (name &key (out (gensym "EXPR"))) (emit (make-node :Render :EXPR (list out) (list (node->id1 name)))))
 
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt) (range) (rid bind))
   "
@@ -45,6 +45,7 @@ Constraints:
   (%if condition body :out out))
 
 (defun %progn (&rest body &aux (out (gensym "PROGN")))
+  (setf body (flatten body))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
@@ -663,12 +664,57 @@ for (int i=0; i<M; i+=32)
              do (insert-nodes graph (graph-nodes unrolled))
              collect end)))))
 
+(defun unroll-graph-with-count (graph count)
+  (labels ((newid (x) (if (and (symbolp x) (id->value graph x)) (intern (format nil "~a_~a" x count)) x))
+           (%cpy-node (x)
+             (let ((node (copy-node x)))
+               (setf (node-id node) (intern (format nil "~a_~a" (node-id x) count))
+                     (node-reads node) (map 'list #'newid (node-reads node))
+                     (node-writes node) (map 'list #'newid (node-writes node)))
+               node)))
+    (let ((new-graph (apply #'make-graph (map 'list #'%cpy-node (graph-nodes graph)))))
+      (setf (graph-outputs new-graph) (map 'list #'newid (graph-outputs graph)))
+      new-graph)))
+
 (defun vectorizer (graph body amount)
-  (let ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1)))
-    
-    ;; [TODO] Rewrite Aref -> Float4
-    ;; [TODO] Add New Float4 Ops for renderer
-    (%progn)))
+  (let* ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1))
+         (loads (loop for node in (graph-nodes body-graph)
+                      if (eql (node-type node) :Aref)
+                        collect node))
+         (load-ids (map 'list #'(lambda (x) (declare (ignore x)) (gensym "load_")) loads))
+         (aref->id (make-hash-table))
+         (new-compute (unroll-graph-with-count body-graph amount)))
+    (loop for id in load-ids for node in loads do
+      (setf (gethash (print (intern (format nil "~a_~a" (node-id node) amount))) aref->id) id))
+    (flet ((new-aref-id (sym &aux (val (id->value new-compute sym)))
+             (if (and val (eql (node-type val) :AREF))
+                 (or (gethash (node-id val) aref->id) (error "?"))
+                 sym)))
+      (loop for node in (graph-nodes new-compute) do
+        (setf (node-reads node) (map 'list #'new-aref-id (node-reads node)))
+        (emit node)))
+            
+    (flet ((aref-unroll-n (aref n)
+             )
+           (is-contiguous ()
+             ))
+      ;; [TODO] Rewrite Aref -> Float4
+      ;; [TODO] Add New Float4 Ops for renderer
+      ;; [TODO] Sort body topologically!
+      ;; [TODO] After vectorize, tensorcore, splitreduce, index simplify is REQUIRED
+      (%progn
+       ;; vectorize
+       (map
+        'list
+        #'(lambda (write-to x)
+            (%expr (%pack x nil :contiguous (is-contiguous)) :out write-to))
+        load-ids loads)
+       ;; compute
+       (loop for node in (tpsort-graph new-compute)
+             if (eql :EXPR (node-type node))
+               collect node)
+       ;; devectorize
+       ))))
 
 (defun ast-band-vectorize (graph band amount &key (rewriter #'vectorizer) (dtype :int64))
   (declare (type FastGraph graph) (type fixnum amount) (type node band))
@@ -703,6 +749,7 @@ for (int i=0; i<M; i+=32)
               (%if (%not cnd)
                    (%range (getattr range :idx) nil
                            (node->id body) :range range)))))))
+        (caten/codegen/blueprint:print-blueprint graph t)
         graph))))
 
 ;; (defun ast-band-tensorcore ()) <- これはもう手作業で書く。WMMAがなければError
