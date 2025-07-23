@@ -14,11 +14,31 @@
 (defun getband (poly idx)
   (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
 
+(defun get-depth (band) (caten/codegen/polyhedral::schedule-node-get-band-depth band))
+
+(defmacro bp-match-p (graph pattern &aux (match-p (gensym)))
+  `(let ((,match-p nil))
+     (funcall
+      (Simplifier
+          ()
+          (,pattern -> ((node graph) (setf ,match-p t) nil)))
+      ,graph)
+     ,match-p))
+
 (defparameter *strategy*
   (caten/codegen/byoc::make-strategy
    :n-profile 1 :per-band-optrules 3 :ptile-max-rank 0 :tile-search-space `(2 4 6 8)
    :ptile-search-space `(2 4 8 12)
    :vectorize-search-space `(2 4 8 12)))
+
+(trivia:defpattern Var (x dtype &key (allow-range nil) (expr t))
+  `(or
+    ,@(when expr
+        `((<Rule> :EXPR ((Var ,x ,dtype :expr nil)))))
+    (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value ,x)
+    ,@(when allow-range `((<Rule> :RANGE (_ _) :dtype ,dtype :idx ,x)))
+    ,@(when (equal x `(= 0))
+        `((<Rule> :Allocate () :nrank 0 :dtype ,dtype)))))
 
 (defmacro with-traced-polyhedral ((name1 name2 strategy) &body body)
   `(progn
@@ -71,20 +91,42 @@
 
 (deftest test-polyhedral-interchange
   "Interchange can change the order of coincidence bands"
-  (testing "Test Interchange"
+  (testing "Test Interchange 2D (ij -> ij)"
     (with-polyhedral
-        ((gemm ($gemm (make-tensor `(10 10)) (make-tensor `(10 10)) (make-tensor `(10 10))))
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
-         (print (getband gemm 0))
-         ;; (psched gemm)
-         )
+         (ok (= 2 (get-depth (getband gemm 0)))) ;; I, J should be coincidence, they are interchangeable
+         (let ((ij-band (getband gemm 0)))
+           (setf gemm (apply-optimization gemm (make-instance 'Interchange :order `(0 1) :band ij-band :axis 0)))))
         ((new-kernels extra-allocs)
-;;          (print new-kernels)
-          ))))
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          (let ((gemm (car new-kernels)))
+            (ok (bp-match-p gemm (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) (:FOR ((:RANGE ((Var 30 _) (Var 1 _))) _))))))))))
+  (testing "Test Interchange 2D (ij -> ji)"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 2 (get-depth (getband gemm 0)))) ;; I, J should be coincidence, they are interchangeable
+         (let ((ij-band (getband gemm 0)))
+           (setf gemm (apply-optimization gemm (make-instance 'Interchange :order `(1 0) :band ij-band :axis 0)))))
+        ((new-kernels extra-allocs)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          (let ((gemm (car new-kernels)))
+            (ok (bp-match-p gemm (:FOR ((:RANGE ((Var 30 _) (Var 1 _))) (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _))))))))))
+  (testing "Test Interchange 3D"
+    ;; TODO:
+    ;; Coincident
+    ;; Permutable
+    ;; They should also shuffled!
+
+    ))
 
 ;; [TODO]
 ;; Also add tests for
 ;; - Softmax
 ;; - FlashAttention
 ;; - randn failing case
+;; - BandGPUはReminderをIfで生成したい。
 (run-suite *package*)

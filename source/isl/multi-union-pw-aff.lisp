@@ -17,6 +17,10 @@
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-multi-union-pw-aff-to-str (multi-union-pw-aff-handle value)) stream)))
 
+(defmethod print-object ((value union-pw-aff) stream)
+  (print-unreadable-object (value stream :type t)
+    (write-string (%isl-union-pw-aff-to-str (union-pw-aff-handle value)) stream)))
+
 (defmethod print-object ((value multi-val) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-multi-val-to-str (multi-val-handle value)) stream)))

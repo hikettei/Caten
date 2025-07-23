@@ -11,7 +11,8 @@
    #:print-info
    #:print-progress
    #:white-bright
-   #:with-progress))
+   #:with-progress
+   #:lformat))
 
 (in-package :caten/common.logger)
 

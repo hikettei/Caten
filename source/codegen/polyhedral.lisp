@@ -1019,29 +1019,12 @@ Returns T if the current schedule does not break any dependences in dep."
   (if (null lst) (list nil)
       (mapcan (lambda (x) (mapcar (lambda (y) (cons x y)) (permutations (remove x lst :count 1)))) lst)))
 
+(defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
+
 (defclass Interchange (OptimizationRule)
   ((order :initarg :order :accessor interchange-order :type list)))
 
-(defun reorder-mupa-string (mupa-str order)
-  (declare (type string mupa-str) (type list order))
-  (assert (and (>= (length mupa-str) 4)
-               (string= (subseq mupa-str 0 2) "[{")
-               (string= (subseq mupa-str (- (length mupa-str) 2) (length mupa-str)) "}]")))
-  (let* ((inner (subseq mupa-str 2 (1- (length mupa-str))))
-         (raw-chunks (cl-ppcre:split "\\}, *\\{" inner))
-         (parts (mapcar (lambda (s) (string-trim " {}" s)) raw-chunks)))
-    (assert (= (length parts) (length order)))
-    (with-output-to-string (out)
-      (format out "[")
-      (loop for i from 0 below (length order)
-            for idx = (nth i order)
-            do (format out "{ ~a }" (nth idx parts))
-               (when (< i (1- (length order)))
-                 (format out ", ")))
-      (format out "]"))))
-
 (defmethod optrule-generate-search-space (poly bands (id (eql :Interchange)))
-  (when nil ;; unable to run
   (loop for band in bands for nth upfrom 0
         if (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
           append
@@ -1049,9 +1032,29 @@ Returns T if the current schedule does not break any dependences in dep."
                 with permutations = (permutations default-perm)
                 for perm in permutations
                 when (not (equal perm default-perm))
-                  collect (make-instance 'Interchange :axis nth :band band :order perm)))))
+                  collect (make-instance 'Interchange :axis nth :band band :order perm))))
 
-(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange)) nil) ;; [TODO]
+(defun schedule-node-band-permute (band order)
+  (declare (type isl:schedule-node-band band) (type list order))
+  (assert (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+          ()
+          "schedule-node-band-permute: The band should have a permutable")
+  (let ((depth (schedule-node-get-band-depth band)))
+    (assert (= depth (length order)) () "schedule-node-band-permute: The size of order should be equivalent to depth ~a" depth)
+    (assert (equal (loop for i upfrom 0 below depth collect i) (sort (copy-list order) #'<))
+            ()
+            "schedule-node-band-permute: order must be 0~N list")
+    ;; [TODO] Coincident, And Permute
+    (let* ((mupa (schedule-node-band-get-partial-schedule band))
+           (upas (loop for i upfrom 0 below depth collect (multi-union-pw-aff-get-union-pw-aff mupa i)))
+           (upas-new (permute-list order upas)))
+      (loop for i upfrom 0 below depth do
+        (setf mupa (multi-union-pw-aff-set-union-pw-aff mupa i (nth i upas-new))))
+      (schedule-node-insert-partial-schedule band mupa))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
+  (setf (poly-schedule poly)
+        (schedule-node-get-schedule (schedule-node-band-permute (optrule-band opt) (interchange-order opt)))))
 
 (defun tiling-size (band size)
   (declare (type fixnum size))
