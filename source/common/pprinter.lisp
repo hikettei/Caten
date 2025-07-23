@@ -2,9 +2,24 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/isl)
-  (:export #:pprint-isl-schedule))
+  (:export #:pprint-isl-schedule #:get-separate-position #:get-separator-up #:get-separator-down
+           #:separate/print-info))
 
 (in-package :caten/common.pprinter)
+
+(defun get-separate-position (string) (or (position #\| string :test #'char=) 0))
+(defun get-separator-up (position)
+  (with-output-to-string (out)
+    (dotimes (i position) (princ "━" out))
+    (princ "┛" out)))
+(defun get-separator-down (position)
+  (with-output-to-string (out)
+    (dotimes (i position) (princ "━" out))
+    (princ "┓" out)))
+(defun separate/print-info (position content &rest args)
+  (caten/common.logger:lformat "~a~%" (get-separator-down position))
+  (apply #'caten/common.logger:print-info content args)
+  (caten/common.logger:lformat "~a~%" (get-separator-up position)))
 
 (defmethod pprint-isl-schedule ((schedule schedule))
   (let ((schedule (yaml:parse (schedule-to-str schedule))))

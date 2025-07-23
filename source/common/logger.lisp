@@ -52,6 +52,10 @@
   (defun print-info (content &rest args)
     (when (>= (getenv :DEBUG) 0)
       (format *default-stream* "~a : ~a~%" (timestamp) (apply #'format nil content args))))
+
+  (defun lformat (content &rest args)
+    (when (>= (getenv :DEBUG) 0)
+      (apply #'format *default-stream* content args)))
   
   (defun print-error (content &rest args)
     (format *default-stream* "~a ~a~%" (maybe-ansi red "[ERROR]") (apply #'format nil content args)))

@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/polyhedral
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc)
+  (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc :caten/common.logger :caten/common.pprinter)
   (:import-from :caten/codegen/renderer #:render-node #:Default-Renderer)
   (:export
    #:realize-node-with-autotuning
@@ -835,8 +835,6 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
   (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes)))
 
 (defun get-blueprint-from-polyhedral (polyhedral)
-  (print "Extracting the following Polyhedral IR")
-  (print polyhedral)
   (let* ((pctx (make-parse-ctx (poly-blueprint polyhedral))) ;; Create a parse ctx from the base blueprint
          (kernels (get-raw-bp-from-polyhedral pctx polyhedral)))
     (if (= 1 (length kernels))
@@ -855,9 +853,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                        if (eql (node-type user) :BIND) collect (getattr user :value) else collect c)))
           ;; Bufferizeは，Skipするケースへ分岐する。この分岐が正しく動けばOK
           ;; Bufferize
-          (print common-buffer-among-kernels)
           (let ((extra-allocs (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)))
-            (print extra-allocs)
             (values
              (loop for kernel in kernels
                    collect
@@ -1191,7 +1187,6 @@ for (int i=0; i<32; i+=2)
      (schedule-node-get-schedule band))))
 
 (defmethod optrule-apply-transform-on-blueprint ((id (eql :PARALLEL)) bands blueprint)
-  (caten/codegen/blueprint:print-blueprint blueprint t)
   (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands) :parallel 1))
   blueprint)
 ;; [TODO] Caten Level Loop Collapse
@@ -1221,13 +1216,13 @@ for (int i=0; i<32; i+=2)
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
   (warn "WIP: Vectorize Rewrite")
   (let ((d (getattr (car bands) :directive)))
-    (caten/codegen/blueprint:print-blueprint blueprint t)
+;;    (caten/codegen/blueprint:print-blueprint blueprint t)
     (loop for band in bands do
       (setf
        blueprint
        (caten/aasm::ast-band-unroll blueprint band (list (directive-amount d)) :rewriter #'caten/aasm::ast-unroll-body)))
     (simplify-ast blueprint) (simplify-ast blueprint)
-    (caten/codegen/blueprint:print-blueprint blueprint t)
+;;    (caten/codegen/blueprint:print-blueprint blueprint t)
     blueprint))
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
@@ -1292,17 +1287,19 @@ for (int i=0; i<32; i+=2)
                       (setf dep (list (node->id kernel)))
                       kernel))))
         (setf (node-writes (car (last kernels))) (copy-list (node-writes node)))
-        (print kernels)
         ;; Save the result for when the polyhedral was selected as a best kernel
         (setf (poly-bp-cache polyhedral) kernels
               (poly-extra-allocs polyhedral) extra-allocs)
-        (format t "~%[Kernel]:~%==========~%")
-        (loop for nth upfrom 0 for blueprint in kernels do
-          (format t "~ath:~%~%" nth)
-          (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) t))
-        
-        (print (reverse (poly-cmd-history polyhedral)))
-        (format t "~%===========~%")
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (lformat "== [Evaluation] ====================================~%```~%")
+          (loop for nth upfrom 0 for blueprint in kernels do
+            (lformat "// ~ath kernel~%" nth)
+            (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) nil))
+          (lformat "~%```")
+          (lformat "~%[Polyhedral]:~%~a~%" (pprint-isl-schedule (poly-schedule polyhedral)))
+          (lformat "[Schedules]:~%")
+          (dolist (s (reverse (poly-cmd-history polyhedral)))
+            (lformat "~a~%" s)))
         (loop for kernel in kernels do
           (caten/codegen/byoc:%render-kernel renderer (getattr kernel :kernel-info)))
         (handler-case
@@ -1324,7 +1321,8 @@ for (int i=0; i<32; i+=2)
                   (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
           ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
-          (format t "Evaluation: ~a(s) ~aGFLOps~%" total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil))
+          (when (>= (ctx:getenv :JIT_DEBUG) 1)
+            (lformat "[CostFunction]: ~a(s) ~aGFLOps~%" total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil)))
           total)))))
 
 (defun realize-node-with-autotuning (runtime node args
@@ -1332,15 +1330,13 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 1e-5)
+                                       (threshold 1e-5) ;; 改善率で計測すべきでは
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
-                                       (strategy (auto-scheduler-strategy auto-scheduler)))
-                                                         
-  ;; BEAM Search
-  ;; Parameters:
-  ;;  - n
-  ;; [TODO] Candidates生成するとき，per-band-opt-rulesにしたがって生成して枝分かれを制限する
+                                       (strategy (auto-scheduler-strategy auto-scheduler))
+                                       (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
   (when (getattr node :optimized-p) (return-from realize-node-with-autotuning t))
+  (when (>= (ctx:getenv :JIT_DEBUG) 2)
+    (separate/print-info spos "[SEARCH] ┃ Autotuning the kernel ~a" (kernel-name (getattr node :kernel-info))))
   (with-slots ((n caten/codegen/byoc::n-profile) (per-band-optrules caten/codegen/byoc::per-band-optrules)) strategy
     (with-isl-context
       (labels ((make-candidate (polyhedral-ir)
@@ -1350,8 +1346,11 @@ for (int i=0; i<32; i+=2)
                (max-iters (+ 2 (* band-count per-band-optrules)))
                (origin (make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)) :strategy strategy))
                (beam (list (cons origin *+inf*))))
+          ;; Print Info
+          (when (>= (ctx:getenv :JIT_DEBUG) 2)
+            (lformat "Strategy: max_iters=~a, band_count=~a, threshold=~a~%" max-iters band-count threshold))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
-            (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
+            (when (>= (ctx:getenv :JIT_DEBUG) 2) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
             (loop for (kernel . score) in beam do
               (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
                 (push (make-candidate new-kernel) candidates)))
@@ -1363,8 +1362,10 @@ for (int i=0; i<32; i+=2)
                 (return-from beam))
               (setf beam new-beam)))
           (let ((best-kernel (car beam)))
-            (print "BEST KERNEL")
-            (print best-kernel)
+            (when (>= (ctx:getenv :JIT_DEBUG) 1)
+              (lformat "[BestKernel]:~%")
+              (lformat "~a" (car best-kernel))
+              (lformat "~%Evaluation: ~a(s)" (cdr best-kernel)))
             (loop for extra-arg in (append (poly-bp-cache (car best-kernel)) (poly-extra-allocs (car best-kernel)))
                   if (eql (node-type extra-arg) :Allocate) do (setf (getattr extra-arg :pool) nil)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))

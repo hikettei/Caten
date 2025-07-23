@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/jit
   (:use :cl :caten/runtime :caten/air :caten/codegen/iteration :caten/codegen/rewriting-rules :caten/codegen/byoc
-        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize)
+        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize :caten/common.pprinter)
   (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
   (:import-from :caten/codegen/memory-planner #:run-memory-planner)
   (:export #:codegen #:jit))
@@ -31,6 +31,7 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   (declare (type GraphRuntime runtime))
   ;; Get configurations for the backend
   (multiple-value-bind (buffer-type runtime-type renderer-type kernel auto-scheduler is-jit) (apply #'values (get-backend-configs backend))
+    (declare (ignore auto-scheduler))
     (when (null is-jit) (setf (runtime-buffer-type runtime) buffer-type) (return-from codegen runtime))
     (when (= 2 (ctx:getenv :DOT)) (->dot (runtime-graph runtime) :title "Base Graph"))
     ;; Running shape inference
@@ -44,8 +45,9 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
       (unless (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)) (minify-equivalent-schedule schedule-graph))
       (let ((total-kernels (count-if #'(lambda (x) (eql :kernel (getattr x :type))) (graph-nodes schedule-graph)))
             (JIT_DEBUG (ctx:getenv :JIT_DEBUG)))
-        (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Captured ~a kernel~a ..." total-kernels (if (= total-kernels 1) "" "s")))
-        (when (>= JIT_DEBUG 2) (print-info "JIT Compilation Start") (print-info "Running lowerer ..."))
+        (when (>= JIT_DEBUG 1)
+          (print-info "[CODEGEN] | Captured ~a kernel~a (JIT_DEBUG>=1 BACKEND=~a) "
+                      total-kernels (if (= total-kernels 1) "" "s") (ctx:getenv :BACKEND)))
         ;; Running lowerer
         (with-progress (total-kernels :debug (if (>= JIT_DEBUG 2) 1 -1) :timeit nil)
           (mapc
@@ -69,34 +71,6 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
                        (format t "Lowering Time : ~A(sec)" (float (/ (- end start) internal-time-units-per-second))))))))
            (graph-nodes schedule-graph)))
         (when get-schedule-p (return-from codegen schedule-graph))
-        ;; Running AutoScheduler
-        ;; [TODO] Implement Advanced Fusion (e.g.: Matmul+Softmax+Matmul Fusion etc)
-        (when (>= JIT_DEBUG 2)
-          (fresh-line)
-          (print-info "Autotuning the kernels ...")
-          (ecase (ctx:getenv :OPTIMIZE)
-            (0 (print-info "(OPTIMIZE=0) strategy = NOOPT"))
-            (1 (print-info "(OPTIMIZE=1) strategy = RULE_BASE"))
-            (2 (print-info "(OPTIMIZE=2) strategy = SEARCH"))))
-        (with-progress (total-kernels :debug (if (>= JIT_DEBUG 2) 1 -1) :timeit nil)
-          (mapc
-           #'(lambda (x &aux (start (get-internal-real-time)))
-               (when (and (eql (getattr x :type) :kernel) (null (getattr x :cache-name)))
-                 (when (>= JIT_DEBUG 2)
-                   (print-progress "~a" (getattr x :name))
-                   (format t "====> Running Optimizer~%"))
-;;                 (ecase (ctx:getenv :OPTIMIZE)
-;;                   (0)
-;;                   (1 (setf (getattr x :blueprint) (get-optimized-ast auto-scheduler (getattr x :blueprint))))
-;;                   (2 (setf (getattr x :blueprint) (search-optimized-ast auto-scheduler (getattr x :blueprint)))))
-                 (let ((end (get-internal-real-time)))
-                   (when (>= JIT_DEBUG 2)
-                     (format t "Optimized Kernel:~%")
-                     (pprint-graph (getattr x :blueprint))
-                     (print-blueprint (getattr x :blueprint) t))
-                   (when (>= JIT_DEBUG 2)
-                     (format t "Optimization Time: ~A(sec)" (float (/ (- end start) internal-time-units-per-second)))))))
-           (graph-nodes schedule-graph)))
         ;; Running Memory Planner
         (when (= 0 (ctx:getenv :NO_MEMORY_PLANNER))
           ;; [TODO] Bring Back Memory Planner!
@@ -108,11 +82,12 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
          (graph-nodes schedule-graph))
         ;; ScheduleGraph -> RuntimeGraph (schedule/memory planning is fixed)
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph kernel)))
-          (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
+          (when (= JIT_DEBUG 1) (print-info "[CODEGEN] | Rendering with ~a" renderer))
           (mapc
            #'(lambda (x) (when (eql (node-type x) :KERNEL) (caten/codegen/byoc:%render-kernel renderer (getattr x :kernel-info))))
            (graph-nodes runtime-graph))
           (when (= (ctx:getenv :BEAM) 0) ;; If BEAM >= 1, the blueprint is further optimized and then compiled.
+            (when (= JIT_DEBUG 1) (print-info "[CODEGEN] | Compiling with ~a" renderer))
             (caten/codegen/byoc:%compile-kernel
              renderer
              (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :KERNEL) collect (getattr node :kernel-info))
@@ -122,6 +97,7 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
                 if (eql (node-type node) :SYNCHRONIZE) do
                   (setf (gethash (car (node-writes node)) (runtime-id2tensor runtime))
                         (gethash (car (subseq (node-reads node) (getattr node :n-kernel-args))) (runtime-id2tensor runtime))))
+          (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "[CODEGEN] | Completed"))
           ;; [TODO] Backward Graph Support
           (make-runtime runtime-graph :fw-outputs (graph-outputs runtime-graph) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-type :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-type :params (runtime-params runtime) :renderer renderer))))))
 
@@ -135,7 +111,6 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   (let ((runtime (codegen runtime :backend backend)))
    ;;  (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Compiling ~a kernels ..." (count-if #'(lambda (x) (eql (node-type x) :JIT_KERNEL)) (graph-nodes graph))))
     ;; [TODO] Use Runtime instead of renderer when doing %compile-kernel
-    (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "Completed"))
     (when (and (>= (ctx:getenv :BEAM) 1) (get-backend-jit-p (ctx:getenv :BACKEND)))
       (autotune runtime))
     runtime))
@@ -172,4 +147,5 @@ Automatically optimizes the given runtime graph which is static.
   ;; [TODO] Schedule Cache as well as BEAM Cache!!
   ;; Replacing realize-node(:KERNEL) -> realize-node-with-autotuning(:KERNEL)
   (let ((caten/codegen/byoc:*autotune-mode-p* t))
-    (time (runtime-forward runtime))))
+    (when (> (ctx:getenv :JIT_DEBUG) 0) (print-info "[SEARCH] | AutoTuning the graph (BEAM=~a)" (ctx:getenv :BEAM)))
+    (runtime-forward runtime)))

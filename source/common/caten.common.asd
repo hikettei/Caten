@@ -4,8 +4,8 @@
   :licence     "MIT"
   :depends-on ("uiop" "ieee-floats" "cl-ppcre" "cl-ansi-text")
   :components
-  ((:file "pprinter")
-   (:file "logger")
+  ((:file "logger")
+   (:file "pprinter")
    (:file "documentation")
    (:file "contextvar")
    (:file "tqdm")
