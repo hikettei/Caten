@@ -270,7 +270,44 @@
                    )))
                :parallel (= 1)))))))))
 
-;; (deftest
+(deftest test-polyhedral-unroll
+  ;; Two Tests:
+  ;; - Outermost Unroll (i.e.: i, j)
+  ;; - Innermost Unroll (i.e.: k)
+  ;; and ..
+  ;; - Reminder Creation
+  ;; This thing should be applied into Vectorize, And finally TensorCore
+  )
+
+(deftest test-polyhedral-vectorize
+  ;; Two Tests:
+  ;; - Outermost Unroll (i.e.: i, j)
+  ;; - Innermost Unroll (i.e.: k)
+  ;; and ..
+  ;; - Reminder Creation
+  (testing "Vectorize at K"
+    (with-polyhedral
+        ;; TODO: If the loop was smaller than width?
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 1 (get-depth (getband gemm 1))))
+         (let ((k-band (getband gemm 1)))
+           (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band k-band :axis 1)))
+           (print gemm)
+           ))
+        ((new-kernels extra-allocs)
+          (print-blueprint (car new-kernels) t)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+
+          )))
+  (testing "Vectorize at I,J"
+
+    )
+  ;; [TODO] Softmax Vectorize
+  )
+
+;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
 ;; Needed for finding an optimal kernel FINISH by (07/27)
@@ -278,15 +315,19 @@
 ;; - [x] Interchange
 ;; - [x] Tile
 ;; - [x] TileGPU
-;; - [ ] Parallel
-;; - [ ] Vectorize (--> :SEPARATEでInnerBandのみで実装できるか。)
-;; - [ ] Unroll    (--> :SEPARATEでInnerBandのみの実装できるか。)
-;; - [ ] TensorCore
-;; - [ ] SplitReduce
+;; - [x] Parallel
+;; - [ ] Vectorize   (--> :SEPARATEでInnerBandのみで実装できるか。)
+;;   - [ ] Upcastなので，float4, GPUのvar.x var.y(SIMD), CPUのSIMDへ応用する必要がある。
+;; - [ ] TensorCore  (--> Vectorize2D for prerequisite)
+;; - [ ] SplitReduce (--> Need Some Improvements on RenderOps)
 ;; - [ ] 必要か微妙: Collapse
 ;; - [ ] 全部探索空間に入れてBEAM
 ;; - [ ] TileしてParentにMarkしてはいけない。
 
+;; - [ ] Unroll      (--> :SEPARATEでInnerBandのみの実装できるか。)
+;;  - [ ] これは自動スケジューリングで実施するのではなく，自動でやる。Nothing to tuning!
+
+;; - [ ] BEAM Searchの初期でTILE_SIZE=256が選択されないという問題がある。
 ;; - [ ] TODO: Insert Markする時は先にTileしてから！
 ;; - [ ] We Want To Have:
 ;;   - [ ] TileGPU as ISL Tile (Insert IF!!) TileGPU+Unrollができるようにして，スレッド数を削減したい。
@@ -294,6 +335,8 @@
 ;;   - [ ] Unroll
 ;; - [ ] Collapse
 ;; - [ ] SearchSpaceについて, 256 -> 128 -> 32みたいに綺麗にMappingができるだろうか？
+;; - [ ] Clang Parallel. (Error Handlingがあるので，OMPない環境でも実装できる)
+;; - [ ] OpenCL Backend
 
 ;; [TODO]
 ;; Also add tests for

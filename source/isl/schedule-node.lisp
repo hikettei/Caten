@@ -140,6 +140,9 @@
 (defun schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-band pos type)
   (%make-schedule-node (%isl-schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
 
+(defun schedule-node-band-member-set-ast-loop-type (schedule-node-band pos type)
+  (%make-schedule-node (%isl-schedule-node-band-member-set-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
+
 (define-isl-function schedule-node-mark-get-id %isl-schedule-node-mark-get-id
   (:give identifier)
   (:keep schedule-node))

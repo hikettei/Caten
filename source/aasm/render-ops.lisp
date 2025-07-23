@@ -333,15 +333,17 @@ Constraints:
     (setf (graph-outputs g) (node-reads expr))
     (->fast-graph g)))
 
-(defun ast-make-subgraph (graph id &aux (seen nil) (nodes))
+(defun ast-make-subgraph (graph id &key (expr-depth nil) &aux (seen nil) (nodes))
   (declare (type Graph graph) (type symbol id))
-  (labels ((explore (id &aux (node (id->value graph id)))
+  (labels ((explore (expr-count id &aux (node (id->value graph id)))
              (when (or (null node) (find id seen)) (return-from explore))
-             (when (eql (node-type node) :EXPR) (return-from explore))
+             (when (or (null expr-depth) (>= expr-count expr-depth))
+               (when (eql (node-type node) :EXPR) (return-from explore)))
+             (when (eql (node-type node) :EXPR) (incf expr-count))
              (push id seen)
              (push node nodes)
-             (mapc #'explore (node-reads node))))
-    (explore id))
+             (mapc #'(lambda (x) (explore expr-count x)) (node-reads node))))
+    (explore 0 id))
   (let ((g (apply #'make-graph nodes)))
     (setf (graph-outputs g) (list id))
     (->fast-graph g)))
@@ -652,7 +654,53 @@ for (int i=0; i<M; i+=32)
              for end = (intern (format nil "~a_~a" out i))
              do (insert-nodes graph (graph-nodes unrolled))
              collect end)))))
-;; TODO: Upcast Rewrite
+
+(defun vectorizer (graph body amount)
+  (let ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1)))
+    (print body-graph)
+    ;; [TODO] Rewrite Aref -> Float4
+    ;; [TODO] Add New Float4 Ops for renderer
+    (%progn)))
+
+(defun ast-band-vectorize (graph band amount &key (rewriter #'vectorizer) (dtype :int64))
+  (declare (type FastGraph graph) (type fixnum amount) (type node band))
+  (assert (eql :FOR (node-type band)))
+  (let ((range (id->value graph (car (node-reads band))))
+        (body  (id->value graph (second (node-reads band)))))
+    (assert (and range (eql :RANGE (node-type range))))
+    (assert body)
+    (let ((pack-width (id->value graph (car (node-reads range))))
+          (pack-stride (id->value graph (second (node-reads range)))))
+      (assert (and pack-width pack-stride (eql (node-type pack-width) :EXPR) (eql (node-type pack-stride) :EXPR)))
+      (let ((pack-width (id->value graph (car (node-reads pack-width))))
+            (pack-stride (id->value graph (car (node-reads pack-stride)))))
+        (assert (and pack-width pack-stride))
+        (assert (and (eql :LOAD (node-type pack-stride)) (eql 1 (getattr pack-stride :value)))
+                ()
+                "ast-band-vectorize: @VECTORIZE Loop should have step=1")
+        ;; If pack-width == amount ==> packable
+        ;; If pack-width !+ amount ==> reminder or padding
+        (pprint-graph graph :id (car (node-writes pack-width)))
+        ;; TODO: Assume The loop is always INNERMOST
+        (insert-nodes
+         graph
+         (with-context-nodes
+             ;; bool x = (size == vectorize_width) (TODO: Simplify cond)
+           (cnd (%= nil :row (%load (%salloc :dtype dtype) amount) (emit pack-width)))
+           (new-graph
+            (%bind
+             (car (node-writes band))
+             (%progn
+              (%if cnd (funcall rewriter graph body amount))
+              (%if (%not cnd)
+                   (%range (getattr range :idx) nil
+                           (node->id body) :range range)))))))
+        graph))))
+
+;; (defun ast-band-tensorcore ()) <- これはもう手作業で書く。WMMAがなければError
+;; (defun ast-band-split-reduce ()) <- ReductionがなかったらError
+
+;; [TODO] Remove This!
 (defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64) (rewriter #'ast-unroll-body) &aux (n-unroll (car local-sizes)))
   (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
   (let ((range (id->value graph (car (node-reads band)))))

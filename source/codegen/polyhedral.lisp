@@ -31,6 +31,13 @@
 
 (defparameter *allow-compilation-error-during-beam* nil)
 (defparameter *+inf* (expt 2 32))
+
+(define-condition beam-post-rejection (error)
+  ((reason :initarg :reason))
+  (:documentation
+   "Raised when the conversion from Polyhedral IR to Blueprint
+    after beam search is determined to be invalid, causing result rejection.")
+  (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason)))))
 ;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
@@ -203,7 +210,6 @@
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-;;         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
@@ -471,7 +477,10 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
          (band-id (intern (format nil "B~a" (1- (pctx-band-cnt ctx))))))
     (labels ((rec (node count)
                (declare (type node node node) (type fixnum count))
-               (assert (eql (node-type node) :FOR))
+               ;; (assert (eql (node-type node) :FOR))
+               (when (not (eql (node-type node) :FOR))
+                 (warn "Skiped applying mark because the child is not :FOR")
+                 (return-from parse-isl-ast-mark user))
                (setf (getattr node :band) band-id
                      (getattr node :directive) directive) ;; multiple directives can be applied
                (when (< count depth) (rec (id->value *ctx* (second (node-reads node))) (1+ count)))))
@@ -1162,6 +1171,7 @@ for (int i=0; i<32; i+=2)
 
 "
   ;; [TODO] Loop FissionされたBlueprintにTILEを適用すると，RANGE expects IDX ... で失敗する。
+  ;; --> Fixed?
   (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
   (let* ((new-bp (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
          (innerbands (loop for node in (graph-nodes new-bp)
@@ -1183,7 +1193,7 @@ for (int i=0; i<32; i+=2)
          (insert-nodes new-bp (append (list thread) x y z)))))
     new-bp))
 
-(defclass Parallel (OptimizationRule) ((depth :initarg :depth :accessor parallel-depth))) ;; [TODO] CPU Parallel Using OpenMP
+(defclass Parallel (OptimizationRule) ((depth :initarg :depth :accessor parallel-depth)))
 (defmethod optrule-generate-search-space (poly bands (id (eql :Parallel)))
   (when (= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
     (loop for band in bands for nth upfrom 0
@@ -1208,16 +1218,6 @@ for (int i=0; i<32; i+=2)
 (defmethod optrule-apply-transform-on-blueprint ((id (eql :PARALLEL)) bands blueprint)
   (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands) :parallel 1))
   blueprint)
-;; [TODO] Caten Level Loop Collapse
-;; [TODO] Auto Scheduler Loop Collapse (aasm transformation rule!) これ1DになってSimplifyできたら面白そうじゃね?
-(defclass Collapse (OptimizationRule) nil)
-
-;; [TODO] FlashAttention, This will rewrite a graph
-(defclass FuseWithParent (OptimizationRule) nil)
-(defclass TensorCore (OptimizationRule) nil) ;; TODO
-(defclass SplitReduce (OptimizationRule)
-  ;; :mark :reductionを使用するようにしたい。 (TODO: It has two mode, :warp level and :block level)
-  nil)
 
 (defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width)))
 (defmethod optrule-generate-search-space (poly bands (id (eql :Vectorize)))
@@ -1229,20 +1229,36 @@ for (int i=0; i<32; i+=2)
               (make-instance 'Vectorize :width size :band band :axis nth))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
-  (let* ((child (schedule-node-insert-mark (optrule-band opt) (directive->id (directive "VECTORIZE" (vectorize-width opt) 1 NIL)))))
-    (setf (poly-schedule poly) (schedule-node-get-schedule child))))
+  (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
+         (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
+         (vectorize-inner (schedule-node-get-child band-parent 0))
+         (vectorize-inner (schedule-node-insert-mark
+                           vectorize-inner
+                           ;; Note: The vectorized loop should be freezed (= nobody can touch this!)
+                           (directive->id (directive "VECTORIZE" (vectorize-width opt) depth NIL)))))
+    (setf (poly-schedule poly) (schedule-node-get-schedule vectorize-inner))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-  (warn "WIP: Vectorize Rewrite")
   (let ((d (getattr (car bands) :directive)))
-;;    (caten/codegen/blueprint:print-blueprint blueprint t)
+    ;; (RANGE SIZE STEP) (assert step is one)
+    ;; SIZE個のElementsをRegisterにPackして計算する操作 = VECTORIZE
     (loop for band in bands do
       (setf
        blueprint
-       (caten/aasm::ast-band-unroll blueprint band (list (directive-amount d)) :rewriter #'caten/aasm::ast-unroll-body)))
-    (simplify-ast blueprint) (simplify-ast blueprint)
-;;    (caten/codegen/blueprint:print-blueprint blueprint t)
+       (simplify-ast (caten/aasm::ast-band-vectorize blueprint band (directive-amount d)))))
+    (simplify-ast blueprint)
+    ;; (min 2 (- _gid_p2 + 19)) == 2
+    ;; ^ Add Simplifier to solve this!
     blueprint))
+;; (defclass Collapse (OptimizationRule) nil)
+
+;; [TODO] FlashAttention from Tensor Graph, This will require a rewriting of runtime graph.
+;; (defclass FuseWithParent (OptimizationRule) nil)
+(defclass TensorCore (OptimizationRule) nil) ;; Memo: PostRejectionで探索する, suddenly 8x8x8とかで探索する。
+
+(defclass SplitReduce (OptimizationRule)
+  ;; :mark :reductionを使用するようにしたい。 (TODO: It has two mode, :warp level and :block level)
+  nil)
 ;; RootがReschedule->Reorderなら...的な話かも
 ;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
 ;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
@@ -1253,7 +1269,8 @@ for (int i=0; i<32; i+=2)
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (t . (:NoOpt :Parallel :TileGPU))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+    (2 . (:NoOpt :Parallel :TileGPU)) ;; Outermost loop optimization should come first
+    (t . (:NoOpt :Tile :Vectorize :TensorCore :SplitReduce))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
