@@ -8,6 +8,12 @@
 
 (in-caten-toplevel)
 
+(defun psched (poly)
+  (format t "~a~%" (caten/common.pprinter:pprint-isl-schedule (caten/codegen/polyhedral::poly-schedule poly))))
+
+(defun getband (poly idx)
+  (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
+
 (defparameter *strategy*
   (caten/codegen/byoc::make-strategy
    :n-profile 1 :per-band-optrules 3 :ptile-max-rank 0 :tile-search-space `(2 4 6 8)
@@ -46,15 +52,39 @@
                      (setf acc (+ acc (* (aref X (+ (* N i) kk)) (aref Y (+ (* K kk) j))))))
                 (setf (aref Z (+ (* K i) j)) acc)))))})
 
-(deftest gemm-opt-test
-  (testing "Creating Polyhedral Gemm"
+(deftest test-polyhedral-reschedule
+  (testing "Test Reschedule"
     (with-polyhedral
         ((gemm ($gemm (make-tensor `(10 10)) (make-tensor `(10 10)) (make-tensor `(10 10))))
-         (apply-optimization gemm (make-instance 'Reschedule))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         ;; (psched gemm)
+         )
+        ((new-kernels extra-allocs) (ok (= 1 (length new-kernels)))))
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 10)) (make-tensor `(10 10)) (make-tensor `(10 10))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :serialize-sccs 1)))
+         ;; (psched gemm)
          )
         ((new-kernels extra-allocs)
-          (assert (= 1 (length new-kernels)))
-          (print-blueprint (car new-kernels) t)
+          (ok (= 1 (length extra-allocs))) ;; Accumlator is mutated as allocation
+          (ok (= 3 (length new-kernels)))))))
+
+(deftest test-polyhedral-interchange
+  "Interchange can change the order of coincidence bands"
+  (testing "Test Interchange"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 10)) (make-tensor `(10 10)) (make-tensor `(10 10))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (print (getband gemm 0))
+         ;; (psched gemm)
+         )
+        ((new-kernels extra-allocs)
+;;          (print new-kernels)
           ))))
 
+;; [TODO]
+;; Also add tests for
+;; - Softmax
+;; - FlashAttention
+;; - randn failing case
 (run-suite *package*)
