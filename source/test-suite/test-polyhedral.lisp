@@ -240,7 +240,8 @@
                   ((:EXPR ((Var 0.0 _))) ;; Accumlation Loader
                    (:FOR ((:RANGE ((Var 20 _) (Var 1 _))) _)) ;; WMMA
                    (:Expr (_)) ;; Store Function
-                   ))))))))))
+                   )))
+               :parallel (= 1))))))))
   ;; TODO test w/ tile, vectorize
   )
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
