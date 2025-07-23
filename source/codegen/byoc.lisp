@@ -89,13 +89,12 @@
 - n-profile[fixnum] the number of profiling for cost model
 - n-per-band-optrules[fixnum] BEAM Search uses max_iter = 2 + {number_of_bands} * per-band-optrules
 - use-tile-gpu[fixnum] Set > 1 to allow the compiler to tile bands to generate a parallelized gpu kernel. The value will be the maximum rank of tiling.
-- global-max[list, optional] restrict the maximum size of the griddim. The value will be a list of fixnums with the same length as use-tile-gpu.
-- local-max[list, optional] restrict the maximun size of the thread. The value will be a list of fixnums with the same length as use-tile-gpu.
+- global-max[or null fixnum] restrict the maximum size of the griddim.
+- local-max[or null fixnum] restrict the maximun size of the thread.
 - shared-max[or null fixnum] If specified, the search can generate `Prefetch` optimization. This parameter restricts the maximum size of the shared memory. 
 - use-parallel[fixnum] Set = 1 to allow the compiler to insert @parallel annotations to generate a parallelized cpu kernel. Note that this value is not orthogonal to use-tile-gpu.
 "
-  (declare (type list global-max local-max)
-           (type (or null fixnum) shared-max))
+  (declare (type (or null fixnum) shared-max))
   `(progn
      (defclass ,name (Auto-Scheduler) nil)
      (defmethod initialize-instance :after ((auto-scheduler ,name) &key)
@@ -105,7 +104,7 @@
               :ptile-max-rank ,ptile-max-rank
               ;; Search Space configuration
               :tile-search-space ',tile-search-space :ptile-search-space ',ptile-search-space :vectorize-search-space ',vectorize-search-space
-              :global-max ',global-max :local-max ',local-max :shared-max ,shared-max)))))
+              :global-max ,global-max :local-max ,local-max :shared-max ,shared-max)))))
 ;; ~~ Backend ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric get-backend-buffer (backend))
 (defgeneric get-backend-runtime (backend))

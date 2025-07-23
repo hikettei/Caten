@@ -155,6 +155,7 @@
    (program :accessor metal-program)))
 (define-auto-scheduler Metal-Auto-Scheduler
   :n-profile 1 :per-band-optrules 2
+  :local-max 1024 ;; TODO: it depends on the device
   :ptile-max-rank 3 :shared-max 32768)
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer MetalKernel Metal-Auto-Scheduler t)
 
@@ -297,7 +298,7 @@ using namespace metal;
          (global-size (map 'list #'(lambda (x) (expr-realize-as-value (nth 0 x) params)) (mp-grid-size mp)))
          (local-size (map 'list #'(lambda (x) (expr-realize-as-value (nth 1 x) params)) (mp-grid-size mp))))
     (when (> (apply #'* local-size) total-max-threads)
-      (error "Error: TODO"))
+      (error "Error: local-size=~a exceeded total-max-threads=~a" local-size total-max-threads))
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
       (msg encoder "setComputePipelineState:" :void :pointer (mp-pipeline-state mp))

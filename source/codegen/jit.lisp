@@ -38,7 +38,6 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
     ;; Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
     (apply-rewriting-rules runtime)
     (let ((renderer (make-instance renderer-type))
-          (auto-scheduler (make-instance auto-scheduler))
           (base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (runtime-graph runtime)))))
           (schedule-graph (graph-schedule (runtime-graph runtime))))
       ;; Minifying the number of duplicated items.
@@ -138,7 +137,8 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
    ;;  (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Compiling ~a kernels ..." (count-if #'(lambda (x) (eql (node-type x) :JIT_KERNEL)) (graph-nodes graph))))
     ;; [TODO] Use Runtime instead of renderer when doing %compile-kernel
     (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "Completed"))
-    (when (>= (ctx:getenv :BEAM) 1) (autotune runtime))
+    (when (and (>= (ctx:getenv :BEAM) 1) (get-backend-jit-p (ctx:getenv :BACKEND)))
+      (autotune runtime))
     runtime))
 
 (defparameter *autotune-node-callback* nil)
@@ -154,6 +154,11 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   ;; - 入力のSymbolicに応じて変動する。
   (let ((*autotune-node-callback*))
     (%autotune runtime)
+    (when (typep (runtime-graph runtime) 'Graph) ;; TODO: Delete this after everything is DAG refactor
+      (setf (graph-nodes (runtime-graph runtime))
+            (loop with rewritten = (apply #'append (map 'list #'node-writes *autotune-node-callback*))
+                  for node in (graph-nodes (runtime-graph runtime))
+                  if (not (intersection (Node-writes node) rewritten)) collect node)))
     (insert-nodes (runtime-graph runtime) *autotune-node-callback*))
   (verify-graph (runtime-graph runtime)))
 

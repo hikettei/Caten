@@ -127,21 +127,8 @@ Sets the seed for random operations within the scope of the body.
                      :float32
                      (dtype-of x))))
       (!add (!cast (!mul (!cast (!sub below upfrom) dtype) (!rand (shape x) :dtype dtype :order (order x) :out x)) (dtype-of x)) upfrom))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Linspace (Func) nil
-  (:documentation "Generates an array sampled from this formula: x_i = a * index_components(i) + b"))
-(defmethod forward ((op Linspace) &rest inputs) (st "A[] B[] X[~] -> X[~]" (inputs)))
-(defmethod backward ((op Linspace) &optional dout) (values nil nil dout))
-(defmethod lower ((op Linspace) &rest inputs)
-  (multiple-value-bind (a b x) (apply #'values inputs)
-    (with-context
-      (i (%index-components x (%shape (shape (third (func-variables op))))))
-      (t1 (%mul i a))
-      (t2 (%add t1 b))
-      (c  (%store x t2)))))
-
 ;; ~~ callers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
+(defun ax+b (shape a b &key (dtype *default-float*) (order *default-order*))
   "
 ```
 (ax+b shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
@@ -153,7 +140,7 @@ There is a `linspace` function for the same purpose, but it is not lazy.
 "
   (declare (type list shape))
   (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
-    (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
+    (!add (!mul (!cast (!index-components shape) dtype) (->val a)) (->val b))))
 
 (defun !full (shape fill-value &key (dtype *default-float*) (order *default-order*))
   "

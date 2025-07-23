@@ -50,7 +50,7 @@
                     (reduce
                      #'caten/aasm/expr:expr-mul
                      (loop for loop-info in (gethash (node-id expr) (ctx-node-to-loops ctx))
-                           for loop = (print (getf loop-info :for-node))
+                           for loop = (getf loop-info :for-node)
                            for range = (id->value blueprint (car (node-reads loop)))
                            for size = (car (node-reads range))
                            for step = (second (node-reads range))
@@ -410,11 +410,16 @@
    Returns a Polyhedral-IR object."
   (declare (type Graph blueprint))
   ;; Extract domain, reads, writes
+  ;; [TODO] Handler-case-bind and add a warning
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
          (domain (union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
-         (reads/writes (extract-accesses ctx blueprint)))
-    (make-polyhedral-ir blueprint domain (union-map-from-str (car reads/writes)) (union-map-from-str (cdr reads/writes)) schedule ctx strategy)))
+         (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
+    (handler-case (setf reads (union-map-from-str (car reads/writes))
+                        writes (union-map-from-str (cdr reads/writes)))
+      (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
+Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
+    (make-polyhedral-ir blueprint domain reads writes schedule ctx strategy)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
@@ -1099,17 +1104,19 @@ Returns T if the current schedule does not break any dependences in dep."
 (defmethod optrule-generate-search-space (poly bands (id (eql :TileGPU)))
   ;; TileGPU Can be applied at once
   (when (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2)
-    (loop for band in bands for nth upfrom 0
+    (loop with max-threads = (slot-value (poly-strategy poly) 'caten/codegen/byoc::local-max)
+          for band in bands for nth upfrom 0
           for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
           for coincident = (schedule-node-band-get-coincident band)
           for split-at-base = (or (position 0 coincident) (length coincident))
           for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
-          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+          if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
             append
             (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
                   do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
-                  collect
-                  (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
+                     if (or (null max-threads) (<= (expt size split-at) max-threads))
+                       collect
+                       (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
   (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
@@ -1268,7 +1275,8 @@ for (int i=0; i<32; i+=2)
               :blueprint blueprint
               :args args
               :flops (kernel-flops base-kernel))
-             :optimized-p t)))
+             :optimized-p t
+             :out (car (node-writes base-node)))))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))

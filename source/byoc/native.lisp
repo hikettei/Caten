@@ -71,7 +71,7 @@
                       (rhstype (dtype->lisp (tensor-relay-dtype (nth ,(+ 1 offset) (relay-reads (read-type-relay node)))))))
                   `(the ,outtype 
                         ,(if wrap-around-p
-                             (list 'mod (list ',op `(the ,lhstype ,lhs) `(the ,rhstype rhs)) (1+ max))
+                             (list 'mod (list ',op `(the ,lhstype ,lhs) `(the ,rhstype ,rhs)) (1+ max))
                              (list ',op `(the ,lhstype ,lhs) `(the ,rhstype ,rhs))))))))
   (def :ADD +)
   (def :MUL *)

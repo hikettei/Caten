@@ -479,7 +479,7 @@ Depends=~a Reduce=~a Users=~a
                (if (null (gethash gid gid-seen))
                    (prog1 gid (setf (gethash gid gid-seen) 1))
                    (prog1 (intern (format nil "~a_~a" gid (gethash gid gid-seen))) (incf (gethash gid gid-seen)))))
-             (lower-item (node gids)
+             (lower-item (node gids &aux (aref-table (make-hash-table)))
                (let ((node (copy-node node))
                      (gids (padding-gids gids)))
                  (assert (= (length (node-writes node)) 1) () "Cannot lower the node ~a with multiple writes." node)
@@ -489,11 +489,21 @@ Depends=~a Reduce=~a Users=~a
                        for name in (node-reads node)
                        for nth upfrom 0
                        if (is-setf-p name) do
-                         (let* ((load (emit (make-node :JIT :BIND (list (gensym "BIND")) (list name) :value (is-setf-p name)))))
-                           (setf (nth nth (node-reads node)) (car (node-writes load))))
+                         (let* ((setf (id->value *ctx* name))
+                                (set-form (id->value *ctx* (car (node-reads setf))))
+                                (load (emit (make-node :JIT :BIND (list (gensym "BIND")) (list name) :value
+                                                       (if (and set-form (eql (node-type set-form) :AREF))
+                                                           (car (node-reads set-form))
+                                                           (is-setf-p name)))))
+                                (load (if (and set-form (eql (node-type set-form) :AREF))
+                                          (emit (make-node :JIT :AREF (list (gensym "BR")) (list (car (node-writes load)) (second (node-reads set-form)))))
+                                          load)))
+                           (setf ;; (gethash (nth nth (node-reads node)) aref-table) (car (node-writes load))
+                                 (nth nth (node-reads node)) (car (node-writes load))))
                        else if (and buffer (> (tensor-relay-nrank buffer) 0)) do
                          (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
-                           (setf (nth nth (node-reads node)) (car (node-writes aref)))))
+                           (setf (gethash (car (node-writes aref)) aref-table) (nth nth (node-reads node))
+                                 (nth nth (node-reads node)) (car (node-writes aref)))))
                  ;; Insert %setf if the node is reduction.
                  (when (getattr node :reduction :allow-undefined t)
                    (assert (not (find (car (node-writes node)) (node-writes schedule-item))) () "The reduction node ~a cannot be an output of the schedule-item." node)
@@ -501,12 +511,13 @@ Depends=~a Reduce=~a Users=~a
                           (aref (if (> (tensor-relay-nrank (car (relay-reads type))) 0)
                                     (emit
                                      (%aref
-                                      (car (node-reads node))
+                                      (let ((id (car (node-reads node)))) ;; recreate %aref only for setf
+                                        (gethash id aref-table id))
                                       (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-read-iters type)) (car (relay-reads type)) gids)))))
                                     (car (node-reads node))))
                           (id (car (node-writes node))))
-                     (setf (getattr node :_type_relay) nil)
-                     (setf (node-writes node) (list (gensym "TMP")))
+                     (setf (getattr node :_type_relay) nil
+                           (node-writes node) (list (gensym "TMP")))
                      (return-from lower-item (emit (%setf aref (emit node) :out id)))))
                  ;; Also insert %setf if the node is an output of the schedule-item.
                  (when (or
@@ -528,7 +539,8 @@ Depends=~a Reduce=~a Users=~a
                           (aref (if (> (tensor-relay-nrank (car (relay-writes type))) 0)
                                     (emit
                                      (%aref
-                                      (car (node-writes node))
+                                      (let ((id (car (node-writes node))))
+                                        (gethash id aref-table id))
                                       (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-write-iters type)) (car (relay-writes type)) gids)))))
                                     ;; [TODO] (%aref x 0) ?
                                     (car (node-writes node)))))
@@ -636,7 +648,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                               (let ((d (getattr node :directive)))
                                 (when d
                                   (format out "@~a(~a) " (uiop:symbol-call :caten/codegen/polyhedral :directive-type d) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount d)))))
-                            (if (eql :noopt (getattr node :mark)) "" (format nil "~(~a~)" (getattr node :mark)))
+                            (if (eql :noopt (getattr node :mark)) "" (format nil "@~(~a~)" (getattr node :mark)))
                             bind bind (e size) bind (e step)
                             (if (getattr node :is-empty) "/* empty */" "")
                             (if (getattr node :band) (format nil " [~a]" (getattr node :band)) "")))

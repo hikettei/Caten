@@ -27,8 +27,9 @@
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn
-                      (setf (getattr n :_read_views) (map 'list #'v (node-reads n))
-                            (node-reads n) (map 'list #'r (node-reads n))
+                      (when (typep (node-attr n) 'JITAble)
+                        (setf (getattr n :_read_views) (map 'list #'v (node-reads n))))
+                      (setf (node-reads n) (map 'list #'r (node-reads n))
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
       ;; Gather views for runtime-fw-outputs and runtime-bw-outputs, storing them in the :_output_type
@@ -53,15 +54,16 @@
       id2view)))
 
 (defun sync-buffer (buffer f)
-  (macrolet ((sync (name)
-               `(setf (,name buffer) (map 'list (alexandria:compose f #'reveal-buffer) (,name buffer)))))
-    (sync tensor-relay-shape)
-    (sync tensor-relay-stride)
-    (sync tensor-relay-orig-buffer-shape)
-    (flet ((sync-view (v)
-             (if (null v) v
-                 (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
-      (setf (tensor-relay-views buffer) (map 'list #'sync-view (tensor-relay-views buffer))))))
+  (when (typep buffer 'TensorRelay)
+    (macrolet ((sync (name)
+                 `(setf (,name buffer) (map 'list (alexandria:compose f #'reveal-buffer) (,name buffer)))))
+      (sync tensor-relay-shape)
+      (sync tensor-relay-stride)
+      (sync tensor-relay-orig-buffer-shape)
+      (flet ((sync-view (v)
+               (if (null v) v
+                   (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
+        (setf (tensor-relay-views buffer) (map 'list #'sync-view (tensor-relay-views buffer)))))))
 ;; TODO(hikettei): apply-static-gensym == nodes-apply-static-gensym. Remove one of them.
 (defun apply-static-gensym (runtime &optional (id2view))
   "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
@@ -72,10 +74,13 @@
       (when (eql (node-type node) :Load)
         (when (symbolp (getattr node :value))
           (setf (gethash (getattr node :value) alias-table) (getattr node :value)))))
-    (labels ((val-gensym (id)
+    (labels ((str-begin-with (str case)
+               (and (>= (length str) (length case)) (equalp case (subseq str 0 (length case)))))
+             (val-gensym (id)
 	       (if (symbolp id)
 		   (or
 		    (gethash id alias-table)
+                    (when (str-begin-with (symbol-name id) "special_") id)
 		    (let ((new-id (intern (format nil "val_~a" val-count))))
 		      (setf (gethash id alias-table) new-id)
 		      (incf val-count)
@@ -84,7 +89,7 @@
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
                (or
-                (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))
+                (str-begin-with str "TID") (str-begin-with str "SID")
                 ;; Setting AUTO_SCHEDULER=1 also requires variable names to be in camel_snake format. (due to ISL format)
                 ;; If a variable is in kebab_snake format, you must rename it to a unique name.
                 (when (and (= (ctx:getenv :AUTO_SCHEDULER) 1) (not (string= str (ensure-string-as-compilable str))))
