@@ -13,6 +13,10 @@
   :free %isl-multi-val-free
   :copy %isl-multi-val-copy)
 
+(define-isl-object pw-aff
+  :free %isl-pw-aff-free
+  :copy %isl-pw-aff-copy)
+
 (defmethod print-object ((value multi-union-pw-aff) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-multi-union-pw-aff-to-str (multi-union-pw-aff-handle value)) stream)))
@@ -24,6 +28,10 @@
 (defmethod print-object ((value multi-val) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-multi-val-to-str (multi-val-handle value)) stream)))
+
+(defmethod print-object ((value pw-aff) stream)
+  (print-unreadable-object (value stream :type t)
+    (write-string (%isl-pw-aff-to-str (pw-aff-handle value)) stream)))
 
 (define-isl-function mupa-from-union-map %isl-multi-union-pw-aff-from-union-map
   (:give multi-union-pw-aff)
@@ -94,3 +102,51 @@
   (:give multi-val)
   (:take space)
   (:take value-list))
+
+(define-isl-function union-pw-aff-get-space %isl-union-pw-aff-get-space
+  (:give space)
+  (:keep union-pw-aff))
+
+(defun pw-aff-var-on-domain (local-space dim pos)
+  (%make-pw-aff (%isl-pw-aff-var-on-domain (local-space-handle local-space) dim pos)))
+  
+(define-isl-function union-pw-aff-from-pw-aff %isl-union-pw-aff-from-pw-aff
+  (:give union-pw-aff)
+  (:take pw-aff))
+
+(define-isl-function union-pw-aff-add %isl-union-pw-aff-add
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take union-pw-aff))
+
+(define-isl-function union-pw-aff-mul %isl-union-pw-aff-mul
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take union-pw-aff))
+
+(defun multi-union-pw-aff-drop-dims (mupa dim first n)
+  (%make-multi-union-pw-aff
+   (%isl-multi-union-pw-aff-drop-dims (multi-union-pw-aff-handle mupa) dim first n)))
+
+(define-isl-function multi-union-pw-aff-from-union-pw-aff %isl-multi-union-pw-aff-from-union-pw-aff
+  (:give multi-union-pw-aff)
+  (:take union-pw-aff))
+
+(define-isl-function multi-union-pw-aff-range-product %isl-multi-union-pw-aff-range-product
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))
+
+(define-isl-function multi-union-pw-aff-flat-range-product %isl-multi-union-pw-aff-flat-range-product
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))
+
+(define-isl-function union-pw-aff-add %isl-union-pw-aff-add
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take union-pw-aff))
+
+(define-isl-function union-map-from-union-pw-aff %isl-union-map-from-union-pw-aff
+  (:give union-map)
+  (:take union-pw-aff))

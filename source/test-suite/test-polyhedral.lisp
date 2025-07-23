@@ -116,12 +116,41 @@
           (let ((gemm (car new-kernels)))
             (ok (bp-match-p gemm (:FOR ((:RANGE ((Var 30 _) (Var 1 _))) (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _))))))))))
   (testing "Test Interchange 3D"
-    ;; TODO:
-    ;; Coincident
-    ;; Permutable
-    ;; They should also shuffled!
-
+    ;; [TODO] Marked Band Shuffle?
     ))
+
+(deftest test-polyhedral-tile-gpu
+  (testing "Test Interchange 2D (ij -> ij)"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 2 (get-depth (getband gemm 0))))
+         (let ((ij-band (getband gemm 0)))
+           ;; [TODO] [Important] ループのサイズで振る舞いを変える！！
+           (setf gemm (apply-optimization gemm (make-instance 'TileGPU :local-size 4 :band ij-band :axis 0)))))
+        ((new-kernels extra-allocs)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          (let ((gemm (car new-kernels)))
+            (print-blueprint gemm t)
+            )))))
+
+;; Needed for finding an optimal kernel FINISH by (07/27)
+;; - [x] Reschedule
+;; - [x] Interchange
+;; - [ ] Tile
+;; - [ ] TileGPU
+;; - [ ] Vectorize
+;; - [ ] TensorCore
+;; - [ ] Collapse
+;; - [ ] SplitReduce
+
+;; - [ ] We Want To Have:
+;;   - [ ] TileGPU as ISL Tile (Insert IF!!) TileGPU+Unrollができるようにして，スレッド数を削減したい。
+;;     - [ ] Isolate Option? 
+;;   - [ ] Unroll
+;; - [ ] Collapse
+;; - [ ] SearchSpaceについて, 256 -> 128 -> 32みたいに綺麗にMappingができるだろうか？
 
 ;; [TODO]
 ;; Also add tests for
@@ -129,4 +158,5 @@
 ;; - FlashAttention
 ;; - randn failing case
 ;; - BandGPUはReminderをIfで生成したい。
+;; - Loop Size=1 --> ここにMarkしたら壊れない？
 (run-suite *package*)

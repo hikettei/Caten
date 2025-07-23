@@ -31,7 +31,7 @@
 
 (defparameter *allow-compilation-error-during-beam* nil)
 (defparameter *+inf* (expt 2 32))
-;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
   (ops (error "flops must occur") :type (or null caten/aasm/expr:Expr))
@@ -425,7 +425,7 @@
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-polyhedral-ir blueprint domain reads writes schedule ctx strategy)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
             (:constructor make-parse-ctx (blueprint))
@@ -867,7 +867,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                      k))
              ;; Loop Fissionすると，完全に無意味なMOVEが生成されたりする。これがあったら，カーネルを削除する。
              (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
-;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
    (band :initarg :band :accessor optrule-band :initform nil)))
@@ -968,7 +968,7 @@ Returns T if the current schedule does not break any dependences in dep."
     retval))
 
 (defmethod verify-polyhedral-ir ((pg Polyhedral-IR)) (check-legality (poly-schedule pg) (poly-dependencies pg)))
-;; ~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Search Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: This is hackable by users (as intended)
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
@@ -991,7 +991,7 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     ;(make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
+     ;; (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
@@ -1064,8 +1064,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (declare (type fixnum size))
   (let* ((band-space (schedule-node-band-get-space band))
          (dim (space-dim band-space 3)))
-    (multi-val-from-val-list
-     band-space(apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
+    (multi-val-from-val-list band-space (apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
 
 (defclass Tile (OptimizationRule) ((size :initarg :size :accessor tile-size)))
 
@@ -1085,7 +1084,7 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defclass TileGPU (OptimizationRule)
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)
-   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at)))
+   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at :initform nil)))
 
 (defun schedule-node-band-get-coincident (band)
   (loop for i upfrom 0 below (schedule-node-get-band-depth band)
@@ -1245,7 +1244,7 @@ for (int i=0; i<32; i+=2)
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
-    ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
+    (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (t . (:NoOpt :Parallel :TileGPU))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
@@ -1395,6 +1394,7 @@ for (int i=0; i<32; i+=2)
 ;;  - [ ] Shared Memory, ReduceSplit
 ;;  - [ ] Interchange
 ;; - [ ] More Beautiful Logger
+;; - [ ] Finally Clean up Codes
 ;; - [ ] Support Symbolics
 
 
