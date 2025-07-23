@@ -1044,13 +1044,17 @@ Returns T if the current schedule does not break any dependences in dep."
     (assert (equal (loop for i upfrom 0 below depth collect i) (sort (copy-list order) #'<))
             ()
             "schedule-node-band-permute: order must be 0~N list")
-    ;; [TODO] Coincident, And Permute
     (let* ((mupa (schedule-node-band-get-partial-schedule band))
+           (coincidents (schedule-node-band-get-coincident band))
            (upas (loop for i upfrom 0 below depth collect (multi-union-pw-aff-get-union-pw-aff mupa i)))
+           (coincidents-new (permute-list order coincidents))
            (upas-new (permute-list order upas)))
       (loop for i upfrom 0 below depth do
         (setf mupa (multi-union-pw-aff-set-union-pw-aff mupa i (nth i upas-new))))
-      (schedule-node-insert-partial-schedule band mupa))))
+      (setf band (schedule-node-insert-partial-schedule band mupa))
+      (loop for i upfrom 0 below depth do
+        (setf band (isl::schedule-node-band-member-set-coincident band i (nth i coincidents-new))))
+      band)))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
   (setf (poly-schedule poly)

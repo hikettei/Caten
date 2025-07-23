@@ -155,3 +155,6 @@
 (define-isl-function schedule-node-parent %isl-schedule-node-parent
   (:give schedule-node)
   (:take schedule-node))
+
+(defun schedule-node-band-member-set-coincident (band pos val)
+  (%make-schedule-node (%isl-schedule-node-band-member-set-coincident (schedule-node-handle (copy band)) pos val)))
