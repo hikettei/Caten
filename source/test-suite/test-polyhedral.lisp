@@ -14,6 +14,8 @@
 (defun getband (poly idx)
   (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
 
+(defun expr-val (expr) (caten/aasm/expr:expr-realize-as-value expr))
+
 (defun get-depth (band) (caten/codegen/polyhedral::schedule-node-get-band-depth band))
 
 (defmacro bp-match-p (graph pattern &aux (match-p (gensym)))
@@ -130,24 +132,96 @@
                             (:FOR ((:RANGE ((Var 20 _) (Var 1 _)))
                                    (:FOR ((:RANGE ((Var 30 _) (Var 1 _)))
                                           (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _)))))))))))))
+;; [TODO] Tile
 
 (deftest test-polyhedral-tile-gpu
-  (testing "Test Interchange 2D (ij -> ij)"
+  (testing "TileGPU for 2D"
     (with-polyhedral
         ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 2 (get-depth (getband gemm 0))))
          (let ((ij-band (getband gemm 0)))
-           ;; [TODO] [Important] ループのサイズで振る舞いを変える！！
            (setf gemm (apply-optimization gemm (make-instance 'TileGPU :local-size 4 :band ij-band :axis 0)))))
         ((new-kernels extra-allocs)
           (ok (= 1 (length new-kernels)))
           (ok (= 0 (length extra-allocs)))
           (let ((gemm (car new-kernels)))
-            (print-blueprint gemm t)
-            ;; [TODO]
-            ;; TileGPUしたBandをさらにTileすることは可能か？
-            )))))
+            (let ((ls (caten/codegen/blueprint:blueprint-gather-grids gemm)))
+              ;; (grid_size, thread_size)
+              (ok (equal (print (map 'list #'expr-val (nth 0 ls))) `(3 16)))
+              (ok (equal (map 'list #'expr-val (nth 1 ls)) `(8 1)))
+              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(1 1))))
+            ;; [TODO] Add a "decent" match case
+            (ok
+             (bp-match-p
+              gemm
+              (:PROGN
+                ((:EXPR (a))
+                 (:EXPR (b))
+                 (:EXPR (c))
+                 (:EXPR (d))
+                 (:IF ((:EXPR (e)) body))))))))))
+  (testing "TileGPU for 3D"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :serialize-sccs 1)))
+         (ok (= 3 (get-depth (getband gemm 1))))
+         (let ((ijk-band (getband gemm 1)))
+           ;; Memo: K is not coincident=1 btw
+           (setf gemm (apply-optimization gemm (make-instance 'TileGPU :local-size 4 :band ijk-band :axis 1)))))
+        ((new-kernels extra-allocs)
+          (ok (= 3 (length new-kernels)))
+          (ok (= 1 (length extra-allocs)))
+          (let ((gemm (second new-kernels)))
+            ;; [TODO] Add a "decent" match case
+            (let ((ls (caten/codegen/blueprint:blueprint-gather-grids gemm)))
+              ;; (grid_size, thread_size)
+              (ok (equal (map 'list #'expr-val (nth 0 ls)) `(3 64)))
+              (ok (equal (map 'list #'expr-val (nth 1 ls)) `(8 1)))
+              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(5 1))))
+            (ok
+             (bp-match-p
+              gemm
+              (:PROGN
+                ((:EXPR (a))
+                 (:EXPR (b))
+                 (:EXPR (c))
+                 (:EXPR (d))
+                 (:EXPR (e))
+                 (:EXPR (f))
+                 (:IF ((:EXPR (l)) body))))))))))
+  (testing "TileGPU but the loop size is smaller than local-size") ;; TODO
+  (testing "TileGPU+Tile"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 2 (get-depth (getband gemm 0))))
+         (let ((ij-band (getband gemm 0)))
+           (setf gemm (apply-optimization gemm (make-instance 'TileGPU :local-size 4 :band ij-band :axis 0)))
+           (setf gemm (apply-optimization gemm (make-instance 'Tile :size 4 :band (getband gemm 0) :axis 0)))))
+        ((new-kernels extra-allocs)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          (let ((gemm (car new-kernels)))
+            ;; Local Size should not be changed
+            (let ((ls (caten/codegen/blueprint:blueprint-gather-grids gemm)))
+              ;; (grid_size, thread_size)
+              (ok (equal (map 'list #'expr-val (nth 0 ls)) `(3 16)))
+              (ok (equal (map 'list #'expr-val (nth 1 ls)) `(8 1)))
+              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(1 1))))
+            (ok
+             (bp-match-p
+              gemm
+              (:PROGN
+                ((:EXPR (a))
+                 (:EXPR (b))
+                 (:EXPR (c))
+                 (:EXPR (d))
+                 (:IF ((:EXPR (e)) body)))))))))))
+; two thing test
+;; - VECTORIZE+TileGPU TEST
+;; - TileGPU+Size1 Test
+;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
 ;; Needed for finding an optimal kernel FINISH by (07/27)
 ;; - [x] Reschedule
