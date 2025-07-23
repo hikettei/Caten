@@ -12,9 +12,12 @@
 (in-package :caten-flash-attention)
 
 (in-caten-toplevel)
-;; TODO
-;; - 1. Compare the outputs
-;; - 2. まずLispで動かす
+;; [TODO]
+;; - [ ] CUDA Runtime
+;; - [ ] Index途中式，共通項簡略化最適化, ポインタ途中でIncfする
+;; - [ ] FlashAttention Benchmark (in CI?)
+;;  - [ ] More Optimization Space
+
 (progn
   @caten.jit () {
   (defun flash_attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
@@ -66,21 +69,23 @@
 (defun scaled-dot-product-attention (query key value &optional mask)
   (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
-
+;; ~~ Settings ~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun naive-attention (config)
   (multiple-value-bind (q k v) (make-inputs-from-config config)
-    (scaled-dot-product-attention q k v)))
+    (ctx:with-contextvar (:BEAM 0)
+      (caten (scaled-dot-product-attention q k v)))))
 
 (defun flash-attention (config)
   (multiple-value-bind (q k v o l m) (make-inputs-from-config config)
     (multiple-value-bind (q k v o l m) (flash_attention q k v o l m)
-      o)))
+      (ctx:with-contextvar (:BEAM 10)
+        (caten o)))))
 
+;; [TODO] FlashAttention Metal/CUDA
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~
 (defun benchmark (&key (impls (list #'naive-attention #'flash-attention)) (n 10) &aux (results))
   (loop for impl in impls
-        for kernel = (caten (funcall impl *config*)) do
+        for kernel = (funcall impl *config*) do
           (forward kernel)
           (push (list impl (forward kernel) (caten/runtime/profile:with-real-time (dotimes (i n) (forward kernel)))) results))
   results)
-
-;; (test-flash-attention)
