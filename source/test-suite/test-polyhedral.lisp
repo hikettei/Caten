@@ -116,8 +116,20 @@
           (let ((gemm (car new-kernels)))
             (ok (bp-match-p gemm (:FOR ((:RANGE ((Var 30 _) (Var 1 _))) (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _))))))))))
   (testing "Test Interchange 3D"
-    ;; [TODO] Marked Band Shuffle?
-    ))
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :serialize-sccs 1)))
+         (ok (= 3 (get-depth (getband gemm 1)))) ;; I, J should be coincidence, they are interchangeable
+         (let ((ijk-band (getband gemm 1)))
+           (setf gemm (apply-optimization gemm (make-instance 'Interchange :order `(2 1 0) :band ijk-band :axis 1)))))
+        ((new-kernels extra-allocs)
+          (ok (= 3 (length new-kernels)))
+          (ok (= 1 (length extra-allocs)))
+          (let ((gemm (second new-kernels)))
+            (ok (bp-match-p gemm
+                            (:FOR ((:RANGE ((Var 20 _) (Var 1 _)))
+                                   (:FOR ((:RANGE ((Var 30 _) (Var 1 _)))
+                                          (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _)))))))))))))
 
 (deftest test-polyhedral-tile-gpu
   (testing "Test Interchange 2D (ij -> ij)"
@@ -133,6 +145,8 @@
           (ok (= 0 (length extra-allocs)))
           (let ((gemm (car new-kernels)))
             (print-blueprint gemm t)
+            ;; [TODO]
+            ;; TileGPUしたBandをさらにTileすることは可能か？
             )))))
 
 ;; Needed for finding an optimal kernel FINISH by (07/27)
