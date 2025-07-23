@@ -7,6 +7,18 @@
    #:realize-node-with-autotuning
    #:make-polyhedral-from-blueprint
    #:get-blueprint-from-polyhedral)
+  (:export
+   #:apply-optimization
+   #:NoOpt
+   #:Reschedule
+   #:Interchange
+   #:Tile
+   #:TileGPU
+   #:Parallel
+   #:Collapse
+   #:TensorCore
+   #:SplitReduce
+   #:Vectorize)
   ;; GFlops Mesaurer
   (:export
    #:GFlops-Measurer
@@ -19,13 +31,6 @@
 
 (defparameter *allow-compilation-error-during-beam* nil)
 (defparameter *+inf* (expt 2 32))
-;; BEAM Search Utils
-(define-condition beam-post-rejection (error)
-  ((reason :initarg :reason))
-  (:documentation
-   "Raised when the conversion from Polyhedral IR to Blueprint
-    after beam search is determined to be invalid, causing result rejection.")
-  (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason)))))
 ;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
@@ -1384,7 +1389,6 @@ for (int i=0; i<32; i+=2)
 ;;  - [ ] Interchange
 ;; - [ ] More Beautiful Logger
 ;; - [ ] Support Symbolics
-
 
 
 ;; [TODO] 戻ったらやること
