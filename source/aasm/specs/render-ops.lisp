@@ -158,17 +158,46 @@ X <- Aref(Array, Index)
                              (T
                               (error "The first argument for :Aref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
 
-(defnode (:JIT :SWIZZLE) (RenderOps)
+(defnode (:JIT :Pack) (RenderOps)
          "
-SWIZZLE(A) is corresponding with:
-
 ```
-X <- A.[x|y|z|...]
+X <- pack(pointer, val1, val2, val3, ..., contiguous=boolean)
 ```
-Unlike `aref`, a position of the access is fixed.
 "
-         :slots ((index :type fixnum))
-         :type-relay (ast-type-map :SWIZZLE))
+         :slots ((contiguous :type boolean :initform nil))
+         :type-relay
+         #'(lambda (id->type node)
+             (let ((arg (gethash (car (node-reads node)) id->type))
+                   (vectorize (length (cdr (node-reads node))))
+                   (vectorize-types (map 'list #'(lambda (x) (gethash x id->type)) (cdr (node-reads node)))))
+               (assert arg () "First argument for :Pack should be a Tensor.")
+               (assert (every #'(lambda (x) (and (typep x 'TensorRelay) (= 0 (tensor-relay-nrank x)))) vectorize-types)
+                       ()
+                       ":Pack, val1, val2, ..., val_n should be a scalar tensor.")
+               (cond
+                 ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-GLOBAL))
+                  (list (Make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil :vectorize vectorize)))
+                 ((typep arg 'TensorRelay)
+                  (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil :vectorize vectorize)))
+                 (T
+                  (error "The first argument for :Pack should be either of :DEFINE-GLOBAL or TensorRelay"))))))
+
+(defnode (:JIT :Unpack) (RenderOps)
+         "
+```
+X <- unpack(vec, idx)
+```
+"
+         :slots nil
+         :type-relay
+         #'(lambda (id->type node)
+             (assert (= 2 (length (node-reads node))))
+             (let ((vec (gethash (car (node-reads node)) id->type))
+                   (idx (second (node-reads node))))
+               (assert (typep vec 'TensorRelay) () "Cannot unpack from ~a" vec)
+               (assert (and (integerp idx) (>= idx 0)) () "The second argument for :Unpack must be a fixnum greater than zero.")
+               (assert (<= idx (tensor-relay-vectorize vec)) () "Cannot unpack ~ath element from ~ax~a vectorized type." idx (tensor-relay-dtype vec) (tensor-relay-vectorize vec))
+               (list (make-tensor-relay nil nil (tensor-relay-dtype vec) nil :vectorize 0)))))
 
 (defnode (:JIT :SETF) () ;; TODO: Rename SETF -> STORE?
          "

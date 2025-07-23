@@ -71,6 +71,14 @@ Constraints:
   (declare (type (or symbol node) tgt value))
   (emit (make-node :JIT :SETF (list out) (map 'list #'node->id1 (list tgt value)))))
 
+(defun %pack (x indices &key (out (gensym)) (contiguous nil))
+  (declare (type list indices))
+  (emit (make-node :JIT :PACK (list out) (append (list (node->id1 x)) (map 'list #'node->id1 indices)) :contiguous contiguous)))
+
+(defun %unpack (x idx &aux (out (gensym)))
+  (declare (type fixnum idx))
+  (emit (make-node :JIT :Unpack (list out) (list (node->id1 x) idx))))
+
 (defun %empty (dtype) (make-node :Buffer :Allocate (list (gensym)) nil :dtype dtype :nrank 0))
 
 (defun %gid (rank graph range local-size &key (dtype :int64) (id (gensym "G")))
@@ -657,7 +665,7 @@ for (int i=0; i<M; i+=32)
 
 (defun vectorizer (graph body amount)
   (let ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1)))
-    (print body-graph)
+    
     ;; [TODO] Rewrite Aref -> Float4
     ;; [TODO] Add New Float4 Ops for renderer
     (%progn)))
