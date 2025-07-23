@@ -1300,6 +1300,7 @@ for (int i=0; i<32; i+=2)
         (loop for nth upfrom 0 for blueprint in kernels do
           (format t "~ath:~%~%" nth)
           (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) t))
+        
         (print (reverse (poly-cmd-history polyhedral)))
         (format t "~%===========~%")
         (loop for kernel in kernels do

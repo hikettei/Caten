@@ -85,7 +85,6 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
                  (when (>= JIT_DEBUG 2)
                    (print-progress "~a" (getattr x :name))
                    (format t "====> Running Optimizer~%"))
-                 (print-blueprint (getattr x :blueprint) t)
 ;;                 (ecase (ctx:getenv :OPTIMIZE)
 ;;                   (0)
 ;;                   (1 (setf (getattr x :blueprint) (get-optimized-ast auto-scheduler (getattr x :blueprint))))
