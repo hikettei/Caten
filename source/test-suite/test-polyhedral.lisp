@@ -132,7 +132,7 @@
                             (:FOR ((:RANGE ((Var 20 _) (Var 1 _)))
                                    (:FOR ((:RANGE ((Var 30 _) (Var 1 _)))
                                           (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _)))))))))))))
-;; [TODO] Tile
+;; [TODO] TileTest
 
 (deftest test-polyhedral-tile-gpu
   (testing "TileGPU for 2D"
@@ -218,21 +218,47 @@
                  (:EXPR (c))
                  (:EXPR (d))
                  (:IF ((:EXPR (e)) body)))))))))))
-; two thing test
-;; - VECTORIZE+TileGPU TEST
-;; - TileGPU+Size1 Test
+
+(deftest test-polyhedral-parallel
+  (testing "Parallelize outermost loop w/ collapse(2)"
+    (with-polyhedral
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 2 (get-depth (getband gemm 0))))
+         (let ((ij-band (getband gemm 0)))
+           (setf gemm (apply-optimization gemm (make-instance 'Parallel :depth 2 :band ij-band :axis 1)))))
+        ((new-kernels extra-allocs)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          (let ((gemm (car new-kernels)))
+            (ok
+             (bp-match-p
+              gemm
+              (:FOR
+               ((:RANGE ((Var 300 _) (Var 1 _)))
+                (:PROGN
+                  ((:EXPR ((Var 0.0 _))) ;; Accumlation Loader
+                   (:FOR ((:RANGE ((Var 20 _) (Var 1 _))) _)) ;; WMMA
+                   (:Expr (_)) ;; Store Function
+                   ))))))))))
+  ;; TODO test w/ tile, vectorize
+  )
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
 ;; Needed for finding an optimal kernel FINISH by (07/27)
 ;; - [x] Reschedule
 ;; - [x] Interchange
-;; - [ ] Tile
-;; - [ ] TileGPU
+;; - [x] Tile
+;; - [x] TileGPU
+;; - [ ] Parallel
 ;; - [ ] Vectorize
+;; - [ ] Unroll
 ;; - [ ] TensorCore
-;; - [ ] Collapse
 ;; - [ ] SplitReduce
+;; - [ ] 必要か微妙: Collapse
+;; - [ ] 全部探索空間に入れてBEAM
 
+;; - [ ] TODO: Insert Markする時は先にTileしてから！
 ;; - [ ] We Want To Have:
 ;;   - [ ] TileGPU as ISL Tile (Insert IF!!) TileGPU+Unrollができるようにして，スレッド数を削減したい。
 ;;     - [ ] Isolate Option? 

@@ -970,6 +970,14 @@ Returns T if the current schedule does not break any dependences in dep."
 (defmethod verify-polyhedral-ir ((pg Polyhedral-IR)) (check-legality (poly-schedule pg) (poly-dependencies pg)))
 ;; ~~ Search Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: This is hackable by users (as intended)
+;; DefaultSpace
+;; - [x] Reschedule  (Solves ILP and then find multiple candidates for an optimal schedule)
+;; - [x] Interchange (Changes the order of loops in the coincident band)
+;; - [x] Tile        (Tiles the band)
+;; - [x] TileGPU     (Tiles the coincident band for GPU, mapped w/ blockIdx/threadIdx, inner band loops are automatically collapsed) 
+;; - [ ] Parallel    (For CPU, collapses outer n loops and attributes parallelize)
+;; - [ ] Coalesce    (Coalesces the coincident bands, basically Parallel w/o inserting marks)
+;; - [ ] 
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
