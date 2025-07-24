@@ -359,7 +359,7 @@ Constraints:
     (mapc #'explore (graph-outputs graph))
     graph))
 
-(defun ast-collapse-expr-tree (graph &aux (cached (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph)))))
+(defun ast-collapse-expr-tree (graph &aux (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph)))))
   "ast-collapse-expr-tree decomposes all EXPRs in the graph as:
 ```
 A <- EXPR(a+b*c)
@@ -371,23 +371,54 @@ L <- EXPR(K+a)
 A <- L
 ```
 "
-  (declare (type Graph graph))
+  (declare (type FastGraph graph))
   (assert (= 1 (length (graph-outputs graph))))
   (assert (and toplevel (or (eql (node-type toplevel) :PROGN))) () "The ASTGraph should always start with :PROGN")
   ;; [TODO] ここでCache機構を導入し，共通のEXPRは同じvisitedへ参照させる。
   ;; 要件をもっと簡潔に言えば:
   ;; 1. EXPRをcontext-domainへ移動する
-  ;; 2. id nodeのread参照をdestinationのEXPRにする。
+  ;; 2. id nodeのread参照を一番SimpleなscopesのEXPRにする。
   ;; 3. 共通の計算があったら，そっちに移動する
-  (labels ((explore (id &optional (destination nil) &aux (node (id->value graph id)))
-             
-             ))
-    (explore (car (graph-outputs graph)) nil)))
+  ;; progn readsにpushする == 移動する
+  (labels ((explore (id &key (expr-subgraph-p nil) (scope) &aux (node (id->value graph id)))
+             (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
+             (setf (gethash (node-id node) visited) t)
+             (case (node-type node)
+               (:PROGN
+                 (map 'list #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope node)) (node-reads node))) ;; Bodies
+               (:EXPR
+                ;; EXPR -> EXPR ==> STOP
+                ;; 条件を満たす最もシンプルな場所へ移動する
+                (when expr-subgraph-p (return-from explore nil))
+                (explore (car (node-reads node)) :expr-subgraph-p t :scope scope))
+               ((:IF :FOR) (mapc #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope scope)) (node-reads node)))
+               (otherwise
+                ;; EXPRを経ずに到達したノードは無視でOK?
+                (when expr-subgraph-p
+                  ;; Rewrite the node as EXPR
+                  (assert (= 1 (length (node-writes node))))
+                  ;; RANGE, :LOAD, :ALLOCATE
+                  (when (null (find (node-type node) `(:DEFINE-GLOBAL :ALLOCATE :RANGE :LOAD :BIND :SETF))) ;; 0 FLOPs
+                    (assert scope () "The ASTGraph should start with :PROGN, rewrite graph w/ ast-ensure-progn first!~%~a")
+                    (let ((copied (copy-node node)) (tmpid (gensym)) (dst (car (node-writes node))))
+                      (setf (node-id copied) (gensym "NID")
+                            (node-writes copied) (list tmpid))
+                      (insert-nodes graph (list copied))
+                      (insert-nodes graph (list (%expr tmpid :out dst)))
+                      (push dst (node-reads scope))
+                      (print "LOG")
+                      (print node)
+                      (print scope)))
+                  (map 'list #'(lambda (x) (explore x :expr-subgraph-p t :scope scope)) (node-reads node)))))))
+    (explore (car (graph-outputs graph)))))
 
 (defun expr-simplify-ast (graph)
+  ;; Renderingする直前のBlueprintにしか適用できない。
+  ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
-;  (ast-collapse-expr-tree graph)
-  ;; (ast-merge-singleton-exprs graph)
+  (ast-collapse-expr-tree graph)
+  ;; ここでSimplifyする。
+  ;; (ast-merge-singleton-exprs graph) userがPROGNのなんかのノードのEXPR -> PROGNから消す, LOAD, RANGEは無条件で消す
   ;; (ast-expr-tpsort graph)
   ;; (simplify-ast graph)
   )
