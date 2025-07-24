@@ -495,7 +495,7 @@ for (int i=0; i<10; i++) {
                  (when r (return-from id->node (setf (gethash id cache) (cdr r)))))
                ;; ID is node_id
                (let ((node (find id (graph-nodes graph) :key #'node-id)))
-                 (when node (assert (eql (node-type node) :EXPR)) (return-from id->node (setf (gethash id cache) node))))
+                 (when node (return-from id->node (setf (gethash id cache) node))))
                ;; ID is value
                (let ((node (id->value graph id)))
                  (when node (assert (eql (node-type node) :EXPR)) (return-from id->node (setf (gethash id cache) node))))
@@ -520,21 +520,24 @@ for (int i=0; i<10; i++) {
                (let ((c (id->value graph (car (node-reads expr))))
                      (seen (make-hash-table)))
                  (assert (and (eql (node-type expr) :EXPR) c))
+                 (let ((setf (find :SETF (id->users graph (car (node-writes expr))) :key #'node-type)))
+                   (when (and setf (eql (car (node-reads setf)) (car (node-writes expr))))
+                     (let ((prgn (find :PROGN (id->users graph (car (node-writes expr))) :key #'node-type)))
+                       (assert prgn) ;; Insert the progn id which expr belongs to fix the position if the node is acc
+                       (push (node-id prgn) ids))))
                  (labels ((e (id &aux (node (id->value graph id)))
                             (when (or (null node) (gethash (node-id node) seen)) (return-from e))
                             (setf (gethash (node-id node) seen) t)
-                            ;; [TODO]
-                            ;; - dot = 0.0があったとして，Reductionの意味のScalarがあるから...
                             (case (node-type node)
                               (:EXPR (push id ids))
                               (:Range (push (getattr node :idx) ids))
                               (:BIND (push (getattr node :value) ids)) ;; [TODO] BIND is valid?
-                              (:Load (when (find (getattr node :value) range-ids :key #'car)
-                                       (push (getattr node :value) ids)))
+                              (:Load
+                               (when (find (getattr node :value) range-ids :key #'car)
+                                 (push (getattr node :value) ids)))
                               (otherwise (mapc #'e (node-reads node))))))
                    (e (car (node-reads expr))))
                  (remove-duplicates ids))))
-
       (loop for node in (graph-nodes graph) do
         (case (node-type node)
           (:FOR
@@ -551,22 +554,39 @@ for (int i=0; i<10; i++) {
              (dolist (r reads)
                (when (null (find (node-id r) (gethash (node-id r) out-degree) :key #'node-id))
                  (push node (gethash (node-id r) out-degree))))))))
-      (labels ((explore (id &aux (node (id->value graph id)))
+      (labels ((explore (id &key (progn nil) &aux (node (id->value graph id)))
                  (when (or (null node) (gethash (node-id node) seen))
                    (return-from explore))
                  (setf (gethash (node-id node) seen) t)
                  ;; Maybe introduce scope of range_id
-                 (print (get-ready-for-insert-exprs))
                  (case (node-type node)
                    (:FOR
-                    )
-                   (:IF
-                    )
-                   (:EXPR) ;; Leaf
+                    (let ((range (id->value graph (car (node-reads node)))))
+                      (maphash
+                       #'(lambda (k v)
+                           (setf (gethash k in-degree) (remove (node-id range) v :key #'node-id)))
+                       in-degree)
+                      (mapc #'explore (node-reads node))))
+                   (:IF (error "TODO"))
+                   (:EXPR
+                    (assert progn)
+                    (dolist (adj (gethash (node-id node) out-degree))
+                      (setf (gethash (node-id adj) in-degree) (remove (node-id node) (gethash (node-id adj) in-degree) :key #'node-id)))
+                    (let ((nodes (get-ready-for-insert-exprs))
+                          (pos (position (car (node-writes node)) (node-reads progn))))
+;;                      (print pos)
+;;                      (print progn)
+                      (dolist (n nodes) (expr-relocate n progn (or pos 0)))))
                    (:PROGN
-                     ;; Insert Trigger
-                     ))))
-        (mapc #'explore (graph-outputs graph))))))
+                     (let ((nodes (get-ready-for-insert-exprs)))
+                       (dolist (n nodes) (expr-relocate n node 0)))
+                     (maphash
+                      #'(lambda (k v)
+                          (setf (gethash k in-degree) (remove (node-id node) v :key #'node-id)))
+                      in-degree)
+                     (mapc #'(lambda (x) (explore x :progn node)) (node-reads node))))))
+        ;(mapc #'explore (graph-outputs graph))
+        ))))
 
 (defun ast-rewrite-ssa-style-as-tree (graph)
   (declare (type FastGraph graph))
@@ -586,7 +606,7 @@ for (int i=0; i<10; i++) {
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
   (ast-rewrite-expr-as-ssa-style graph)
   (ast-ensure-expr-is-singleton graph) ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
-  ;; (ast-tpsort-schedule graph)
+  (ast-tpsort-schedule graph)
   ;; <--- Accumlatorをどう入れ替えるかが難しい！Skip
   ;;
   ;; DOT = 0.0の扱いがとってもめんどくさい！！
@@ -595,8 +615,7 @@ for (int i=0; i<10; i++) {
   ;; - _gid0のやつが_gid1のループに入ってる
   ;; - DOT = 0.0の扱いの問題をちゃんと考えた上で，適切なTPSortをしてあげる必要がある。
   (ast-rewrite-ssa-style-as-tree graph)
-  (simplify-ast graph)
-  )
+  (simplify-ast graph))
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
