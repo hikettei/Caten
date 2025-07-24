@@ -362,7 +362,10 @@ Constraints:
     (mapc #'explore (graph-outputs graph))
     graph))
 
-(defun ast-rewrite-expr-as-ssa-style (graph &aux (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph)))))
+(defun ast-rewrite-expr-as-ssa-style (graph &key (simplify-load nil)
+                                      &aux
+                                        (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph))))
+                                        (whitelist `(:DEFINE-GLOBAL :ALLOCATE :RANGE :LOAD :BIND :SETF)))
   "ast-rewrite-expr-as-ssa-style decomposes all EXPRs in the graph as:
 ```
 A <- EXPR(a+b*c)
@@ -375,6 +378,7 @@ A <- L
 ```
 "
   (declare (type FastGraph graph))
+  (when (not simplify-load) (push :AREF whitelist))
   (assert (= 1 (length (graph-outputs graph))))
   (assert (and toplevel (or (eql (node-type toplevel) :PROGN))) () "The ASTGraph should always start with :PROGN")
   (labels ((explore (id &key (expr-subgraph-p nil) (scope) &aux (node (id->value graph id)))
@@ -392,8 +396,7 @@ A <- L
                 (when expr-subgraph-p
                   ;; Rewrite the node as EXPR
                   (assert (= 1 (length (node-writes node))))
-                  ;; RANGE, :LOAD, :ALLOCATE
-                  (when (null (find (node-type node) `(:DEFINE-GLOBAL :ALLOCATE :RANGE :LOAD :BIND :SETF))) ;; 0 FLOPs
+                  (when (null (find (node-type node) whitelist)) ;; 0 FLOPs, they are allowed to duplicated
                     (assert scope () "The ASTGraph should start with :PROGN, rewrite graph w/ ast-ensure-progn first!~%~a")
                     (let ((copied (copy-node node)) (tmpid (gensym)) (dst (car (node-writes node))))
                       (setf (node-id copied) (gensym "NID")
@@ -481,19 +484,24 @@ for (int i=0; i<10; i++) {
 }
 ```
 "
-  (declare (type FastGraph graph) (optimize (speed 3)))
+  (declare (type FastGraph graph))
   (loop for node in (graph-nodes graph)
         if (eql (node-type node) :RANGE) do (push (getattr node :idx) range-ids))
   (labels ((expr-reads (expr &aux (ids))
+             (assert (and expr (eql (node-type expr) :EXPR)))
              ;; EXPR-reads: A list of {RANGE_ID, EXPR_ID}
              (let ((c (id->value graph (car (node-reads expr))))
                    (seen (make-hash-table)))
                (assert (and (eql (node-type expr) :EXPR) c))
                (labels ((e (id &aux (node (id->value graph id)))
+                          (when (or (null node) (gethash (node-id node) seen)) (return-from e))
+                          (setf (gethash (node-id node) seen) t)
                           (case (node-type node)
                             (:EXPR (push id ids))
                             (:Range (push (getattr node :idx) ids))
-                            (:Load (when (find (getattr node :value) range-ids) (push (getattr node :value) ids)))
+                            (:BIND (push (getattr node :value) ids)) ;; [TODO] BIND is valid?
+                            (:Load (when (find (getattr node :value) range-ids)
+                                     (push (getattr node :value) ids)))
                             (otherwise (mapc #'e (node-reads node))))))
                  (e (car (node-reads expr))))
                (remove-duplicates ids))))
@@ -501,11 +509,15 @@ for (int i=0; i<10; i++) {
       (loop for node in (graph-nodes graph) do
         (case (node-type node)
           (:FOR
-           )
+           (let ((range (id->value graph (car (node-reads node)))))
+             (assert (and range (eql (node-type range) :RANGE)))
+
+             ))
           (:IF
            ;; IfのBodyはIFがないとParseしてはいけない。
            )
           (:EXPR
+           (print (expr-reads node))
            ))))
     
     ;; in-degree/out-degreeを作った上で，
