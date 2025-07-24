@@ -359,8 +359,8 @@ Constraints:
     (mapc #'explore (graph-outputs graph))
     graph))
 
-(defun ast-collapse-expr-tree (graph &aux (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph)))))
-  "ast-collapse-expr-tree decomposes all EXPRs in the graph as:
+(defun ast-rewrite-expr-as-ssa-style (graph &aux (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph)))))
+  "ast-rewrite-expr-as-ssa-style decomposes all EXPRs in the graph as:
 ```
 A <- EXPR(a+b*c)
 ```
@@ -416,7 +416,7 @@ A <- L
   ;; Renderingする直前のBlueprintにしか適用できない。
   ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
-  (ast-collapse-expr-tree graph)
+  (ast-rewrite-expr-as-ssa-style graph)
   ;; ここでSimplifyする。
   ;; (ast-merge-singleton-exprs graph) userがPROGNのなんかのノードのEXPR -> PROGNから消す, LOAD, RANGEは無条件で消す
   ;; (ast-expr-tpsort graph)
