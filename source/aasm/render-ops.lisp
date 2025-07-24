@@ -327,6 +327,70 @@ Constraints:
     (mapc #'explore (graph-outputs graph)))
   ;; [TODO]ここでPrognのChildがEXPRじゃないとError
   graph)
+;; ~~ Expr Domain Simplifier  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Expr Domain Simplifier is responsible for:
+;; - Remove Common Expressions in the blueprint (Node is singleton)
+;; - Relocate EXPR if it is independent of loop
+;; - Topological Sort of PROGN
+;; - Reexprify
+;; [TODO] expr-prognify, tpsort-progn, reexprify ===> 共通項削除！
+;; [TODO] %progn-sortだけ切り出しておく
+;; [TODO] For LoopのIndexを考慮して，早めに切り出しておく。。。
+(defun ast-ensure-progn (graph &aux (visited (make-hash-table)))
+  "Inserts extra PROGN undernearth :FOR and :IF"
+  (labels ((explore (x &aux (node (id->value graph x)))
+             (when (null node) (return-from explore x))
+             (when (gethash (node-id node) visited) (return-from explore (car (node-writes node))))
+             (setf (gethash (node-id node) visited) t)
+             (case (node-type node)
+               ((:FOR :IF)
+                (assert (= 2 (length (node-reads node))))
+                (let* ((new-body-idx (gensym))
+                       (body (id->value graph (second (node-reads node))))
+                       (new-body (when (and body (not (eql :PROGN (node-type body))))
+                                   (with-context (_ (%bind new-body-idx (%progn (explore (second (node-reads node))))))))))
+                  (when new-body
+                    (insert-nodes graph (graph-nodes new-body))
+                    (setf (second (node-reads node)) new-body-idx))
+                  (mapc #'explore (node-reads node))))
+               (otherwise
+                (mapc #'explore (node-reads node))))
+             (car (node-writes node))))
+    (mapc #'explore (graph-outputs graph))
+    graph))
+
+(defun ast-collapse-expr-tree (graph &aux (cached (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph)))))
+  "ast-collapse-expr-tree decomposes all EXPRs in the graph as:
+```
+A <- EXPR(a+b*c)
+```
+==>
+```
+K <- EXPR(b*c)
+L <- EXPR(K+a)
+A <- L
+```
+"
+  (declare (type Graph graph))
+  (assert (= 1 (length (graph-outputs graph))))
+  (assert (and toplevel (or (eql (node-type toplevel) :PROGN))) () "The ASTGraph should always start with :PROGN")
+  ;; [TODO] ここでCache機構を導入し，共通のEXPRは同じvisitedへ参照させる。
+  ;; 要件をもっと簡潔に言えば:
+  ;; 1. EXPRをcontext-domainへ移動する
+  ;; 2. id nodeのread参照をdestinationのEXPRにする。
+  ;; 3. 共通の計算があったら，そっちに移動する
+  (labels ((explore (id &optional (destination nil) &aux (node (id->value graph id)))
+             
+             ))
+    (explore (car (graph-outputs graph)) nil)))
+
+(defun expr-simplify-ast (graph)
+  (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
+;  (ast-collapse-expr-tree graph)
+  ;; (ast-merge-singleton-exprs graph)
+  ;; (ast-expr-tpsort graph)
+  ;; (simplify-ast graph)
+  )
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
@@ -675,35 +739,7 @@ for (int i=0; i<M; i+=32)
     (let ((new-graph (apply #'make-graph (map 'list #'%cpy-node (graph-nodes graph)))))
       (setf (graph-outputs new-graph) (map 'list #'newid (graph-outputs graph)))
       new-graph)))
-;; [TODO] expr-prognify, tpsort-progn, reexprify ===> 共通項削除！
-;; [TODO] %progn-sortだけ切り出しておく
-;; [TODO] For LoopのIndexを考慮して，早めに切り出しておく。。。
-(defun expr-rewrite-flatten (expr-graph &aux (visited (make-hash-table)) (exprs))
-  "
-Rewrites exprs in expr-graph as:
-```
-A <- EXPR(a+b*c)
-```
-==>
-```
-K <- EXPR(b*c)
-L <- EXPR(K+a)
-A <- L
-```
-"
-  (declare (type Graph expr-graph))
-  (assert (= 1 (length (graph-outputs expr-graph))))
-  (let ((toplevel (id->value expr-graph (car (graph-outputs expr-graph)))))
-    (assert (and toplevel (or (eql (node-type toplevel) :PROGN) (eql (node-type toplevel) :EXPR)))))
-  ;; vectorizeはexpr-flattenで実装することを考える
-  (labels ((explore (id &aux (val (id->value expr-graph id)))
-             (when (or (null val) (gethash (node-id val) visited))
-               (return-from explore (when val (gethash (node-id val) visited))))
-             (let ((parents (map 'list #'explore (node-reads val))))
-               
-               )))
-    (mapc #'explore (graph-outputs expr-graph))
-    exprs))
+
 ;; [TODO]
 (defun vectorizer (graph body amount)
   (let* ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1))
