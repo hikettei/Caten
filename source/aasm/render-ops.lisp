@@ -255,16 +255,8 @@ Constraints:
   (mapc #'(lambda (x) (setf (gethash x sink-map) t)) (graph-outputs dg))
   sink-map)
 
-(defun ast-exprify-tensor-graph (base-graph dg sink-map &aux (exprs))
-  (declare (type FastGraph dg) (type hash-table sink-map))
-  (labels ((exprify (id &aux (name (gensym "E")))
-             (let ((expr (%expr name :out id))
-                   (out-node (id->value dg id)))
-               (push expr exprs)
-               (setf (node-writes out-node) (list name))
-               (insert-nodes base-graph (list expr out-node)))))
-    (mapc #'exprify (hash-table-keys sink-map)))
-  ;; Sort Exprs
+(defun ast-tpsort-exprs-order-on-graph (base-graph exprs)
+  "Givens exprs return a valid order"
   (let ((in-degree (make-hash-table)) (out-degree (make-hash-table)) (seen (make-hash-table))
         (queue) (sorted))
     (loop for node in (graph-nodes base-graph)
@@ -290,6 +282,17 @@ Constraints:
       (remhash (node-id expr) out-degree))
     (assert (= (length sorted) (length exprs)))
     (reverse sorted)))
+
+(defun ast-exprify-tensor-graph (base-graph dg sink-map &aux (exprs))
+  (declare (type FastGraph dg) (type hash-table sink-map))
+  (labels ((exprify (id &aux (name (gensym "E")))
+             (let ((expr (%expr name :out id))
+                   (out-node (id->value dg id)))
+               (push expr exprs)
+               (setf (node-writes out-node) (list name))
+               (insert-nodes base-graph (list expr out-node)))))
+    (mapc #'exprify (hash-table-keys sink-map)))
+  (ast-tpsort-exprs-order-on-graph base-graph exprs))
 
 (defun exprify-ast (graph &aux (seen nil))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
@@ -409,6 +412,7 @@ A <- L
                    (seen (make-hash-table)))
                (assert (and (eql (node-type expr) :EXPR) c))
                (labels ((e (id &aux (node (id->value graph id)))
+                          ;; [TODO] 足りないKeyがないか？
                           (when (null node) (return-from e id))
                           (when (gethash (node-id node) seen) (return-from e `(:SEEN ,id)))
                           (setf (gethash (node-id node) seen) t)
@@ -455,13 +459,66 @@ A <- L
         (verify-graph graph)
         (if changed-p (ast-ensure-expr-is-singleton graph) graph)))))
 
+(defun ast-tpsort-schedule (graph &aux (range-ids))
+  "
+Relocates EXPR as soon as its dependencies are satisfied.
+```
+for (int i=0; i<10; i++) {
+  for (int j=0; j<10; j++) {
+    val = 10*i;
+    ...
+  }
+}
+```
+==>
+```
+
+for (int i=0; i<10; i++) {
+  val = 10*i;
+  for (int j=0; j<10; j++) {
+    ...
+  }
+}
+```
+"
+  (declare (type FastGraph graph) (optimize (speed 3)))
+  (loop for node in (graph-nodes graph)
+        if (eql (node-type node) :RANGE) do (push (getattr node :idx) range-ids))
+  (labels ((expr-reads (expr &aux (ids))
+             ;; EXPR-reads: A list of {RANGE_ID, EXPR_ID}
+             (let ((c (id->value graph (car (node-reads expr))))
+                   (seen (make-hash-table)))
+               (assert (and (eql (node-type expr) :EXPR) c))
+               (labels ((e (id &aux (node (id->value graph id)))
+                          (case (node-type node)
+                            (:EXPR (push id ids))
+                            (:Range (push (getattr node :idx) ids))
+                            (:Load (when (find (getattr node :value) range-ids) (push (getattr node :value) ids)))
+                            (otherwise (mapc #'e (node-reads node))))))
+                 (e (car (node-reads expr))))
+               (remove-duplicates ids))))
+    (let ((in-degree (make-hash-table)) (out-degree (make-hash-table)))
+      (loop for node in (graph-nodes graph) do
+        (case (node-type node)
+          (:FOR
+           )
+          (:IF
+           ;; IfのBodyはIFがないとParseしてはいけない。
+           )
+          (:EXPR
+           ))))
+    
+    ;; in-degree/out-degreeを作った上で，
+    ;; EXPRのread/writeもいけるから，要はこれTPSortじゃん
+      ))
+;; [TODO] Sqrt Simplification Pattern
 (defun expr-simplify-ast (graph)
   ;; Renderingする直前のBlueprintにしか適用できない。
   ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
   (ast-rewrite-expr-as-ssa-style graph)
-  (time (ast-ensure-expr-is-singleton graph))
-  ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
+  (ast-ensure-expr-is-singleton graph) ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
+  (ast-tpsort-schedule graph)
   ;; EXPR_TOPOLOGICAL_SORT
   ;; ここで，PROGNの移動を考える
 
