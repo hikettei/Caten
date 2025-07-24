@@ -1,11 +1,11 @@
-(defpackage :caten/common.pprinter
+(defpackage :caten/codegen/pprinter
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/isl)
   (:export #:pprint-isl-schedule #:get-separate-position #:get-separator-up #:get-separator-down
            #:separate/print-info))
 
-(in-package :caten/common.pprinter)
+(in-package :caten/codegen/pprinter)
 
 (defun get-separate-position (string) (or (position #\| string :test #'char=) 0))
 (defun get-separator-up (position)

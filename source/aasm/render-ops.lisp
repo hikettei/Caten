@@ -954,7 +954,7 @@ for (int i=0; i<M; i+=32)
               (%if (%not cnd)
                    (%range (getattr range :idx) nil
                            (node->id body) :range range)))))))
-        (caten/codegen/blueprint:print-blueprint graph t)
+        ;; (caten/codegen/blueprint:print-blueprint graph t)
         graph))))
 
 ;; (defun ast-band-tensorcore ()) <- これはもう手作業で書く。WMMAがなければError

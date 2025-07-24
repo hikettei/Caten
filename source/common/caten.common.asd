@@ -5,7 +5,6 @@
   :depends-on ("uiop" "ieee-floats" "cl-ppcre" "cl-ansi-text")
   :components
   ((:file "logger")
-   (:file "pprinter")
    (:file "documentation")
    (:file "contextvar")
    (:file "tqdm")

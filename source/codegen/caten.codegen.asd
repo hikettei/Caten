@@ -14,6 +14,7 @@
    (:file "realize")
    (:file "blueprint")
    (:file "memory-planner")
+   (:file "pprinter")
    (:file "polyhedral")
    (:file "jit")
    (:file "package")

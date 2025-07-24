@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/polyhedral
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc :caten/common.logger :caten/common.pprinter)
+  (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc :caten/common.logger :caten/codegen/pprinter)
   (:import-from :caten/codegen/renderer #:render-node #:Default-Renderer)
   (:export
    #:realize-node-with-autotuning

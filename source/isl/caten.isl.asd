@@ -4,7 +4,7 @@
   :licence     "MIT"
   :defsystem-depends-on ("cffi-grovel")
   :depends-on ("alexandria" "cffi" "trivial-garbage")
-  :serial t
+;;  :serial t
   :components
   ((:file "package")
    (:file "helpers")

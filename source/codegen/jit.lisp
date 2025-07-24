@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/jit
   (:use :cl :caten/runtime :caten/air :caten/codegen/iteration :caten/codegen/rewriting-rules :caten/codegen/byoc
-        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize :caten/common.pprinter)
+        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize)
   (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
   (:import-from :caten/codegen/memory-planner #:run-memory-planner)
   (:export #:codegen #:jit))
