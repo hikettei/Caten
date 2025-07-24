@@ -675,7 +675,36 @@ for (int i=0; i<M; i+=32)
     (let ((new-graph (apply #'make-graph (map 'list #'%cpy-node (graph-nodes graph)))))
       (setf (graph-outputs new-graph) (map 'list #'newid (graph-outputs graph)))
       new-graph)))
-
+;; [TODO] expr-prognify, tpsort-progn, reexprify ===> 共通項削除！
+;; [TODO] %progn-sortだけ切り出しておく
+;; [TODO] For LoopのIndexを考慮して，早めに切り出しておく。。。
+(defun expr-rewrite-flatten (expr-graph &aux (visited (make-hash-table)) (exprs))
+  "
+Rewrites exprs in expr-graph as:
+```
+A <- EXPR(a+b*c)
+```
+==>
+```
+K <- EXPR(b*c)
+L <- EXPR(K+a)
+A <- L
+```
+"
+  (declare (type Graph expr-graph))
+  (assert (= 1 (length (graph-outputs expr-graph))))
+  (let ((toplevel (id->value expr-graph (car (graph-outputs expr-graph)))))
+    (assert (and toplevel (or (eql (node-type toplevel) :PROGN) (eql (node-type toplevel) :EXPR)))))
+  ;; vectorizeはexpr-flattenで実装することを考える
+  (labels ((explore (id &aux (val (id->value expr-graph id)))
+             (when (or (null val) (gethash (node-id val) visited))
+               (return-from explore (when val (gethash (node-id val) visited))))
+             (let ((parents (map 'list #'explore (node-reads val))))
+               
+               )))
+    (mapc #'explore (graph-outputs expr-graph))
+    exprs))
+;; [TODO]
 (defun vectorizer (graph body amount)
   (let* ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1))
          (loads (loop for node in (graph-nodes body-graph)
@@ -689,11 +718,11 @@ for (int i=0; i<M; i+=32)
     (flet ((new-aref-id (sym &aux (val (id->value new-compute sym)))
              (if (and val (eql (node-type val) :AREF))
                  (or (gethash (node-id val) aref->id) (error "?"))
-                 sym)))
-      (loop for node in (graph-nodes new-compute) do
-        (setf (node-reads node) (map 'list #'new-aref-id (node-reads node)))
-        (emit node)))
-            
+                 sym))))
+;      (loop for node in (graph-nodes new-compute) do
+;        (setf (node-reads node) (map 'list #'new-aref-id (node-reads node)))
+;        (emit node)))
+    (expr-rewrite-flatten new-compute) ;; new-compute can be a progn graph!
     (flet ((aref-unroll-n (aref n)
              )
            (is-contiguous ()
@@ -701,7 +730,10 @@ for (int i=0; i<M; i+=32)
       ;; [TODO] Rewrite Aref -> Float4
       ;; [TODO] Add New Float4 Ops for renderer
       ;; [TODO] Sort body topologically!
-      ;; [TODO] After vectorize, tensorcore, splitreduce, index simplify is REQUIRED
+      ;; [TODO] After vectorize, tensorcore, splitreduce
+      ;; index simplify is REQUIRED (Node is singleton?)
+      ;; - i.e.: ReExprify
+      ;; - need: Topological Sort in Progn, remove duplicated computation, and then construct again ...
       (%progn
        ;; vectorize
        (map
@@ -714,6 +746,7 @@ for (int i=0; i<M; i+=32)
              if (eql :EXPR (node-type node))
                collect node)
        ;; devectorize
+       ;; SETFを検知，accでdevectorizeを挿入
        ))))
 
 (defun ast-band-vectorize (graph band amount &key (rewriter #'vectorizer) (dtype :int64))

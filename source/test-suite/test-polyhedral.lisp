@@ -74,6 +74,40 @@
                      (setf acc (+ acc (* (aref X (+ (* N i) kk)) (aref Y (+ (* K kk) j))))))
                 (setf (aref Z (+ (* K i) j)) acc)))))})
 
+(with-traced-polyhedral ($flash_attention flash_attention *strategy*)
+  @caten.jit () {
+  (defun flash_attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
+                          (Pointer O Type (Batch Head N D))
+                          (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
+    (let ((scale (/ 1.0 (sqrt (scast D :float32))))
+          (outer (* batch n head)))
+      (for b = (Range BATCH 1) do
+           (for h = (Range Head 1) do
+                (for i = (Range N 1) do
+                     (let ((q-base-idx (* D (+ i (* N (+ (* b head) h)))))
+                           (k-base-idx (* D (* N (+ (* b head) h))))
+                           (v-base-idx (* D (* N (+ (* b head) h))))
+                           (o-base-idx (* D (+ i (* N (+ (* b head) h))))))
+                       (with-locals ((row_m (aref M (+ i (* N (+ (* b head) h)))))
+                                     (row_l (aref L (+ i (* N (+ (* b head) h))))))
+                         (for j = (Range N 1) do
+                              (with-locals ((dot 0.0))
+                                (for dth = (Range D 1) do
+                                     (setf dot (+= dot (* (aref Q (+ q-base-idx dth)) (aref K (+ k-base-idx (* D j) dth))))))
+                                (let ((S (* dot scale))
+                                      (new-max (max row_m S))
+                                      (exp-prev (exp (- row_m new-max)))
+                                      (exp-cur (exp (- S new-max)))
+                                      (l-new (+ (* exp-prev row_l) exp-cur)))
+                                  (for dth1 = (Range D 1) do
+                                       (setf (aref O (+ o-base-idx dth1))
+                                             (/ (+ (* exp-cur (aref V (+ v-base-idx (* j D) dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1)))) l-new)))
+                                  (setf row_m new-max
+                                        row_l l-new))))
+                         (setf
+                          (aref M (+ i (* n (+ (* b head) h)))) row_m
+                          (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
+
 (deftest test-polyhedral-reschedule
   (testing "Test Reschedule"
     (with-polyhedral
@@ -293,8 +327,7 @@
          (ok (= 1 (get-depth (getband gemm 1))))
          (let ((k-band (getband gemm 1)))
            (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band k-band :axis 1)))
-           (print gemm)
-           ))
+           (print gemm)))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
           (ok (= 1 (length new-kernels)))
@@ -306,7 +339,15 @@
     )
   ;; [TODO] Softmax Vectorize
   )
+;; [TODO] 別のSuiteに移動
+(deftest test-polyhedral-blueprint-simplify
+  (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5))))
+                    )
+      ((attn-kernels extra-allocs)
+        (assert (= 1 (length attn-kernels)))
+        (let ((kernel (car attn-kernels)))
 
+          (print-blueprint kernel t)))))
 ;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
