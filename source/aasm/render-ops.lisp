@@ -630,8 +630,7 @@ A <- L
           (let ((ctx (make-%tctx)))
             (assert (= 1 (length (graph-outputs graph))))
             (explore ctx (car (graph-outputs graph)))
-            (print stashed)
-            ;(assert (null stashed))
+            (assert (null stashed))
             graph))))))
 
 (defun expr-simplify-ast (graph)
@@ -646,10 +645,8 @@ A <- L
   ;; [TODO] Sqrt Simplification Pattern
   ;; (softmax for minimal repro)
   ;; - _gid0のやつが_gid1のループに入ってる
-  ;;(ast-rewrite-ssa-style-as-tree graph)
-  ;; ここでBody Topological Sortを挟む
-  ;;(simplify-ast graph)
-  )
+  (ast-rewrite-ssa-style-as-tree graph)
+  (simplify-ast graph))
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
