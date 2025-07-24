@@ -496,6 +496,7 @@ A <- L
       (setf (gethash (car (node-reads n)) id-cache) t)))
   (verify-graph graph)
   (multiple-value-bind (node-to-loops all-loops exprs) (%make-parse-ctx graph)
+    (declare (ignore all-loops))
     (labels ((expr-depend-vars (expr &aux (seen (make-hash-table)) (ids))
                (assert (and expr (eql (node-type expr) :EXPR)))
                ;; [TODO] cache it!
@@ -632,20 +633,16 @@ A <- L
             (assert (null stashed))
             graph))))))
 
-(defun expr-simplify-ast (graph)
-  ;; Renderingする直前のBlueprintにしか適用できない。
-  ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
+(defun ast-apply-cse (graph)
+  "Applies CSE (Common Subexpression Elimination) to the given graph.
+Note that 99% of our transformation does not expect cse applied graph,
+so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
-  (ast-rewrite-expr-as-ssa-style graph)
-  (ast-ensure-expr-is-singleton graph) ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
-  (ast-fixup-scope graph)
-  ;; TODO: ここでProgn内部をTpSort
-  ;; Fix Scope
-  ;; [TODO] Sqrt Simplification Pattern
-  ;; (softmax for minimal repro)
-  ;; - _gid0のやつが_gid1のループに入ってる
-  (ast-rewrite-ssa-style-as-tree graph)
-  (simplify-ast graph))
+  (ast-rewrite-expr-as-ssa-style graph) ;; Rewrite graph as ssa style first
+  (ast-ensure-expr-is-singleton graph) ;; ensure all expr is singleton
+  (ast-fixup-scope graph) ;; rewrite and fixup scopes, sort topologically
+  (ast-rewrite-ssa-style-as-tree graph) ;; and then construct tree-style expr again
+  (simplify-ast graph)) ;; simplify and that's it!
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
