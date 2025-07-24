@@ -391,7 +391,7 @@ A <- L
                 ;; EXPR -> EXPR ==> STOP
                 (when expr-subgraph-p (return-from explore nil))
                 (explore (car (node-reads node)) :expr-subgraph-p t :scope scope))
-               ((:IF :FOR) (mapc #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope scope)) (node-reads node)))
+               ((:IF :FOR) (mapc #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope scope)) (cdr (node-reads node))))
                (otherwise
                 (when expr-subgraph-p
                   ;; Rewrite the node as EXPR
@@ -420,6 +420,8 @@ A <- L
                           (when (gethash (node-id node) seen) (return-from e `(:SEEN ,id)))
                           (setf (gethash (node-id node) seen) t)
                           (case (node-type node)
+                            ;; [TODO] Float4 Support etc...
+                            (:SPACE `(:SPACE ,(getattr node :level) ,(getattr node :rank) ,(getattr node :dtype)))
                             (:EXPR
                              (let ((id (gethash (node-id node) rewrite-map)))
                                `(:EXPR ,(if id (node-id id) (node-id node)))))
@@ -596,7 +598,7 @@ A <- L
                      (:IF
                       ;; set condition
                       (setf (gethash (node-id node) (%tctx-conditions ctx)) t)
-                      (mapc #'(lambda (x) (explore ctx x)) (node-reads node))
+                      (mapc #'(lambda (x) (explore ctx x)) (cdr (node-reads node)))
                       (setf (gethash (node-id node) (%tctx-conditions ctx)) nil))
                      (:PROGN
                        ;; Insert ready-for-insert exprs first until it saturates

@@ -84,7 +84,8 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph kernel)))
           (when (= JIT_DEBUG 1) (print-info "[CODEGEN] | Rendering with ~a" renderer))
           (mapc
-           #'(lambda (x) (when (eql (node-type x) :KERNEL) (caten/codegen/byoc:%render-kernel renderer (getattr x :kernel-info))))
+           #'(lambda (x)
+               (when (eql (node-type x) :KERNEL)  (caten/codegen/byoc:%render-kernel renderer (getattr x :kernel-info))))
            (graph-nodes runtime-graph))
           (when (= (ctx:getenv :BEAM) 0) ;; If BEAM >= 1, the blueprint is further optimized and then compiled.
             (when (= JIT_DEBUG 1) (print-info "[CODEGEN] | Compiling with ~a" renderer))

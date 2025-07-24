@@ -762,7 +762,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        pctx (poly-ctx polyhedral)
        (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast kernel)))
-    (values (apply-directives new-bp) extra-allocs)))
+    (values (ast-apply-cse (apply-directives new-bp)) extra-allocs)))
 
 (defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))

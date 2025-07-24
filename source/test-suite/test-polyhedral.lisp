@@ -346,7 +346,6 @@
       ((attn-kernels extra-allocs)
         (assert (= 1 (length attn-kernels)))
         (let ((kernel (car attn-kernels)))
-          (caten/aasm::expr-simplify-ast kernel)
           (print-blueprint kernel t)))))
 ;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
