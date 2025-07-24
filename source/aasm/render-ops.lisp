@@ -374,12 +374,6 @@ A <- L
   (declare (type FastGraph graph))
   (assert (= 1 (length (graph-outputs graph))))
   (assert (and toplevel (or (eql (node-type toplevel) :PROGN))) () "The ASTGraph should always start with :PROGN")
-  ;; [TODO] ここでCache機構を導入し，共通のEXPRは同じvisitedへ参照させる。
-  ;; 要件をもっと簡潔に言えば:
-  ;; 1. EXPRをcontext-domainへ移動する
-  ;; 2. id nodeのread参照を一番SimpleなscopesのEXPRにする。
-  ;; 3. 共通の計算があったら，そっちに移動する
-  ;; progn readsにpushする == 移動する
   (labels ((explore (id &key (expr-subgraph-p nil) (scope) &aux (node (id->value graph id)))
              (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
              (setf (gethash (node-id node) visited) t)
@@ -388,12 +382,10 @@ A <- L
                  (map 'list #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope node)) (node-reads node))) ;; Bodies
                (:EXPR
                 ;; EXPR -> EXPR ==> STOP
-                ;; 条件を満たす最もシンプルな場所へ移動する
                 (when expr-subgraph-p (return-from explore nil))
                 (explore (car (node-reads node)) :expr-subgraph-p t :scope scope))
                ((:IF :FOR) (mapc #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope scope)) (node-reads node)))
                (otherwise
-                ;; EXPRを経ずに到達したノードは無視でOK?
                 (when expr-subgraph-p
                   ;; Rewrite the node as EXPR
                   (assert (= 1 (length (node-writes node))))
@@ -405,19 +397,75 @@ A <- L
                             (node-writes copied) (list tmpid))
                       (insert-nodes graph (list copied))
                       (insert-nodes graph (list (%expr tmpid :out dst)))
-                      (push dst (node-reads scope))
-                      (print "LOG")
-                      (print node)
-                      (print scope)))
+                      (push dst (node-reads scope))))
                   (map 'list #'(lambda (x) (explore x :expr-subgraph-p t :scope scope)) (node-reads node)))))))
     (explore (car (graph-outputs graph)))))
+
+(defun ast-ensure-expr-is-singleton (graph &aux (visited (make-hash-table)) (cached) (rewrite-map (make-hash-table)) (ecache (make-hash-table)))
+  (declare (type FastGraph graph) (optimize (speed 3)))
+  (labels ((expr-search-key (expr)
+             (when (gethash (node-id expr) ecache) (return-from expr-search-key (gethash (node-id expr) ecache)))
+             (let ((c (id->value graph (car (node-reads expr))))
+                   (seen (make-hash-table)))
+               (assert (and (eql (node-type expr) :EXPR) c))
+               (labels ((e (id &aux (node (id->value graph id)))
+                          (when (null node) (return-from e id))
+                          (when (gethash (node-id node) seen) (return-from e `(:SEEN ,id)))
+                          (setf (gethash (node-id node) seen) t)
+                          (case (node-type node)
+                            (:EXPR
+                             (let ((id (gethash (node-id node) rewrite-map)))
+                               `(:EXPR ,(if id (node-id id) (node-id node)))))
+                            (:BIND `(:BIND ,(e (car (node-reads node))) :as ,(getattr node :value)))
+                            (:DEFINE-GLOBAL `(:DEFINE-GLOBAL ,(car (node-writes node)) ,(getattr node :pointer-p)))
+                            (:ALLOCATE `(:ALLOCATE ,@(map 'list #'e (node-reads node)) :dtype ,(getattr node :dtype)))
+                            (:LOAD
+                             (let ((alloc (id->value graph (car (node-reads node)))))
+                               (if (and (eql (node-type alloc) :ALLOCATE) (null (node-reads alloc)))
+                                   `(:Var ,(getattr node :value) ,(getattr alloc :dtype))
+                                   `(:LOAD ,(e (car (node-reads node))) :value ,(getattr node :value)))))
+                            (:RANGE `(:Var ,(getattr node :idx) ,(getattr node :dtype)))
+                            (otherwise `(,(node-type node) (,@(map 'list #'e (node-reads node))))))))
+                 (setf (gethash (node-id expr) ecache) (e (car (node-writes c)))))))
+           (expr-eq (a b &aux (as (expr-search-key a)) (bs (expr-search-key b)))
+             ;; TODO:
+             ;; - :ADD :MULはInterchangeできる。
+             ;; ^ 一意に定まるようにSortする
+             (equal as bs)))
+    (loop for node in (reverse (tpsort-graph graph))
+          if (eql (node-type node) :EXPR) do
+            (let ((cache (find node cached :test #'expr-eq)))
+              (if cache
+                  (setf (gethash (node-id node) rewrite-map) cache)
+                  (push node cached)))) ;; first seen
+    (let ((newid-cache (make-hash-table)) (changed-p nil))
+      (flet ((newid (x)
+               (when (gethash x newid-cache) (return-from newid (gethash x newid-cache)))
+               (let ((val (id->value graph x)))
+                 (when (null val) (return-from newid (setf (gethash x newid-cache) x)))
+                 (when (not (eql (node-type val) :EXPR)) (return-from newid (setf (gethash x newid-cache) x)))
+                 (let ((replacements (gethash (node-id val) rewrite-map)))
+                   (if replacements
+                       (progn
+                         (setf changed-p t)
+                         (setf (gethash x newid-cache) (car (node-writes replacements))))
+                       (setf (gethash x newid-cache) x))))))
+        (loop for node in (graph-nodes graph) do
+          (setf (node-reads node) (map 'list #'newid (node-reads node))))
+        (verify-graph graph)
+        (if changed-p (ast-ensure-expr-is-singleton graph) graph)))))
 
 (defun expr-simplify-ast (graph)
   ;; Renderingする直前のBlueprintにしか適用できない。
   ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
   (ast-rewrite-expr-as-ssa-style graph)
-  ;; ここでSimplifyする。
+  (time (ast-ensure-expr-is-singleton graph))
+  ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
+  ;; EXPR_TOPOLOGICAL_SORT
+  ;; ここで，PROGNの移動を考える
+
+  ;; Simplifyする
   ;; (ast-merge-singleton-exprs graph) userがPROGNのなんかのノードのEXPR -> PROGNから消す, LOAD, RANGEは無条件で消す
   ;; (ast-expr-tpsort graph)
   ;; (simplify-ast graph)
