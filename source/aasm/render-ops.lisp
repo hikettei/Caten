@@ -532,8 +532,7 @@ A <- L
                (when (not (id-is-reduction-p id))
                  (let ((maybe-setf (id->value graph (car (node-reads node)))))
                    (when (eql :SETF (node-type maybe-setf))
-                     (PRINT "USED")
-                     (return-from expr-schedule-read (print (expr-schedule-read current-dom (car (node-reads maybe-setf))))))))
+                     (return-from expr-schedule-read (expr-schedule-read current-dom (car (node-reads maybe-setf)))))))
                (let* ((sched (expr-schedule-write node)) ;; back to the definition
                       (dom-ids (map 'list #'(lambda (x) (getf x :idx)) (get-loops (gethash (node-id current-dom) node-to-loops))))
                       (aft (loop for id in (getf sched :should-unseen) unless (find id dom-ids) collect id)))
@@ -561,7 +560,7 @@ A <- L
                   (every #'(lambda (x) (gethash x (%tctx-i+1 ctx))) aft))))
              (ctx-satisfies-cnd-p (ctx cnd)
                (and
-                (print (every #'(lambda (x) (satisfy-sched-p ctx x)) (getf cnd :schedule)))
+                (every #'(lambda (x) (satisfy-sched-p ctx x)) (getf cnd :schedule))
                 (every #'(lambda (x) (find x (%tctx-variables ctx))) (getf cnd :reads)) ;; all read vars are defined
                 (every #'(lambda (x) (gethash x (%tctx-conditions ctx))) (getf cnd :conditions)))))
       (dolist (expr exprs) ;; exprs is tpsorted
