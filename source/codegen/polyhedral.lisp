@@ -233,7 +233,7 @@
   (exprs nil :type list)
   (scal->access (make-hash-table) :type hash-table))
 
-(defun make-scop-ctx-from-blueprint (graph)
+(defun make-scop-ctx-from-blueprint (graph &key (allow-if nil))
   "Traverse the blueprint graph to extract loop structure"
   (let ((ctx (make-ctx)) (visited (make-hash-table)))
     (labels ((traverse (node)
@@ -249,7 +249,7 @@
                          (step (when range-node (cadr (node-reads range-node))))
                          (mark (getattr node :mark :allow-undefined t)))
                     (when idx
-                      (let ((loop-info (list :idx idx :size size :step step :mark (or mark :noopt) :for-node node :range-node range-node)))
+                      (let ((loop-info (list :type :loop :idx idx :size size :step step :mark (or mark :noopt) :for-node node :range-node range-node)))
                         (push loop-info (ctx-all-loops ctx))
                         (push loop-info (ctx-stack ctx))))
                     ;; Traverse body
@@ -257,7 +257,10 @@
                     ;; Pop loop from stack after processing body
                     (when idx (pop (ctx-stack ctx)))))
                  (:PROGN (dolist (child-id (node-reads node)) (traverse (id->value graph child-id))))
-                 (:IF (when (>= (length (node-reads node)) 2) (traverse (id->value graph (second (node-reads node))))))
+                 (:IF
+                  (when allow-if (push (list :type :if :if-node node) (ctx-stack ctx)))
+                  (traverse (id->value graph (second (node-reads node))))
+                  (when allow-if (pop (ctx-stack ctx))))
                  (:EXPR (push node (ctx-exprs ctx)) (setf (gethash (node-id node) (ctx-node-to-loops ctx)) (copy-list (ctx-stack ctx)))))))
       ;; Start traversal from output nodes or all nodes
       (assert (= 1 (length (graph-outputs graph))))

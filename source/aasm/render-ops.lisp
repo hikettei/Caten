@@ -462,131 +462,12 @@ A <- L
         (verify-graph graph)
         (if changed-p (ast-ensure-expr-is-singleton graph) graph)))))
 
-(defun ast-tpsort-schedule (graph &aux (range-ids) (cache (make-hash-table)) (placed (make-hash-table)))
-  "
-Relocates EXPR as soon as its dependencies are satisfied.
-```
-for (int i=0; i<10; i++) {
-  for (int j=0; j<10; j++) {
-    val = 10*i;
-    ...
-  }
-}
-```
-==>
-```
-
-for (int i=0; i<10; i++) {
-  val = 10*i;
-  for (int j=0; j<10; j++) {
-    ...
-  }
-}
-```
-"
-  (declare (type FastGraph graph))
-  (loop for node in (graph-nodes graph)
-        if (eql (node-type node) :RANGE) do (push (cons (getattr node :idx) node) range-ids))
-  (let ((in-degree (make-hash-table)) (out-degree (make-hash-table)) (seen (make-hash-table)))
-    (labels ((id->node (id)
-               (when (gethash id cache) (return-from id->node (gethash id cache)))
-               ;; ID is range_id
-               (let ((r (find id range-ids :key #'car)))
-                 (when r (return-from id->node (setf (gethash id cache) (cdr r)))))
-               ;; ID is node_id
-               (let ((node (find id (graph-nodes graph) :key #'node-id)))
-                 (when node (return-from id->node (setf (gethash id cache) node))))
-               ;; ID is value
-               (let ((node (id->value graph id)))
-                 (when node (assert (eql (node-type node) :EXPR)) (return-from id->node (setf (gethash id cache) node))))
-               (error "The ID ~a is not defined in the graph (during tpsort ...)" id))
-             (get-ready-for-insert-exprs ()
-               (loop for node in (graph-nodes graph)
-                     if (and (eql (node-type node) :EXPR) (null (gethash (node-id node) in-degree)) (null (gethash (node-id node) placed)))
-                       collect node))
-             (expr-relocate (expr progn n)
-               ;; 1. Remove all expr use in progn
-               (assert (null (gethash (node-id expr) in-degree)))
-               (dolist (o (gethash (node-id expr) out-degree))
-                 (setf (gethash (node-id o) out-degree) (remove (node-id expr) (gethash (node-id o) out-degree) :key #'node-id)))
-               (setf (gethash (node-id expr) placed) t)
-               (loop for node in (graph-nodes graph)
-                     if (eql (node-type node) :PROGN) do
-                       (setf (node-reads node) (loop for r in (node-reads node) if (not (eql r (car (node-writes expr)))) collect r)))
-               (setf (node-reads progn) (append (subseq (node-reads progn) 0 n) (node-writes expr) (subseq (node-reads progn) n))))
-             (expr-reads (expr &aux (ids))
-               (assert (and expr (eql (node-type expr) :EXPR)))
-               ;; EXPR-reads: A list of {RANGE_ID, EXPR_ID}
-               (let ((c (id->value graph (car (node-reads expr))))
-                     (seen (make-hash-table)))
-                 (assert (and (eql (node-type expr) :EXPR) c))
-                 (let ((setf (find :SETF (id->users graph (car (node-writes expr))) :key #'node-type)))
-                   (when (and setf (eql (car (node-reads setf)) (car (node-writes expr))))
-                     (let ((prgn (find :PROGN (id->users graph (car (node-writes expr))) :key #'node-type)))
-                       (assert prgn) ;; Insert the progn id which expr belongs to fix the position if the node is acc
-                       (push (node-id prgn) ids))))
-                 (labels ((e (id &aux (node (id->value graph id)))
-                            (when (or (null node) (gethash (node-id node) seen)) (return-from e))
-                            (setf (gethash (node-id node) seen) t)
-                            (case (node-type node)
-                              (:EXPR (push id ids))
-                              (:Range (push (getattr node :idx) ids))
-                              (:BIND (push (getattr node :value) ids)) ;; [TODO] BIND is valid?
-                              (:Load
-                               (when (find (getattr node :value) range-ids :key #'car)
-                                 (push (getattr node :value) ids)))
-                              (otherwise (mapc #'e (node-reads node))))))
-                   (e (car (node-reads expr))))
-                 (remove-duplicates ids))))
-      (loop for node in (graph-nodes graph) do
-        (case (node-type node)
-          (:FOR
-           (let ((range (id->value graph (car (node-reads node)))))
-             (assert (and range (eql (node-type range) :RANGE)))
-             ))
-          (:IF
-           ;; IfのBodyはIFがないとParseしてはいけない.
-           ;; subgraph作って，readsにIF追加
-           (error "TODO"))
-          (:EXPR
-           (let ((reads (map 'list #'id->node (expr-reads node))))
-             (setf (gethash (node-id node) in-degree) reads)
-             (dolist (r reads)
-               (when (null (find (node-id r) (gethash (node-id r) out-degree) :key #'node-id))
-                 (push node (gethash (node-id r) out-degree))))))))
-      (labels ((explore (id &key (progn nil) &aux (node (id->value graph id)))
-                 (when (or (null node) (gethash (node-id node) seen))
-                   (return-from explore))
-                 (setf (gethash (node-id node) seen) t)
-                 ;; Maybe introduce scope of range_id
-                 (case (node-type node)
-                   (:FOR
-                    (let ((range (id->value graph (car (node-reads node)))))
-                      (maphash
-                       #'(lambda (k v)
-                           (setf (gethash k in-degree) (remove (node-id range) v :key #'node-id)))
-                       in-degree)
-                      (mapc #'explore (node-reads node))))
-                   (:IF (error "TODO"))
-                   (:EXPR
-                    (assert progn)
-                    (dolist (adj (gethash (node-id node) out-degree))
-                      (setf (gethash (node-id adj) in-degree) (remove (node-id node) (gethash (node-id adj) in-degree) :key #'node-id)))
-                    (let ((nodes (get-ready-for-insert-exprs))
-                          (pos (position (car (node-writes node)) (node-reads progn))))
-;;                      (print pos)
-;;                      (print progn)
-                      (dolist (n nodes) (expr-relocate n progn (or pos 0)))))
-                   (:PROGN
-                     (let ((nodes (get-ready-for-insert-exprs)))
-                       (dolist (n nodes) (expr-relocate n node 0)))
-                     (maphash
-                      #'(lambda (k v)
-                          (setf (gethash k in-degree) (remove (node-id node) v :key #'node-id)))
-                      in-degree)
-                     (mapc #'(lambda (x) (explore x :progn node)) (node-reads node))))))
-        ;(mapc #'explore (graph-outputs graph))
-        ))))
+(defun %make-parse-ctx (graph)
+  (let* ((ctx (uiop:symbol-call :caten/codegen/polyhedral :make-scop-ctx-from-blueprint graph :allow-if t))
+         (node-to-loops (uiop:symbol-call :caten/codegen/polyhedral :ctx-node-to-loops ctx))
+         (allloops (uiop:symbol-call :caten/codegen/polyhedral :ctx-all-loops ctx))
+         (exprs (uiop:symbol-call :caten/codegen/polyhedral :ctx-exprs ctx)))
+    (values node-to-loops allloops exprs)))
 
 (defun ast-rewrite-ssa-style-as-tree (graph)
   (declare (type FastGraph graph))
@@ -600,21 +481,132 @@ for (int i=0; i<10; i++) {
                                             if (eql r (car (node-writes node))) collect (car (node-reads node))
                                               else collect r))))))
 
+(defstruct %TCtx
+  (i    (make-hash-table)) ;; S(1~i)
+  (i+1  (make-hash-table)) ;; S(i+1)
+  (conditions (make-hash-table))
+  (variables nil))
+
+(defun ast-tpsort (graph &aux (expr-to-condition (make-hash-table)) (range-ids) (id-cache (make-hash-table)))
+  ;; Create cache in advance
+  (dolist (n (graph-nodes graph))
+    (when (eql (node-type n) :RANGE)
+      (push (getattr n :idx) range-ids))
+    (when (eql (node-type n) :SETF)
+      (setf (gethash (car (node-reads n)) id-cache) t)))
+  (verify-graph graph)
+  (multiple-value-bind (node-to-loops all-loops exprs) (%make-parse-ctx graph)
+    (labels ((expr-depend-vars (expr &aux (seen (make-hash-table)) (ids))
+               (assert (and expr (eql (node-type expr) :EXPR)))
+               (labels ((e (id &aux (node (id->value graph id)))
+                          (when (or (null node) (gethash (node-id node) seen))
+                            (return-from e))
+                          (setf (gethash (node-id node) seen) t)
+                          (case (node-type node)
+                            (:EXPR  (push (car (node-writes node)) ids))
+                            (:RANGE (push (getattr node :idx) ids))
+                            (:LOAD  (when (find (getattr node :value) range-ids) (push (getattr node :value) ids)))
+                            (:BIND  (push (car (node-reads node)) ids) (push (getattr node :value) ids))
+                            (otherwise (mapc #'e (node-reads node))))))
+                 (e (car (node-reads expr))))
+               (remove-duplicates ids))
+             (id-is-reduction-p (id) (gethash id id-cache))      
+             (expr-depends-on (expr)
+               (let ((depends-on (expr-depend-vars expr)))
+                 (list :freeze-p (or (some #'id-is-reduction-p depends-on) (id-is-reduction-p (car (node-writes expr))))
+                       :reads depends-on
+                       :conditions (loop for scp in (gethash (node-id expr) node-to-loops)
+                                         if (eql (getf scp :type) :if) collect (node-id (getf scp :if-node))))))
+             (ctx-satisfies-cnd-p (ctx cnd)
+               (and
+                (null (getf cnd :freeze-p))
+                (every #'(lambda (x) (find x (%tctx-variables ctx))) (getf cnd :reads)) ;; all read vars are defined
+                (every #'(lambda (x) (gethash x (%tctx-conditions ctx))) (getf cnd :conditions)))))
+      (dolist (expr exprs) ;; exprs is tpsorted
+        (setf (gethash (node-id expr) expr-to-condition) (expr-depends-on expr)))
+      (let ((visited (make-hash-table)) (stashed) (queue (copy-list exprs)))
+        (labels ((get-ready-exprs (ctx)
+                   (loop for expr in queue
+                         if (ctx-satisfies-cnd-p ctx (gethash (node-id expr) expr-to-condition))
+                           do (setf stashed (remove (node-id expr) stashed :key #'node-id))
+                           and collect expr))
+                 (expr-relocate (expr progn-to-relocate position)
+                   (assert (and (eql (node-type expr) :EXPR) (eql (node-type progn-to-relocate) :PROGN)))
+                   (let* ((expr-old-body (id->users graph (car (node-writes expr)))))
+                     ;; (assert (>= (count :PROGN expr-old-body :key #'node-type) 1))
+                     (loop for us in expr-old-body do
+                       (when (eql (node-type us) :PROGN)
+                         (setf (node-reads us) (remove (car (node-writes expr)) (node-reads us)))))
+                     (setf (node-reads progn-to-relocate) (append (subseq (node-reads progn-to-relocate) 0 position) (node-writes expr) (subseq (node-reads progn-to-relocate) position)))))
+                 (explore (ctx id &key (prgn) &aux (node (id->value graph id)))
+                   (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
+                   (setf (gethash (node-id node) visited) t)
+                   (ecase (node-type node)
+                     (:FOR
+                      (let ((range (id->value graph (car (node-reads node)))))
+                        (assert (and range (eql (node-type range) :RANGE)))
+                        (setf (gethash (getattr range :idx) (%tctx-i ctx)) t)
+                        (let ((nctx (copy-%tctx ctx)))
+                          (setf (%tctx-variables nctx) (append (copy-list (%tctx-variables nctx)) (list (getattr range :idx))))
+                          (explore nctx (second (node-reads node))))
+                        (setf (gethash (getattr range :idx) (%tctx-i ctx)) nil
+                              (gethash (getattr range :idx) (%tctx-i+1 ctx)) nil)))
+                     (:IF
+                      ;; set condition
+                      (setf (gethash (node-id node) (%tctx-conditions ctx)) t)
+                      (mapc #'(lambda (x) (explore ctx x)) (node-reads node))
+                      (setf (gethash (node-id node) (%tctx-conditions ctx)) nil))
+                     (:PROGN
+                       (let ((nctx (copy-%tctx ctx)))
+                         ;; variable is the only slot which is not shared during explore
+                         ;; and is removed after :PROGN
+                         (setf (%tctx-variables nctx) (copy-list (%tctx-variables nctx)))
+                         ;; Insert ready-for-insert exprs first until it saturates
+                         (loop with offset = 0 for query = (get-ready-exprs ctx) while query do
+                           (dolist (q query)
+                             (setf queue (remove (node-id q) queue :key #'node-id))
+                             (expr-relocate q node offset) (incf offset)
+                             (push (car (node-writes q)) (%tctx-variables nctx))))
+                         (mapc #'(lambda (x) (explore nctx x :prgn node)) (node-reads node))))
+                     ;; dotを_gid_p4と_gid_p4_1の中間に持ってくるには，やはりSchedule計算が必要
+                     ;; :freeze-pを削除，scheduleで判定を追加すれば，_gid_p4_1がsimplifyされると期待
+                     (:EXPR
+                      (assert prgn)
+                      (let ((cnd (gethash (node-id node) expr-to-condition)))
+                        (if (or (getf cnd :freeze-p) (ctx-satisfies-cnd-p ctx cnd))
+                            (progn
+                              (push (car (node-writes node)) (%tctx-variables ctx))
+                              (setf queue (remove (node-id node) queue :key #'node-id))
+                              (loop with offset = (position (car (node-writes node)) (node-reads prgn))
+                                    for query = (get-ready-exprs ctx) while query do
+                                      (dolist (q query)
+                                        (setf queue (remove (node-id q) queue :key #'node-id))
+                                        (expr-relocate q prgn (1+ offset)) (incf offset)
+                                        (push (car (node-writes q)) (%tctx-variables ctx))))
+                              (return-from explore))
+                            (progn
+                              (setf (node-reads prgn) (remove (car (node-writes node)) (node-reads prgn)))
+                              (push node stashed))))))))
+          (let ((ctx (make-%tctx)))
+            (assert (= 1 (length (graph-outputs graph))))
+            (explore ctx (car (graph-outputs graph)))
+            (assert (null stashed))
+            graph))))))
+
 (defun expr-simplify-ast (graph)
   ;; Renderingする直前のBlueprintにしか適用できない。
   ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
   (ast-rewrite-expr-as-ssa-style graph)
   (ast-ensure-expr-is-singleton graph) ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
-  (ast-tpsort-schedule graph)
-  ;; <--- Accumlatorをどう入れ替えるかが難しい！Skip
-  ;;
-  ;; DOT = 0.0の扱いがとってもめんどくさい！！
+  (ast-tpsort graph)
+  ;; [TODO] ここで，PROGNのSCOPEを修正する or 共通Indexの削除はScopeの関係がOKな時のみ実施するようにする
+  ;; Fix Scope
   ;; [TODO] Sqrt Simplification Pattern
   ;; (softmax for minimal repro)
   ;; - _gid0のやつが_gid1のループに入ってる
-  ;; - DOT = 0.0の扱いの問題をちゃんと考えた上で，適切なTPSortをしてあげる必要がある。
   (ast-rewrite-ssa-style-as-tree graph)
+  ;; ここでBody Topological Sortを挟む
   (simplify-ast graph))
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
