@@ -9,7 +9,7 @@
 (in-caten-toplevel)
 
 (defun psched (poly)
-  (format t "~a~%" (caten/common.pprinter:pprint-isl-schedule (caten/codegen/polyhedral::poly-schedule poly))))
+  (format t "~a~%" (caten/codegen/pprinter:pprint-isl-schedule (caten/codegen/polyhedral::poly-schedule poly))))
 
 (defun getband (poly idx)
   (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
@@ -46,7 +46,7 @@
   `(progn
      ,@body
      (defun ,name1 (&rest args)
-       (ctx:with-contextvar (:BEAM 0)
+       (ctx:with-contextvar (:BEAM 0 :BACKEND "NATIVE")
          (let ((runtime (caten (apply #',name2 args))))
            (assert (= 1 (count :KERNEL (graph-nodes (runtime-graph runtime)) :key #'node-type))
                    ()
@@ -102,7 +102,7 @@
                                   (for dth1 = (Range D 1) do
                                        (setf (aref O (+ o-base-idx dth1))
                                              (/ (+ (* exp-cur (aref V (+ v-base-idx (* j D) dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1)))) l-new)))
-                                  (setf row_m new-max
+                                  (setf row_m new-max ;; もしかしたらここarefかも
                                         row_l l-new))))
                          (setf
                           (aref M (+ i (* n (+ (* b head) h)))) row_m

@@ -462,7 +462,7 @@ A <- L
         (verify-graph graph)
         (if changed-p (ast-ensure-expr-is-singleton graph) graph)))))
 
-(defun ast-tpsort-schedule (graph &aux (range-ids))
+(defun ast-tpsort-schedule (graph &aux (range-ids) (cache (make-hash-table)) (placed (make-hash-table)))
   "
 Relocates EXPR as soon as its dependencies are satisfied.
 ```
@@ -486,58 +486,116 @@ for (int i=0; i<10; i++) {
 "
   (declare (type FastGraph graph))
   (loop for node in (graph-nodes graph)
-        if (eql (node-type node) :RANGE) do (push (getattr node :idx) range-ids))
-  (labels ((expr-reads (expr &aux (ids))
-             (assert (and expr (eql (node-type expr) :EXPR)))
-             ;; EXPR-reads: A list of {RANGE_ID, EXPR_ID}
-             (let ((c (id->value graph (car (node-reads expr))))
-                   (seen (make-hash-table)))
-               (assert (and (eql (node-type expr) :EXPR) c))
-               (labels ((e (id &aux (node (id->value graph id)))
-                          (when (or (null node) (gethash (node-id node) seen)) (return-from e))
-                          (setf (gethash (node-id node) seen) t)
-                          (case (node-type node)
-                            (:EXPR (push id ids))
-                            (:Range (push (getattr node :idx) ids))
-                            (:BIND (push (getattr node :value) ids)) ;; [TODO] BIND is valid?
-                            (:Load (when (find (getattr node :value) range-ids)
-                                     (push (getattr node :value) ids)))
-                            (otherwise (mapc #'e (node-reads node))))))
-                 (e (car (node-reads expr))))
-               (remove-duplicates ids))))
-    (let ((in-degree (make-hash-table)) (out-degree (make-hash-table)))
+        if (eql (node-type node) :RANGE) do (push (cons (getattr node :idx) node) range-ids))
+  (let ((in-degree (make-hash-table)) (out-degree (make-hash-table)) (seen (make-hash-table)))
+    (labels ((id->node (id)
+               (when (gethash id cache) (return-from id->node (gethash id cache)))
+               ;; ID is range_id
+               (let ((r (find id range-ids :key #'car)))
+                 (when r (return-from id->node (setf (gethash id cache) (cdr r)))))
+               ;; ID is node_id
+               (let ((node (find id (graph-nodes graph) :key #'node-id)))
+                 (when node (assert (eql (node-type node) :EXPR)) (return-from id->node (setf (gethash id cache) node))))
+               ;; ID is value
+               (let ((node (id->value graph id)))
+                 (when node (assert (eql (node-type node) :EXPR)) (return-from id->node (setf (gethash id cache) node))))
+               (error "The ID ~a is not defined in the graph (during tpsort ...)" id))
+             (get-ready-for-insert-exprs ()
+               (loop for node in (graph-nodes graph)
+                     if (and (eql (node-type node) :EXPR) (null (gethash (node-id node) in-degree)) (null (gethash (node-id node) placed)))
+                       collect node))
+             (expr-relocate (expr progn n)
+               ;; 1. Remove all expr use in progn
+               (assert (null (gethash (node-id expr) in-degree)))
+               (dolist (o (gethash (node-id expr) out-degree))
+                 (setf (gethash (node-id o) out-degree) (remove (node-id expr) (gethash (node-id o) out-degree) :key #'node-id)))
+               (setf (gethash (node-id expr) placed) t)
+               (loop for node in (graph-nodes graph)
+                     if (eql (node-type node) :PROGN) do
+                       (setf (node-reads node) (loop for r in (node-reads node) if (not (eql r (car (node-writes expr)))) collect r)))
+               (setf (node-reads progn) (append (subseq (node-reads progn) 0 n) (node-writes expr) (subseq (node-reads progn) n))))
+             (expr-reads (expr &aux (ids))
+               (assert (and expr (eql (node-type expr) :EXPR)))
+               ;; EXPR-reads: A list of {RANGE_ID, EXPR_ID}
+               (let ((c (id->value graph (car (node-reads expr))))
+                     (seen (make-hash-table)))
+                 (assert (and (eql (node-type expr) :EXPR) c))
+                 (labels ((e (id &aux (node (id->value graph id)))
+                            (when (or (null node) (gethash (node-id node) seen)) (return-from e))
+                            (setf (gethash (node-id node) seen) t)
+                            ;; [TODO]
+                            ;; - dot = 0.0があったとして，Reductionの意味のScalarがあるから...
+                            (case (node-type node)
+                              (:EXPR (push id ids))
+                              (:Range (push (getattr node :idx) ids))
+                              (:BIND (push (getattr node :value) ids)) ;; [TODO] BIND is valid?
+                              (:Load (when (find (getattr node :value) range-ids :key #'car)
+                                       (push (getattr node :value) ids)))
+                              (otherwise (mapc #'e (node-reads node))))))
+                   (e (car (node-reads expr))))
+                 (remove-duplicates ids))))
+
       (loop for node in (graph-nodes graph) do
         (case (node-type node)
           (:FOR
            (let ((range (id->value graph (car (node-reads node)))))
              (assert (and range (eql (node-type range) :RANGE)))
-
              ))
           (:IF
-           ;; IfのBodyはIFがないとParseしてはいけない。
-           )
+           ;; IfのBodyはIFがないとParseしてはいけない.
+           ;; subgraph作って，readsにIF追加
+           (error "TODO"))
           (:EXPR
-           (print (expr-reads node))
-           ))))
-    
-    ;; in-degree/out-degreeを作った上で，
-    ;; EXPRのread/writeもいけるから，要はこれTPSortじゃん
-      ))
-;; [TODO] Sqrt Simplification Pattern
+           (let ((reads (map 'list #'id->node (expr-reads node))))
+             (setf (gethash (node-id node) in-degree) reads)
+             (dolist (r reads)
+               (when (null (find (node-id r) (gethash (node-id r) out-degree) :key #'node-id))
+                 (push node (gethash (node-id r) out-degree))))))))
+      (labels ((explore (id &aux (node (id->value graph id)))
+                 (when (or (null node) (gethash (node-id node) seen))
+                   (return-from explore))
+                 (setf (gethash (node-id node) seen) t)
+                 ;; Maybe introduce scope of range_id
+                 (print (get-ready-for-insert-exprs))
+                 (case (node-type node)
+                   (:FOR
+                    )
+                   (:IF
+                    )
+                   (:EXPR) ;; Leaf
+                   (:PROGN
+                     ;; Insert Trigger
+                     ))))
+        (mapc #'explore (graph-outputs graph))))))
+
+(defun ast-rewrite-ssa-style-as-tree (graph)
+  (declare (type FastGraph graph))
+  (loop for node in (graph-nodes graph)
+        if (eql (node-type node) :EXPR) do
+          (let* ((users (id->users graph (car (node-writes node))))
+                 (prgn (find :PROGN users :key #'node-type))
+                 (user (find :PROGN users :key #'node-type :test-not #'eql)))
+            (when (and (= 2 (length users)) prgn user (not (eql (node-class user) :Render)))
+              (setf (node-reads user) (loop for r in (node-reads user)
+                                            if (eql r (car (node-writes node))) collect (car (node-reads node))
+                                              else collect r))))))
+
 (defun expr-simplify-ast (graph)
   ;; Renderingする直前のBlueprintにしか適用できない。
   ;; ^ SCoPとかが(AREF X (... (EXPR)))みたいなの存在しない前提で書いちゃった。
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
   (ast-rewrite-expr-as-ssa-style graph)
   (ast-ensure-expr-is-singleton graph) ;; ここで共通Indexの削除をする (この地点でのグラフは属するドメインは全て正しいと保証されている。)
-  (ast-tpsort-schedule graph)
-  ;; EXPR_TOPOLOGICAL_SORT
-  ;; ここで，PROGNの移動を考える
-
-  ;; Simplifyする
-  ;; (ast-merge-singleton-exprs graph) userがPROGNのなんかのノードのEXPR -> PROGNから消す, LOAD, RANGEは無条件で消す
-  ;; (ast-expr-tpsort graph)
-  ;; (simplify-ast graph)
+  ;; (ast-tpsort-schedule graph)
+  ;; <--- Accumlatorをどう入れ替えるかが難しい！Skip
+  ;;
+  ;; DOT = 0.0の扱いがとってもめんどくさい！！
+  ;; [TODO] Sqrt Simplification Pattern
+  ;; (softmax for minimal repro)
+  ;; - _gid0のやつが_gid1のループに入ってる
+  ;; - DOT = 0.0の扱いの問題をちゃんと考えた上で，適切なTPSortをしてあげる必要がある。
+  (ast-rewrite-ssa-style-as-tree graph)
+  (simplify-ast graph)
   )
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
