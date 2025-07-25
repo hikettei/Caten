@@ -489,8 +489,7 @@ A <- L
   (conditions (make-hash-table))
   (variables nil))
 
-(defun ast-fixup-scope (base-graph graph &aux (expr-to-condition (make-hash-table)) (range-ids) (id-cache (make-hash-table))
-                                   (base-nodes (tpsort-graph base-graph)))
+(defun ast-fixup-scope (graph &aux (expr-to-condition (make-hash-table)) (range-ids) (id-cache (make-hash-table)))
   ;; Create cache in advance
   (dolist (n (graph-nodes graph))
     (when (eql (node-type n) :RANGE)
@@ -503,7 +502,7 @@ A <- L
     (labels ((expr-depend-vars (expr &aux (seen (make-hash-table)) (ids))
                (assert (and expr (eql (node-type expr) :EXPR)))
                ;; [TODO] cache it!
-               (labels ((e (id &key (setf-p nil) &aux (node (id->value graph id)))
+               (labels ((e (id &aux (node (id->value graph id)))
                           (when (or (null node) (gethash (node-id node) seen))
                             (return-from e))
                           (setf (gethash (node-id node) seen) t)
@@ -511,26 +510,9 @@ A <- L
                             (:AREF
                              ;; val_9[xx] = ...
                              ;; val_2 = val_9[xx] ...
-                             ;; [TODO] this is kinda hard-coded for softmax??
-                             (when (null setf-p)
-                               (let* ((user (loop for user in (id->users graph (car (node-reads node)))
-                                                  if (and (eql (node-type user) :AREF) (not (eql (node-id user) (node-id node))))
-                                                    append (id->users graph (car (node-writes user)))))
-                                      (prev-setf (find :SETF user :key #'node-type)))
-                                 (when prev-setf
-                                   (loop for setf in user
-                                         if (eql (node-type setf) :SETF) do
-                                           (let ((exprs (loop for c in (id->users graph (car (node-writes setf)))
-                                                              if (eql (node-type c) :EXPR) collect c)))
-                                             (assert (= 1 (length exprs)))
-                                             (when (null setf-p)
-                                               (push (car (node-writes (car exprs))) ids)
-                                               (setf setf-p t))
-                                               
-                                             ;; If the definition of expr is earlier than node, push expr as extra deps
-                                             )))))
+                             ;; [TODO] FlashAttention, Softmax Patch is needed
+                             ;; [TODO] Extra deps i am missing?
                              (mapc #'e (node-reads node)))
-                            (:SETF (e (car (node-reads node)) :setf-p t) (e (second (node-reads node))))
                             (:EXPR  (push (car (node-writes node)) ids))
                             (:RANGE (push (getattr node :idx) ids))
                             (:LOAD  (when (find (getattr node :value) range-ids) (push (getattr node :value) ids)))
@@ -668,25 +650,21 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
   ;; val_9[...] = exp(...)
   ;; val_11 = val_9[...]
   ;; ^ これに時間軸での依存関係がないから。(TODO: LoweringするときにBINDを挿入するようにする)
-  (flet ((cpy-node (node)
-           (let ((node (copy-node node)))
-             (setf (node-reads node) (copy-list (node-reads node))
-                   (node-writes node) (copy-list (node-writes node)))
-             node)))
-    (let ((base-graph (apply #'make-graph (map 'list #'cpy-node (graph-nodes graph)))))
-      (setf (graph-outputs base-graph) (copy-list (graph-outputs graph)))
-;;      (caten/codegen/blueprint:print-blueprint graph t)
-      (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
-      (ast-rewrite-expr-as-ssa-style graph) ;; Rewrite graph as ssa style first
-      (ast-ensure-expr-is-singleton graph) ;; ensure all expr is singleton
-;;      (caten/codegen/blueprint:print-blueprint graph t)
-      (ast-fixup-scope base-graph graph) ;; rewrite and fixup scopes, sort topologically
-;;      (caten/codegen/blueprint:print-blueprint graph t)
-      (ast-rewrite-ssa-style-as-tree graph) ;; and then construct tree-style expr again
-      (simplify-ast graph)
-;;      (caten/codegen/blueprint:print-blueprint graph t)
-      graph
-      ))) ;; simplify and that's it!
+  ;; - FlashAttentionでも不安定...
+  ;; cpy-graphは削除する
+  ;; (return-from ast-apply-cse graph)
+  ;;      (caten/codegen/blueprint:print-blueprint graph t)
+  (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
+  (ast-rewrite-expr-as-ssa-style graph) ;; Rewrite graph as ssa style first
+  (ast-ensure-expr-is-singleton graph) ;; ensure all expr is singleton
+  ;;      (caten/codegen/blueprint:print-blueprint graph t)
+  (ast-fixup-scope graph) ;; rewrite and fixup scopes, sort topologically
+  ;;      (caten/codegen/blueprint:print-blueprint graph t)
+  (ast-rewrite-ssa-style-as-tree graph) ;; and then construct tree-style expr again
+  (simplify-ast graph)
+  ;;      (caten/codegen/blueprint:print-blueprint graph t)
+  graph
+  )) ;; simplify and that's it!
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
