@@ -108,6 +108,9 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
+(with-traced-polyhedral ($softmax softmax *strategy*)
+  (defun softmax (tensor) (!softmax tensor)))
+
 (deftest test-polyhedral-reschedule
   (testing "Test Reschedule"
     (with-polyhedral
@@ -397,4 +400,4 @@
 ;; - randn failing case
 ;; - BandGPUはReminderをIfで生成したい。
 ;; - Loop Size=1 --> ここにMarkしたら壊れない？
-(run-suite *package*)
+;; (run-suite *package*)

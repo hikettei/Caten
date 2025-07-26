@@ -604,9 +604,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
             (getattr schedule-item :blueprint) (caten/aasm::%simplify-ast (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx)) base-graph schedule-graph)))
-
-      ;; If BEAM=0, this is the final graph, so we can apply CSE.
-      (when (= 0 (ctx:getenv :BEAM)) (ast-apply-cse (getattr schedule-item :blueprint)))
       (getattr schedule-item :blueprint))))
 ;; [TODO] Move to caten/aasm
 (defmethod print-blueprint (graph stream &aux (indent 0) (seen))
