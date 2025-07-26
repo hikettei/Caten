@@ -612,47 +612,57 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
 	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i) :toplevel-p nil)))
            (node (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp))
            (node-to-loops (reverse (gethash (node-id node) (ctx-node-to-loops (pctx-scop-ctx ctx)))))
-           (rewrite-map (make-hash-table)))
+           (rewrite-map (make-hash-table))
+           (new-idx-map (make-hash-table)))
       (assert node () "The node ~a is not found from original blueprint." name)
       (assert (= (length args) (length node-to-loops)) () "Inconsistent domain loop args size")
       (loop for base-domain in node-to-loops
             for new-args in args
             do (setf (gethash (getf base-domain :idx) rewrite-map) new-args))
-      ;; need a base args
+      ;; Creating a clone of subgraph
       (labels ((e (id &aux (node (id->value (pctx-blueprint ctx) id)))
-                 (when (or (null node) (gethash (node-id node) visited)) (return-from e id))
-                 (when (eql (node-type node) :EXPR) (return-from e id))
-                 ;; 3 case using gid:
+                 (when (or (null node) (gethash (node-id node) visited)) (return-from e (gethash id new-idx-map id)))
+                 (when (eql (node-type node) :EXPR) (return-from e (gethash id new-idx-map id)))
+                 (when (eql (node-type node) :DEFINE-GLOBAL) (emit node) (return-from e id))
+                 ;; 2 case using gid:
                  ;; - Reference to RANGE
                  ;; - LOAD(value)
-                 ;; - MUL(GID0, ...) (<- this should be deprecated)
                  (when (eql (node-type node) :RANGE)
                    (let ((new-space (gethash (getattr node :idx) rewrite-map)))
                      (assert new-space)
-                     (let ((n (copy-node new-space)))
+                     (let ((n (copy-node new-space))
+                           (new-id (gensym)))
                        (assert (= 1 (length (node-writes n))))
-                       (setf (node-writes n) (list id)
+                       (setf (gethash (car (node-writes n)) new-idx-map) new-id
+                             (node-writes n) (list new-id)
                              (node-id n) (gensym "NID"))
-                       (emit n))
-                     (return-from e id)))
+                       (emit n)
+                       (return-from e new-id))))
                  (when (and (eql (node-type node) :LOAD) (gethash (getattr node :value) rewrite-map))
                    (let ((new-space (gethash (getattr node :value) rewrite-map)))
-                     (let ((n (copy-node new-space)))
+                     (let ((n (copy-node new-space)) (new-id (gensym)))
                        (assert (= 1 (length (node-writes n))))
-                       (setf (node-writes n) (list id)
+                       (setf (gethash (car (node-writes n)) new-idx-map) new-id
+                             (node-writes n) (list new-id)
                              (node-id n) (gensym "NID"))
-                       (emit n))
-                     (return-from e id)))
+                       (emit n)
+                       (return-from e new-id))))
                  ;; [TODO] Replace %RANGE here if exists
                  (setf (gethash (node-id node) visited) t)
-                 (emit node)
-                 (setf (node-reads node) (map 'list #'e (node-reads node)))
-                 (car (node-writes node))))
-        (setf (node-reads node) (map 'list #'e (node-reads node)))
-        (emit node)
-        (setf (gethash (node-id node) (pctx-expr2args ctx))
-              (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
-        node))))
+                 (let ((node (copy-node node)) (new-id (gensym)))
+                   (setf (gethash (car (node-writes node)) new-idx-map) new-id
+                         (node-id node) (gensym "NID")
+                         (node-reads node) (map 'list #'e (node-reads node))
+                         (node-writes node) (list new-id))
+                   (emit node)
+                   new-id)))
+        (let ((node (copy-node node)))
+          (setf (node-id node) (gensym "NID"))
+          (setf (node-reads node) (map 'list #'e (node-reads node)))
+          (emit node)
+          (setf (gethash (node-id node) (pctx-expr2args ctx))
+                (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
+          node)))))
 
 (defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
@@ -735,11 +745,6 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
               (children (reverse (loop for i upfrom 0 below n collect (isl::%isl-ast-node-list-get-at children i))))
               (n-kernels 0)
               (kernels (make-hash-table)))
-         ;; [TODO] Filter, Filter, TILEGPUはOKのはず。
-         ;; [TODO] MultiKernelで動いてるかテストする！
-         ;; TileGPU is the only trigger to generate multiple kernels
-         ;; まず_gid_p0のコメントアウトしてる部分が悪い
-         ;; BufferRizeの修正も合わせて考えるべき。
          (flet ((mark-is-tilegpu-p (mark)
                   (and (eql (isl::%isl-ast-node-get-type mark) :ast-node-mark)
                        (let ((d (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id mark))))))
@@ -760,17 +765,50 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                   (with-blueprint (:noopt t) (apply #'%progn (map 'list #'(lambda (x) (parse-isl-ast pctx x)) kernel-items)))))))))))
 
 (defun apply-late-vectorize (blueprint)
+  "
+Caten recognises the following patterns as vectorizable: (i.e.: CSE should not applied until apply-late-vectorize is called)
+```
+@VECTORIZE for (...) <--- Trigger for vectorize
+  @VECTORIZE for (...)
+    @VECTORIZE for (...)
+      PROGN(EXPR(...))
+```
+===>
+EXPR(DEFINE_SIMDGROUP)
+if (ensure_domain_is_right)
+  for (... < 4);
+    for (... < 4);
+      for (... < 4);
+        val = ...;
+if (not ensure_domain_is_right)
+  val_reminder = ... // Isolated Area (Unrolled)
+"
   (declare (type FastGraph blueprint))
-  (print "VECTORIZE")
-  ;; Important: RANGE, CONDITIONもCSEの対象に，また，gemmでCSE failing caseを見つけた。
-  ;; How to impl: 一旦，EXPR_Blockでお茶をにごす
-  ;; And then: Mask, TensorCore, Vectorize, などを適用して，コンパイルできる形へする
-  ;; - 1. @VECTORIZE(4)はacc_tmp mutationしない
-  ;; - 2. DEFINE_SIMGROUP的なのを書き変えれるように
-  ;; - 3. TensorRelay Type Inference
-  (caten/codegen/blueprint:print-blueprint blueprint t)
-  blueprint
-  )
+  (labels ((vectorize-is-toplevel-p (band)
+             (when (and (eql (node-type band) :FOR) (getattr band :directive)
+                        (equalp "VECTORIZE" (directive-type (getattr band :directive))))
+               (let ((users (id->users blueprint (car (node-writes band)))))
+                 (loop for user in users
+                       if (and (eql (node-type user) :FOR)
+                               (getattr user :directive)
+                               (equalp "VECTORIZE" (directive-type (getattr user :directive)))) ;; The parent is vectorize
+                         do (return-from vectorize-is-toplevel-p nil))
+                 t))))
+    (let ((triggers (loop for node in (graph-nodes blueprint)
+                          if (vectorize-is-toplevel-p node) collect node)))
+      (print triggers)
+      ;; Important: RANGE, CONDITIONもCSEの対象に，また，gemmでCSE failing caseを見つけた。
+      ;; Important: Innermost Tileが原因である
+      ;; Important: special_zのぎょう，CSEが悪いんじゃなくて，そもそもBPえる時の何かが間違ってるから先に修正
+      ;; TODO: Separateを使って簡略化することはできないか？
+      ;; How to impl: 一旦，EXPR_Blockでお茶をにごす
+      ;; And then: Mask, TensorCore, Vectorize, などを適用して，コンパイルできる形へする
+      ;; - 1. @VECTORIZE(4)はacc_tmp mutationしない
+      ;; - 2. DEFINE_SIMGROUP的なのを書き変えれるように
+      ;; - 3. TensorRelay Type Inference
+      (caten/codegen/blueprint:print-blueprint blueprint t)
+      blueprint
+      )))
 
 (defun %finalize-blueprint-from-polyhedral (polyhedral pctx kernel)
   "Convert ISL polyhedral representation back to blueprint graph"
@@ -894,6 +932,9 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
 (defun get-blueprint-from-polyhedral (polyhedral)
   (let* ((pctx (make-parse-ctx (poly-blueprint polyhedral))) ;; Create a parse ctx from the base blueprint
          (kernels (get-raw-bp-from-polyhedral pctx polyhedral)))
+    (dolist (k kernels)
+      (print "EXTRACTED BP")
+      (caten/codegen/blueprint:print-blueprint k t))
     (if (= 1 (length kernels))
         (multiple-value-bind (bp allocs) (%finalize-blueprint-from-polyhedral polyhedral pctx (car kernels))
           (values (list bp) allocs))
