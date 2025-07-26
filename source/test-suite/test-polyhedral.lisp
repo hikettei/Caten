@@ -356,25 +356,37 @@
   ;; [TODO] Softmax Vectorize
   )
 ;; [TODO] 別のSuiteに移動
+(deftest test-polyhedral-flash-attention
+  (testing "Scheduling"
+    (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5)))))
+        ((attn-kernels extra-allocs)
+          (assert (= 1 (length attn-kernels)))
+          (let ((kernel (car attn-kernels)))
+            (print-blueprint kernel t)))))
+  (testing "Search"
+    (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5)))))
+        ((attn-kernels extra-allocs)
+          (assert (= 1 (length attn-kernels)))
+          (let ((kernel (car attn-kernels)))
+            (print-blueprint kernel t))))))
+
 (deftest test-polyhedral-cse
-  (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5))))
-                    )
-      ((attn-kernels extra-allocs)
-        (assert (= 1 (length attn-kernels)))
-        (let ((kernel (car attn-kernels)))
-          (print-blueprint kernel t))))
+  "val_9[i] = ...
+   val_10 = BIND(SETF_VAL_9, value=val_9)[i]"
+  (testing "Softmax(Tensor)"
   (with-polyhedral ((softmax ($softmax (make-tensor `(512 512))))
                     )
       ((softmax-kernels extra-allocs)
         (assert (= 1 (length softmax-kernels)))
         (let ((sftmx (car softmax-kernels)))
-          (print-blueprint sftmx t))))
+          (print-blueprint sftmx t)))))
+  (testing "Softmax(JIT)"
   (with-polyhedral ((softmax ($softmax_jit (make-tensor `(512 512))))
                     )
       ((softmax-kernels extra-allocs)
         (assert (= 1 (length softmax-kernels)))
         (let ((sftmx (car softmax-kernels)))
-          (print-blueprint sftmx t)))))
+          (print-blueprint sftmx t))))))
 ;; [TODO] Polyhedral TODO
 ;; - [ ] Finalize CSE
 ;;  - [ ] val_9，というか(setf X)にBIND生成を矯正させる
@@ -383,6 +395,8 @@
 ;; - [ ] 次にVectorize/TensorCore, これは今日やる
 ;; - [ ] 最後にGROUP/GROUPTOP
 ;; - [ ] 全てにAccuarcy Test実装する
+;; - [ ] TODO: CIでFlashAttentionを回す(CI BEAM)
+;; - [ ] Loop FissionしてからのTileGPU動いたっけ？
 ;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 

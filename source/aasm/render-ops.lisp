@@ -133,7 +133,6 @@ Constraints:
                              else if (null (empty-p arg-new))
                                     collect arg)))))))
     ;; [Note] This must be applied after exprify is applied. because progn is a trigger.
-;;    ((:FOR (range (:PROGN (body))) :mark mark) -> (:FOR (range body) :mark mark))
     ((:IF ((:EXPR (cond1)) (:IF ((:EXPR (cond2)) body))))
      ->
      ((node graph)
@@ -173,7 +172,6 @@ Constraints:
                         (insert-nodes graph load)))
               (insert-nodes graph (append =0 (list expr)))
               body))))))
-    ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 
 (defun ast-simplify-constant (graph &aux (seen))
@@ -642,6 +640,13 @@ A <- L
             (assert (null stashed))
             graph))))))
 
+(defsimplifier
+    (ast-simplify-progn)
+    ((:FOR (range (:PROGN (body))) :mark mark :directive directive :band band :parallel parallel)
+     ->
+     (:FOR (range body) :mark mark :directive directive :band band :parallel parallel))
+    ((:IF  (condition (:PROGN (body)))) -> (:IF (condition body))))
+
 (defun ast-apply-cse (graph)
   "Applies CSE (Common Subexpression Elimination) to the given graph.
 Note that 99% of our transformation does not expect cse applied graph,
@@ -651,7 +656,8 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
   (ast-ensure-expr-is-singleton graph) ;; ensure all expr is singleton
   (ast-fixup-scope graph) ;; rewrite and fixup scopes, sort topologically
   (ast-rewrite-ssa-style-as-tree graph) ;; and then construct tree-style expr again
-  (simplify-ast graph)) ;; simplify and that's it!
+  (simplify-ast graph)
+  (ast-simplify-progn graph)) ;; simplify and that's it!
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
