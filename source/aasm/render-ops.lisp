@@ -953,7 +953,41 @@ for (int i=0; i<M; i+=32)
       (%progn out))))
 
 (defun ast-band-vectorize (graph band &key (dtype :int64))
-  "(values graph fail_reason)"
+  "
+```
+@VECTORIZE for (...) <--- band
+  @VECTORIZE for (...)
+    @VECTORIZE for (...)
+      PROGN(EXPR(...))
+```
+===>
+a = EXPR(DEFINE_FLOAT_8x8)
+b = EXPR(DEFINE_SHARED_MEMORY_8x8)
+dom = min(10, _gid_p0)
+if (dom==10) // Full Tile or not?
+  {
+  // LOAD
+  for (... < 4);
+    for (... < 4);
+      for (... < 4);
+        a[...] = ;
+  // COMPUTE (ALU or STORE)
+  VECTORIZED_COMPUTATION;
+} else {
+  // LOAD
+  for (... < min(4, _gid_0_p))
+    for (... < min(4, _gid_1_p))
+      for (... < min(4, _gid_2_p))
+        b[...] = ;
+  // COMPUTE (ALU or STORE)
+  for (... < min(4, _gid_0_p))
+    for (... < min(4, _gid_1_p))
+      for (... < min(4, _gid_2_p))
+        ...;
+}
+```
+^ TpSortでIf融合できると嬉しい。
+(values graph fail_reason)"
   (let ((seen (make-hash-table)) (bands) (filter))
     (labels ((explore (id &aux (node (id->value graph id)))
                (when (or (null node) (gethash (node-id node) seen)) (return-from explore))
@@ -981,6 +1015,7 @@ for (int i=0; i<M; i+=32)
     (print bands)
     (print filter)
     (PRINT "A")
+    ;; FilterSubgraphのCopyを前と同じ容量で作る。ただし，IDXは_pで
     graph))
 ;; (defun ast-band-split-reduce ()) <- ReductionがなかったらError
 ;; SplitReduce, SyncThreads, SharedMemory
