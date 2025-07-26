@@ -439,7 +439,8 @@ Depends=~a Reduce=~a Users=~a
                 (graph-outputs (expr-graph e)) (node-writes node))
         e)))))
 
-(defun astify-blueprint (schedule-item bp rank base-graph schedule-graph &aux (caten/aasm/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
+(defun astify-blueprint (schedule-item bp rank base-graph schedule-graph
+                         &aux (caten/aasm/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)) (setf-table (make-hash-table)))
   (declare (type list bp))
   (with-blueprint (:noopt t)
     (loop for n in (node-reads schedule-item)
@@ -501,8 +502,11 @@ Depends=~a Reduce=~a Users=~a
                            (setf ;; (gethash (nth nth (node-reads node)) aref-table) (car (node-writes load))
                                  (nth nth (node-reads node)) (car (node-writes load))))
                        else if (and buffer (> (tensor-relay-nrank buffer) 0)) do
-                         (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
-                           (setf (gethash (car (node-writes aref)) aref-table) (nth nth (node-reads node))
+                         (let ((aref (emit (%aref (gethash name setf-table name)
+                                                  (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
+                           (when (gethash name setf-table)
+                             (assert (eql name (getattr (id->value *ctx* (gethash name setf-table name)) :value))))
+                           (setf (gethash (car (node-writes aref)) aref-table) name
                                  (nth nth (node-reads node)) (car (node-writes aref)))))
                  ;; Insert %setf if the node is reduction.
                  (when (getattr node :reduction :allow-undefined t)
@@ -543,11 +547,14 @@ Depends=~a Reduce=~a Users=~a
                                         (gethash id aref-table id))
                                       (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-write-iters type)) (car (relay-writes type)) gids)))))
                                     ;; [TODO] (%aref x 0) ?
-                                    (car (node-writes node)))))
-                     (setf (getattr node :_type_relay) nil)
-                     (setf (node-writes node) (list (gensym "T")))
+                                    (car (node-writes node))))
+                          (setf-id (gensym "SETF")) (bind-id (gensym)))
+                     (emit (make-node :JIT :BIND (list bind-id) (list setf-id) :value (car (node-writes node))))
+                     (setf (getattr node :_type_relay) nil
+                           (gethash (car (node-writes node)) setf-table) bind-id
+                           (node-writes node) (list (gensym "T")))
                      ;; Note: %setf aref is the end of node.
-                     (return-from lower-item (emit (%setf aref (emit node))))))
+                     (return-from lower-item (emit (%setf aref (emit node) :out setf-id)))))
                  ;; Otherwise emit the node directly.
                  ;; [TODO] Set declare-type?
                  (setf (getattr node :_type_relay) nil)

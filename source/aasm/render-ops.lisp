@@ -234,6 +234,7 @@ Constraints:
                (when (or (null node) (find x seen)) (return-from explore))
                (when (gethash x stop-at) (return-from explore))
                (when (eql (node-class node) :Render) (return-from explore))
+               (when (eql (node-type node) :BIND) (return-from explore))
                (push x seen)
                (push node result)
                (unless only-surface (mapc #'explore (node-reads node)))))
@@ -1078,7 +1079,6 @@ for (int i=0; i<M; i+=32)
               (%if (%not cnd)
                    (%range (getattr range :idx) nil
                            (node->id body) :range range)))))))
-        ;; (caten/codegen/blueprint:print-blueprint graph t)
         graph))))
 
 ;; (defun ast-band-tensorcore ()) <- これはもう手作業で書く。WMMAがなければError
