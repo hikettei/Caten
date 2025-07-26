@@ -849,7 +849,30 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                         do (if (id->value blueprint (car (node-reads node))) ;; two case: the reductor is defined in the same group, or
                                (insert-nodes blueprint (make-new-aref-bind (car (node-writes node)) argname (car (node-reads node)) acc stride node))
                                (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node)))))))))))
+  (kernel-fixup-loop-fission-args kernels)
   (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes)))
+
+(defun kernel-fixup-loop-fission-args (kernels)
+  ;; Insert DEFINE-GLOBAL if the definition was separated by Loop Fission
+  (labels ((id->value-from-kernels (id)
+             (loop for k in kernels
+                   for v = (id->value k id)
+                   if v do (return-from id->value-from-kernels v)))
+           (id->tensor-info (id &aux (acc (id->value-from-kernels id)) (node (id->value-from-kernels (car (node-reads acc)))))
+             (ecase (node-type acc)
+               (:DEFINE-GLOBAL
+                (values (getattr acc :dtype) (getattr acc :pointer-p)))
+               (:EXPR
+                (let ((rel (car (relay-writes (read-type-relay node)))))
+                  (values (tensor-relay-dtype rel) (> (tensor-relay-nrank rel) 0)))))))
+    (dolist (kernel kernels)
+      (dolist (undef-var (graph-get-undefined-variables kernel))
+        (dolist (user (id->users kernel undef-var))
+          (when (eql (node-type user) :BIND)
+            (dolist (usr (id->users kernel (car (node-writes user))))
+              (setf (node-reads usr) (print (map 'list #'(lambda (x) (if (eql (car (node-writes user)) x) (getattr user :value) x)) (node-reads usr)))))
+            (multiple-value-bind (dtype pointer-p) (id->tensor-info (getattr user :value))
+              (insert-nodes kernel (list (%global (getattr user :value) dtype pointer-p))))))))))
 
 (defun get-blueprint-from-polyhedral (polyhedral)
   (let* ((pctx (make-parse-ctx (poly-blueprint polyhedral))) ;; Create a parse ctx from the base blueprint
@@ -867,7 +890,11 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                  (loop for c in common-buffer-among-kernels
                        for user = (find c all-nodes :test #'find :key #'node-reads)
                        do (assert user)
-                       if (eql (node-type user) :BIND) collect (getattr user :value) else collect c)))
+                       if (eql (node-type user) :BIND) collect (getattr user :value) else collect c))
+               (common-buffer-among-kernels
+                 (loop for c in common-buffer-among-kernels
+                       if (gethash c (ctx-scal->access (poly-ctx polyhedral)))
+                         collect c)))
           ;; Bufferizeは，Skipするケースへ分岐する。この分岐が正しく動けばOK
           ;; Bufferize
           (let ((extra-allocs (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)))

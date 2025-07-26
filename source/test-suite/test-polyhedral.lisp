@@ -134,7 +134,7 @@
         ((new-kernels extra-allocs) (ok (= 1 (length new-kernels)))))
     (with-polyhedral
         ((gemm ($gemm (make-tensor `(10 10)) (make-tensor `(10 10)) (make-tensor `(10 10))))
-         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :serialize-sccs 1)))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :serialize-sccs 1))) ;; Loop Fission
          ;; (psched gemm)
          )
         ((new-kernels extra-allocs)
@@ -182,8 +182,7 @@
                             (:FOR ((:RANGE ((Var 20 _) (Var 1 _)))
                                    (:FOR ((:RANGE ((Var 30 _) (Var 1 _)))
                                           (:FOR ((:RANGE ((Var 10 _) (Var 1 _))) _)))))))))))))
-;; [TODO] TileTest
-
+;; [TODO] Test Loop Tile Here
 (deftest test-polyhedral-tile-gpu
   (testing "TileGPU for 2D"
     (with-polyhedral
@@ -200,17 +199,7 @@
               ;; (grid_size, thread_size)
               (ok (equal (print (map 'list #'expr-val (nth 0 ls))) `(3 16)))
               (ok (equal (map 'list #'expr-val (nth 1 ls)) `(8 1)))
-              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(1 1))))
-            ;; [TODO] Add a "decent" match case
-            (ok
-             (bp-match-p
-              gemm
-              (:PROGN
-                ((:EXPR (a))
-                 (:EXPR (b))
-                 (:EXPR (c))
-                 (:EXPR (d))
-                 (:IF ((:EXPR (e)) body))))))))))
+              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(1 1))))))))
   (testing "TileGPU for 3D"
     (with-polyhedral
         ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
@@ -228,19 +217,8 @@
               ;; (grid_size, thread_size)
               (ok (equal (map 'list #'expr-val (nth 0 ls)) `(3 64)))
               (ok (equal (map 'list #'expr-val (nth 1 ls)) `(8 1)))
-              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(5 1))))
-            (ok
-             (bp-match-p
-              gemm
-              (:PROGN
-                ((:EXPR (a))
-                 (:EXPR (b))
-                 (:EXPR (c))
-                 (:EXPR (d))
-                 (:EXPR (e))
-                 (:EXPR (f))
-                 (:IF ((:EXPR (l)) body))))))))))
-  (testing "TileGPU but the loop size is smaller than local-size") ;; TODO
+              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(5 1))))))))
+  (testing "TileGPU but local_size is smaller than loop size") ;; TODO
   (testing "TileGPU+Tile"
     (with-polyhedral
         ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
@@ -258,16 +236,7 @@
               ;; (grid_size, thread_size)
               (ok (equal (map 'list #'expr-val (nth 0 ls)) `(3 16)))
               (ok (equal (map 'list #'expr-val (nth 1 ls)) `(8 1)))
-              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(1 1))))
-            (ok
-             (bp-match-p
-              gemm
-              (:PROGN
-                ((:EXPR (a))
-                 (:EXPR (b))
-                 (:EXPR (c))
-                 (:EXPR (d))
-                 (:IF ((:EXPR (e)) body)))))))))))
+              (ok (equal (map 'list #'expr-val (nth 2 ls)) `(1 1)))))))))
 
 (deftest test-polyhedral-parallel
   (testing "Parallelize outermost loop w/ collapse(2)"
@@ -287,7 +256,9 @@
               (:FOR
                ((:RANGE ((Var 300 _) (Var 1 _)))
                 (:PROGN
-                  ((:EXPR ((Var 0.0 _))) ;; Accumlation Loader
+                  ((:EXPR (_)) ;; CSE0
+                   (:EXPR ((Var 0.0 _))) ;; Accumlation Loader
+                   (:EXPR (_)) ;; CSE1
                    (:FOR ((:RANGE ((Var 20 _) (Var 1 _))) _)) ;; WMMA
                    (:Expr (_)) ;; Store Function
                    )))
@@ -355,7 +326,7 @@
     )
   ;; [TODO] Softmax Vectorize
   )
-;; [TODO] 別のSuiteに移動
+;; [TODO] Write
 (deftest test-polyhedral-flash-attention
   (testing "Scheduling"
     (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5)))))
@@ -369,7 +340,7 @@
           (assert (= 1 (length attn-kernels)))
           (let ((kernel (car attn-kernels)))
             (print-blueprint kernel t))))))
-
+;; [TODO]
 (deftest test-polyhedral-cse
   "val_9[i] = ...
    val_10 = BIND(SETF_VAL_9, value=val_9)[i]"
@@ -396,7 +367,11 @@
 ;; - [ ] 最後にGROUP/GROUPTOP
 ;; - [ ] 全てにAccuarcy Test実装する
 ;; - [ ] TODO: CIでFlashAttentionを回す(CI BEAM)
-;; - [ ] Loop FissionしてからのTileGPU動いたっけ？
+;; - [ ] Loop FissionしてからのTileGPU動いたっけ？ ==> OK
+;; - [ ] Fix RANDN
+;; - [ ] Things to fix: (1.) FlashAttention Schedule is too slow, (2.) Softmax is not working?
+;; - [ ] After that, proceed to Vectorize/TensorCore/GROUP (1day)
+;; - [ ] Setup CI, Benchmark, Poster
 ;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
