@@ -79,8 +79,7 @@
   (defun flash_attention ((Pointer Q Type (Batch Head N D)) (Pointer K Type (Batch Head N D)) (Pointer V Type (Batch Head N D))
                           (Pointer O Type (Batch Head N D))
                           (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
-    (let ((scale (/ 1.0 (sqrt (scast D :float32))))
-          (outer (* batch n head)))
+    (let ((scale (/ 1.0 (sqrt (scast D :float32)))))
       (for b = (Range BATCH 1) do
            (for h = (Range Head 1) do
                 (for i = (Range N 1) do
@@ -101,7 +100,8 @@
                                       (l-new (+ (* exp-prev row_l) exp-cur)))
                                   (for dth1 = (Range D 1) do
                                        (setf (aref O (+ o-base-idx dth1))
-                                             (/ (+ (* exp-cur (aref V (+ v-base-idx (* j D) dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1)))) l-new)))
+                                             (/ (+ (* exp-cur (aref V (+ v-base-idx (* j D) dth1))) (* exp-prev row_l (aref O (+ o-base-idx dth1))))
+                                                l-new)))
                                   (setf row_m new-max ;; もしかしたらここarefかも
                                         row_l l-new))))
                          (setf
@@ -110,6 +110,19 @@
 
 (with-traced-polyhedral ($softmax softmax *strategy*)
   (defun softmax (tensor) (!softmax tensor)))
+
+(with-traced-polyhedral ($softmax_jit softmax-jit *strategy*)
+  @caten.jit () {
+  (defun softmax-jit ((Pointer X Type (A B)))
+    (for _gid_p0 = (Range A 1) do
+         (with-locals ((val_11 0.0) (val_2 -100000.0))
+           (for _gid_p1 = (Range B 1) do
+                (setf val_2 (max val_2 (aref X (+ (* 512 _gid_p0) _gid_p1)))))
+           (for _gid_p1_1 = (Range B 1) do
+                (setf (aref X (+ (* 512 _gid_p0) _gid_p1_1)) (exp (- (aref X (+ (* 512 _gid_p0) _gid_p1_1)) val_2)))
+                (setf val_11 (+ val_11 (aref X (+ (* 512 _gid_p0) _gid_p1_1)))))
+           (for _gid_p1_2 = (range B 1) do
+                (setf (aref X (+ (* 512 _gid_p0) _gid_p1_2)) (/ (aref X (+ (* 512 _gid_p0) _gid_p1_2)) val_11))))))})
 
 (deftest test-polyhedral-reschedule
   (testing "Test Reschedule"
@@ -343,13 +356,25 @@
   ;; [TODO] Softmax Vectorize
   )
 ;; [TODO] 別のSuiteに移動
-(deftest test-polyhedral-blueprint-simplify
+(deftest test-polyhedral-cse
   (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5))))
                     )
       ((attn-kernels extra-allocs)
         (assert (= 1 (length attn-kernels)))
         (let ((kernel (car attn-kernels)))
-          (print-blueprint kernel t)))))
+          (print-blueprint kernel t))))
+  (with-polyhedral ((softmax ($softmax (make-tensor `(512 512))))
+                    )
+      ((softmax-kernels extra-allocs)
+        (assert (= 1 (length softmax-kernels)))
+        (let ((sftmx (car softmax-kernels)))
+          (print-blueprint sftmx t))))
+  (with-polyhedral ((softmax ($softmax_jit (make-tensor `(512 512))))
+                    )
+      ((softmax-kernels extra-allocs)
+        (assert (= 1 (length softmax-kernels)))
+        (let ((sftmx (car softmax-kernels)))
+          (print-blueprint sftmx t)))))
 ;; [TODO] Polyhedral TODO
 ;; - [ ] Finalize CSE
 ;;  - [ ] val_9，というか(setf X)にBIND生成を矯正させる
@@ -357,6 +382,7 @@
 ;;  - [ ] Fix null stashed problem (?) CSE+Tile?
 ;; - [ ] 次にVectorize/TensorCore, これは今日やる
 ;; - [ ] 最後にGROUP/GROUPTOP
+;; - [ ] 全てにAccuarcy Test実装する
 ;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 

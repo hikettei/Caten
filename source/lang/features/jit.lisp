@@ -54,6 +54,10 @@
                      `(setf
                        ,bind
                        (caten/aasm::node->id1 (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',bind)))))
+                  ,(when (and (listp bind) (eql (car bind) 'caten/aasm:%aref))
+                     `(setf
+                       ,(second bind)
+                       (caten/aasm::node->id1 (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',(second bind))))))
                   ,tmp))))
     ((list (Sym aref) name idx) `(caten/aasm:%aref ,name ,(jit-rewrite idx)))
     ;; Operator rewriting
