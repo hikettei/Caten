@@ -667,12 +667,18 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                  (nconc
                   (id->users blueprint id)
                   (loop for node in (graph-nodes blueprint) if (and (eql (node-type node) :BIND) (eql id (getattr node :value))) collect node)))
+               (is-vectorize-p (loop-obj)
+                 (let ((d (getattr (getf loop-obj :for-node) :directive)))
+                   (and d (equalp (directive-type d) "VECTORIZE"))))
                (invalid-scope-p (acc-scope expr-scope)
                  (when (> (length acc-scope) (length expr-scope)) (return-from invalid-scope-p t))
-                 ;; grid id is unique in the blueprint, we can use it.
-                 (loop for acc in acc-scope for expr in expr-scope
-                       ;; [TODO] make it idx
-                       when (not (eql (node-id (getf acc :range-node)) (node-id (getf expr :range-node)))) do (return-from invalid-scope-p t))
+                 ;; grid id is unique in the blueprint, we can utilize it.
+                 ;; Note: @VECTORIZE is regarded as not creating a new scope, because it is later rewritten as EXPR.
+                 (let ((acc-scope (loop for acc in acc-scope if (null (is-vectorize-p acc)) collect acc))
+                       (expr-scope (loop for expr in expr-scope if (null (is-vectorize-p expr)) collect expr)))
+                   (loop for acc in acc-scope for expr in expr-scope
+                         when (not (eql (node-id (getf acc :range-node)) (node-id (getf expr :range-node))))
+                           do (return-from invalid-scope-p t)))
                  nil)
                (mutate-to-tensor-p (id &aux (acc (id->value blueprint id)) (users (get-users id)) (visited (make-hash-table)))
                  ;; All users must be placed in the possible scope where acc is firstly defined.
@@ -753,6 +759,19 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                   collect
                   (with-blueprint (:noopt t) (apply #'%progn (map 'list #'(lambda (x) (parse-isl-ast pctx x)) kernel-items)))))))))))
 
+(defun apply-late-vectorize (blueprint)
+  (declare (type FastGraph blueprint))
+  (print "VECTORIZE")
+  ;; Important: RANGE, CONDITIONもCSEの対象に，また，gemmでCSE failing caseを見つけた。
+  ;; How to impl: 一旦，EXPR_Blockでお茶をにごす
+  ;; And then: Mask, TensorCore, Vectorize, などを適用して，コンパイルできる形へする
+  ;; - 1. @VECTORIZE(4)はacc_tmp mutationしない
+  ;; - 2. DEFINE_SIMGROUP的なのを書き変えれるように
+  ;; - 3. TensorRelay Type Inference
+  (caten/codegen/blueprint:print-blueprint blueprint t)
+  blueprint
+  )
+
 (defun %finalize-blueprint-from-polyhedral (polyhedral pctx kernel)
   "Convert ISL polyhedral representation back to blueprint graph"
   (declare (type Polyhedral-IR polyhedral) (type Graph kernel))
@@ -760,7 +779,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        pctx (poly-ctx polyhedral)
        (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast kernel)))
-    (values (ast-apply-cse (apply-directives new-bp)) extra-allocs)))
+    (values (ast-apply-cse (apply-late-vectorize (apply-directives new-bp))) extra-allocs)))
 
 (defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))
@@ -1285,9 +1304,7 @@ for (int i=0; i<32; i+=2)
          (final-sched (schedule-node-insert-directive vectorize-inner vband directive)))
     (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
 
-(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-    ;; [TODO]
-  blueprint)
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
 
 (defclass SplitReduce (OptimizationRule)
   ((size :initarg :size :accessor splitreduce-size)

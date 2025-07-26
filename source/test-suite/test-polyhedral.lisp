@@ -320,15 +320,23 @@
         ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 1 (get-depth (getband gemm 1))))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 0) :axis 0)))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 1) :axis 1)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 0) :axis 0)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 1)))
          (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
           (ok (= 1 (length new-kernels)))
           (ok (= 0 (length extra-allocs)))
-
           )))
+;;  (testing "Softmax Vectorize"
+;;    (with-polyhedral ((softmax ($softmax (make-tensor `(512 512))))
+;;                      (setf softmax (apply-optimization softmax (make-instance 'Reschedule :outer-coincidence 1)))
+;;                      (setf softmax (apply-optimization softmax (make-instance 'Vectorize :width 4 :band (getband softmax 0) :axis 0)))
+;;                      )
+;;        ((softmax-kernels extra-allocs)
+;;        (assert (= 1 (length softmax-kernels)))
+;;        (let ((sftmx (car softmax-kernels)))
+;;          (print-blueprint sftmx t)))))
   ;; [TODO] Softmax Vectorize
   )
 
