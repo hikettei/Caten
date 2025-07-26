@@ -78,9 +78,8 @@
 (defun flash-attention (config)
   (multiple-value-bind (q k v o l m) (make-inputs-from-config config)
     (multiple-value-bind (q k v o l m) (flash_attention q k v o l m)
-      (ctx:with-contextvar (:BEAM 10)
+      (ctx:with-contextvar (:BEAM 3)
         (caten o)))))
-
 ;; [TODO] FlashAttention Metal/CUDA
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~
 (defun benchmark (&key (impls (list #'naive-attention #'flash-attention)) (n 10) &aux (results))

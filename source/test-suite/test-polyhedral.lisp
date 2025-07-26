@@ -347,9 +347,21 @@
         (assert (= 1 (length attn-kernels)))
         (let ((kernel (car attn-kernels)))
           (print-blueprint kernel t)))))
+;; [TODO] Polyhedral TODO
+;; - [ ] Finalize CSE
+;;  - [ ] val_9，というか(setf X)にBIND生成を矯正させる
+;;  - [ ] Fix FlashAttention CSE
+;;  - [ ] Fix null stashed problem (?) CSE+Tile?
+;; - [ ] 次にVectorize/TensorCore, これは今日やる
+;; - [ ] 最後にGROUP/GROUPTOP
 ;; (deftest test-polyhedral-splitreduce)
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
+  ;; [TODO]
+  ;; ast-apply-cse+Softmaxが不安定
+  ;; val_9[...] = exp(...)
+  ;; val_11 = val_9[...]
+  ;; ^ これに時間軸での依存関係がないから。(TODO: LoweringするときにBINDを挿入するようにする)
 ;; Needed for finding an optimal kernel FINISH by (07/27)
 ;; - [x] Reschedule
 ;; - [x] Interchange

@@ -407,7 +407,7 @@ A <- L
                   (map 'list #'(lambda (x) (explore x :expr-subgraph-p t :scope scope)) (node-reads node)))))))
     (explore (car (graph-outputs graph)))))
 
-(defun ast-ensure-expr-is-singleton (graph &aux (visited (make-hash-table)) (cached) (rewrite-map (make-hash-table)) (ecache (make-hash-table)))
+(defun ast-ensure-expr-is-singleton (graph &aux (cached) (rewrite-map (make-hash-table)) (ecache (make-hash-table)))
   (declare (type FastGraph graph) (optimize (speed 3)))
   (labels ((expr-search-key (expr)
              (when (gethash (node-id expr) ecache) (return-from expr-search-key (gethash (node-id expr) ecache)))
@@ -645,26 +645,12 @@ A <- L
   "Applies CSE (Common Subexpression Elimination) to the given graph.
 Note that 99% of our transformation does not expect cse applied graph,
 so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
-  ;; [TODO]
-  ;; ast-apply-cse+Softmaxが不安定
-  ;; val_9[...] = exp(...)
-  ;; val_11 = val_9[...]
-  ;; ^ これに時間軸での依存関係がないから。(TODO: LoweringするときにBINDを挿入するようにする)
-  ;; - FlashAttentionでも不安定...
-  ;; cpy-graphは削除する
-  ;; (return-from ast-apply-cse graph)
-  ;;      (caten/codegen/blueprint:print-blueprint graph t)
   (ast-ensure-progn graph) ;; Ensure :PROGN is inserted undernearth :FOR/:IF (required by ast-collapse-expr-tree)
   (ast-rewrite-expr-as-ssa-style graph) ;; Rewrite graph as ssa style first
   (ast-ensure-expr-is-singleton graph) ;; ensure all expr is singleton
-  ;;      (caten/codegen/blueprint:print-blueprint graph t)
   (ast-fixup-scope graph) ;; rewrite and fixup scopes, sort topologically
-  ;;      (caten/codegen/blueprint:print-blueprint graph t)
   (ast-rewrite-ssa-style-as-tree graph) ;; and then construct tree-style expr again
-  (simplify-ast graph)
-  ;;      (caten/codegen/blueprint:print-blueprint graph t)
-  graph
-  )) ;; simplify and that's it!
+  (simplify-ast graph)) ;; simplify and that's it!
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
   (declare (type FastGraph graph) (type node expr))
