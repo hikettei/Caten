@@ -802,11 +802,9 @@ if (not ensure_domain_is_right)
                  t))))
     (let ((triggers (loop for node in (graph-nodes blueprint)
                           if (vectorize-is-toplevel-p node) collect node)))
-      (print triggers)
-      ;; Important: RANGE, CONDITIONもCSEの対象に，また，gemmでCSE failing caseを見つけた。
-      ;; Important: Innermost Tileが原因である
-      ;; Important: special_zのぎょう，CSEが悪いんじゃなくて，そもそもBPえる時の何かが間違ってるから先に修正
-      ;; TODO: Separateを使って簡略化することはできないか？
+      (dolist (trigger triggers)
+        (setf blueprint (caten/aasm::ast-band-vectorize blueprint trigger)))
+      ;; Important: RANGE, CONDITIONもCSEの対象に，
       ;; How to impl: 一旦，EXPR_Blockでお茶をにごす
       ;; And then: Mask, TensorCore, Vectorize, などを適用して，コンパイルできる形へする
       ;; - 1. @VECTORIZE(4)はacc_tmp mutationしない

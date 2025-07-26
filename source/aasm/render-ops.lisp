@@ -952,103 +952,36 @@ for (int i=0; i<M; i+=32)
       (insert-nodes graph (graph-nodes (clone-graph)))
       (%progn out))))
 
-;; Unroll Rewrites
-(defun ast-unroll-body (graph body idx n)
-  "Removes IDX from body by unrolling with N"
-  (declare (type graph graph) (type symbol idx) (type fixnum n))
-  (let ((nodes (apply #'make-graph (ast-band-children graph body)))
-        (out (second (node-reads body)))
-        (args (loop for node in (graph-nodes graph) if (eql (node-type node) :DEFINE-GLOBAL) collect (car (node-writes node)))))
-    (setf (graph-outputs nodes) (list out)
-          nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
-          nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
-    (labels ((%cpy-node (node)
-               (let ((node (copy-node node)))
-                 (setf (node-id node) (gensym "NID"))
-                 node))
-             (is-range-p (node &aux (node (id->value graph node)))
-               (and node (eql (node-type node) :RANGE) (eql idx (getattr node :idx))))
-             (unroll-id (cnt id &aux (val (id->value graph id)))
-               (declare (type fixnum cnt) (type symbol id))
-               (if val
-                   ;; note: variables defined by :DEFINE-GLOBAL is not unrolled
-                   (if (and (find id nodes :key #'node-writes :test #'find) (null (find id args)))
-                       (intern (format nil "~a_~a" id cnt))
-                       id)
-                   id))
-             (unroll-with-count (count &aux (seen (make-hash-table)))
-               (flet ((getid (id cnt)
-                        (or
-                         (gethash id seen)
-                         (setf (gethash id seen)
-                               (if (is-range-p id)
-                                   (node->id1 cnt)
-                                   (unroll-id count id))))))
-                 (with-context
-                   (cnt (%iconst count))
-                   (_ (loop for node_ in nodes for node = (%cpy-node node_)
-                            do (setf (node-reads node) (map 'list #'(lambda (x) (getid x cnt)) (node-reads node))
-                                     (node-writes node) (map 'list #'(lambda (x) (getid x cnt)) (node-writes node)))
-                               (emit node)))))))
-      (apply
-       #'%progn
-       (loop for i upfrom 0 below n
-             for unrolled = (unroll-with-count i)
-             for end = (intern (format nil "~a_~a" out i))
-             do (insert-nodes graph (graph-nodes unrolled))
-             collect end)))))
-
-(defun unroll-graph-with-count (graph count)
-  (labels ((newid (x) (if (and (symbolp x) (id->value graph x)) (intern (format nil "~a_~a" x count)) x))
-           (%cpy-node (x)
-             (let ((node (copy-node x)))
-               (setf (node-id node) (intern (format nil "~a_~a" (node-id x) count))
-                     (node-reads node) (map 'list #'newid (node-reads node))
-                     (node-writes node) (map 'list #'newid (node-writes node)))
-               node)))
-    (let ((new-graph (apply #'make-graph (map 'list #'%cpy-node (graph-nodes graph)))))
-      (setf (graph-outputs new-graph) (map 'list #'newid (graph-outputs graph)))
-      new-graph)))
-;; [TODO] TensorCore/Vectorize Workload
-;; - N次元でUnroll/Vectorizeする
-;; - その中で，8x8x8みたいなパターンがあったらそれは置き換える
-;; - 残りはUnroll
-
-(defun ast-band-vectorize (graph band amount &key (rewriter #'vectorizer) (dtype :int64))
-  (declare (type FastGraph graph) (type fixnum amount) (type node band))
-  (assert (eql :FOR (node-type band)))
-  (let ((range (id->value graph (car (node-reads band))))
-        (body  (id->value graph (second (node-reads band)))))
-    (assert (and range (eql :RANGE (node-type range))))
-    (assert body)
-    (let ((pack-width (id->value graph (car (node-reads range))))
-          (pack-stride (id->value graph (second (node-reads range)))))
-      (assert (and pack-width pack-stride (eql (node-type pack-width) :EXPR) (eql (node-type pack-stride) :EXPR)))
-      (let ((pack-width (id->value graph (car (node-reads pack-width))))
-            (pack-stride (id->value graph (car (node-reads pack-stride)))))
-        (assert (and pack-width pack-stride))
-        (assert (and (eql :LOAD (node-type pack-stride)) (eql 1 (getattr pack-stride :value)))
-                ()
-                "ast-band-vectorize: @VECTORIZE Loop should have step=1")
-        ;; If pack-width == amount ==> packable
-        ;; If pack-width !+ amount ==> reminder or padding
-        ;; TODO: Assume The loop is always INNERMOST
-        (insert-nodes
-         graph
-         (with-context-nodes
-             ;; bool x = (size == vectorize_width) (TODO: Simplify cond)
-           (cnd (%= nil :row (%load (%salloc :dtype dtype) amount) (emit pack-width)))
-           (new-graph
-            (%bind
-             (car (node-writes band))
-             (%progn
-              ;;(%if cnd (funcall rewriter graph body amount))
-              (%if (%not cnd)
-                   (%range (getattr range :idx) nil
-                           (node->id body) :range range)))))))
-        graph))))
-
-;; (defun ast-band-tensorcore ()) <- これはもう手作業で書く。WMMAがなければError
+(defun ast-band-vectorize (graph band &key (dtype :int64))
+  "(values graph fail_reason)"
+  (let ((seen (make-hash-table)) (bands) (filter))
+    (labels ((explore (id &aux (node (id->value graph id)))
+               (when (or (null node) (gethash (node-id node) seen)) (return-from explore))
+               (when (and (eql (node-type node) :FOR)
+                          (or (null (getattr node :directive))
+                              (not (equalp "VECTORIZE" (uiop:symbol-call :caten/codegen/polyhedral :directive-type (getattr node :directive))))))
+                 (return-from ast-band-vectorize (values graph "Failed to vectorize")))
+               (case (node-type node)
+                 (:PROGN
+                   (let ((reads (map 'list #'(lambda (x) (id->value graph x)) (node-reads node))))
+                     (if (every #'(lambda (x) (eql (node-type x) :EXPR)) reads)
+                         (progn
+                           (assert (null filter)) ;;(when filter (return-from ast-band-vectorize (values graph "Multiple filter detected")))
+                           (setf filter node))
+                         (return-from ast-band-vectorize (values graph "PROGN must be a list of EXPR")))))
+                 (:EXPR
+                  (assert (null filter)) ;; (when filter (return-from ast-band-vectorize (values graph "Multiple filter detected")))
+                  (setf filter node))
+                 (:FOR
+                  (push node bands)
+                  (explore (second (node-reads node))))
+                 (otherwise (return-from ast-band-vectorize (values graph (format nil "The node ~a is not supported" (node-type node))))))))
+      (explore (car (node-writes band))))
+    (setf bands (reverse bands))
+    (print bands)
+    (print filter)
+    (PRINT "A")
+    graph))
 ;; (defun ast-band-split-reduce ()) <- ReductionがなかったらError
 ;; SplitReduce, SyncThreads, SharedMemory
 
