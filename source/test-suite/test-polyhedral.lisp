@@ -372,14 +372,11 @@
 ;; - [ ] Things to fix: (1.) FlashAttention Schedule is too slow, (2.) Softmax is not working?
 ;; - [ ] After that, proceed to Vectorize/TensorCore/GROUP (1day)
 ;; - [ ] Setup CI, Benchmark, Poster
-;; (deftest test-polyhedral-splitreduce)
+;; - [ ] SearchSpace, Rescheduleさえ先頭ならあとはどうでもいい
+;; - [ ] *search-space* Tree no Parallel Assertion is not valid? and interchange isn't working?
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
 
   ;; [TODO]
-  ;; ast-apply-cse+Softmaxが不安定
-  ;; val_9[...] = exp(...)
-  ;; val_11 = val_9[...]
-  ;; ^ これに時間軸での依存関係がないから。(TODO: LoweringするときにBINDを挿入するようにする)
 ;; Needed for finding an optimal kernel FINISH by (07/27)
 ;; - [x] Reschedule
 ;; - [x] Interchange

@@ -1299,9 +1299,10 @@ for (int i=0; i<32; i+=2)
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (2 . (:NoOpt :Parallel :TileGPU)) ;; Outermost loop optimization should come first
-    (t . (:NoOpt))))
-    ;;(t . (:NoOpt :Tile :Vectorize :TensorCore :SplitReduce))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+    (2 . (:NoOpt :Parallel :TileGPU))
+    (t . (:NoOpt :Tile))
+;    (t . (:NoOpt :Tile :Vectorize :TensorCore :SplitReduce))
+    ))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
