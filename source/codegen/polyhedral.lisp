@@ -1258,16 +1258,32 @@ for (int i=0; i<32; i+=2)
               collect
               (make-instance 'Vectorize :width size :band band :axis nth))))
 
+(defun schedule-node-insert-directive (schedule-node band directive &aux (changed-p nil))
+  (flet ((mupa->str (mupa)
+           (assert mupa)
+           (isl::%isl-multi-union-pw-aff-to-str (isl::multi-union-pw-aff-handle mupa))))
+    (let ((tgt-sched (mupa->str (schedule-node-band-get-partial-schedule band))))
+      (map-schedule-node-children
+       #'(lambda (type band mark)
+           (when (and (eql type :schedule-node-band) (null mark))
+             ;; [TODO] Isn't there other way to compare two schedules?
+             (when (string= (mupa->str (schedule-node-band-get-partial-schedule band)) tgt-sched)
+               (let ((new-band (schedule-node-insert-mark band (directive->id directive))))
+                 (setf changed-p t schedule-node new-band)))))
+       (schedule-get-root (schedule-node-get-schedule schedule-node)))
+      (if changed-p
+          (schedule-node-insert-directive schedule-node band directive)
+          schedule-node))))
+ 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
+  (assert (optrule-band opt))
   (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
          (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
-         (vectorize-inner (schedule-node-get-child band-parent 0))
-         (vectorize-inner (isl::schedule-node-band-sink vectorize-inner)) 
-         (vectorize-inner (schedule-node-insert-mark
-                           vectorize-inner
-                           ;; Note: The vectorized loop should be freezed (= nobody can touch this!)
-                           (directive->id (directive "VECTORIZE" (vectorize-width opt) depth NIL)))))
-    (setf (poly-schedule poly) (schedule-node-get-schedule vectorize-inner))))
+         (vband (schedule-node-get-child band-parent 0))
+         (vectorize-inner (isl::schedule-node-band-sink vband))
+         (directive (directive "VECTORIZE" (vectorize-width opt) depth NIL)) ;; Vectorized band should not touched!
+         (final-sched (schedule-node-insert-directive vectorize-inner vband directive)))
+    (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
     ;; [TODO]

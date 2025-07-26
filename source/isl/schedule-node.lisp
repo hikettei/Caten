@@ -165,3 +165,7 @@
 (define-isl-function schedule-node-band-sink %isl-schedule-node-band-sink
   (:give schedule-node)
   (:take schedule-node))
+
+(defun schedule-node-is-equal (band1 band2)
+  (declare (type schedule-node band1 band2))
+  (%isl-schedule-node-is-equal (schedule-node-handle band1) (schedule-node-handle band2)))

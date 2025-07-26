@@ -306,6 +306,9 @@
   ;; - Innermost Unroll (i.e.: k)
   ;; and ..
   ;; - Reminder Creation
+  ;; [TODO]
+  ;; - まず考える，InsertMarkが一位に定まる方法
+  ;; - 
   ;; [TODO] これが終わったら，ConvNDでもVectorizeを適用することを考える
   ;; [TODO] Vectorize ==> BANDをInnermostへSinkしたい...
   ;; Workload
@@ -318,9 +321,7 @@
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 1 (get-depth (getband gemm 1))))
          (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 0) :axis 0)))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 2) :axis 2)))
-         
-         (print (getband gemm 2))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 1) :axis 1)))
          (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
@@ -402,7 +403,7 @@
 ;; - [ ] SearchSpace, Rescheduleさえ先頭ならあとはどうでもいい
 ;; - [ ] *search-space* Tree no Parallel Assertion is not valid? and interchange isn't working?
 ;; - Vectorizeをどうやって実装するべきか，InnerLoopのみを切り出すというのはできない？
-
+;; - Interchange/TileGPUが本当にすべての空間をCoverしてるか考える。一回のInterchangeで複数のToplevel Sequenceを最適化する
   ;; [TODO]
 ;; Needed for finding an optimal kernel FINISH by (07/27)
 ;; - [x] Reschedule
