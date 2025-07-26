@@ -59,9 +59,9 @@
   (with-slots ((batch batch) (head head) (n n) (d d) (q q) (k k) (v v)) config
     (ctx:with-contextvar (:BEAM 0)
       (values
-       (setf q (or q (proceed (!rand `(,batch ,head ,n ,d))))) ;; Q
-       (setf k (or k (proceed (!rand `(,batch ,head ,n ,d))))) ;; K
-       (setf v (or v (proceed (!rand `(,batch ,head ,n ,d))))) ;; V
+       (setf q (or q (proceed (!randn `(,batch ,head ,n ,d))))) ;; Q
+       (setf k (or k (proceed (!randn `(,batch ,head ,n ,d))))) ;; K
+       (setf v (or v (proceed (!randn `(,batch ,head ,n ,d))))) ;; V
        (make-tensor `(,batch ,head ,n ,d))
        (make-tensor (list batch head n))
        (make-tensor (list batch head n))))))
@@ -78,10 +78,10 @@
 (defun flash-attention (config)
   (multiple-value-bind (q k v o l m) (make-inputs-from-config config)
     (multiple-value-bind (q k v o l m) (flash_attention q k v o l m)
-      (ctx:with-contextvar (:BEAM 3)
+      (ctx:with-contextvar (:BEAM 0)
         (caten o)))))
 ;; [TODO] FlashAttention Metal/CUDA
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun benchmark (&key (impls (list #'naive-attention #'flash-attention)) (n 10) &aux (results))
   (loop for impl in impls
         for kernel = (funcall impl *config*) do

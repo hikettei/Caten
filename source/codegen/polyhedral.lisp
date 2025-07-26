@@ -1038,10 +1038,11 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     ;; (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
+     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
+     (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
