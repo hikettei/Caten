@@ -15,8 +15,6 @@
    #:Tile
    #:TileGPU
    #:Parallel
-   #:Collapse
-   #:TensorCore
    #:SplitReduce
    #:Vectorize)
   ;; GFlops Mesaurer
@@ -1010,13 +1008,13 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ Search Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: This is hackable by users (as intended)
 ;; DefaultSpace
-;; - [x] Reschedule  (Solves ILP and then find multiple candidates for an optimal schedule)
-;; - [x] Interchange (Changes the order of loops in the coincident band)
-;; - [x] Tile        (Tiles the band)
-;; - [x] TileGPU     (Tiles the coincident band for GPU, mapped w/ blockIdx/threadIdx, inner band loops are automatically collapsed) 
-;; - [ ] Parallel    (For CPU, collapses outer n loops and attributes parallelize)
-;; - [ ] Coalesce    (Coalesces the coincident bands, basically Parallel w/o inserting marks)
-;; - [ ] 
+;; - [x] Reschedule  Solves ILP and then generate multiple candidates for an entry point
+;; - [x] Interchange Change the partial schedule in the same band
+;; - [x] Tile        TileBands
+;; - [x] TileGPU     Coalesce+Tile+Mapping w/ block/threadIdx
+;; - [x] Parallel    Coalesce+Tile+Parallel
+;; - [x] Vectorize   Tile+Sink, later mapped w/ TensorCore
+;; - [x] SplitReduce Tile+Sink, this is the optimization for reduction and it has two mode: :warp and :block
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
@@ -1250,7 +1248,8 @@ for (int i=0; i<32; i+=2)
   (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands) :parallel 1))
   blueprint)
 
-(defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width)))
+(defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width))
+  (:documentation "Vectorize = Tile+Sink"))
 (defmethod optrule-generate-search-space (poly bands (id (eql :Vectorize)))
   (loop for band in bands for nth upfrom 0
         append
@@ -1271,36 +1270,41 @@ for (int i=0; i<32; i+=2)
     (setf (poly-schedule poly) (schedule-node-get-schedule vectorize-inner))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-  (let ((d (getattr (car bands) :directive)))
-    ;; (RANGE SIZE STEP) (assert step is one)
-    ;; SIZE個のElementsをRegisterにPackして計算する操作 = VECTORIZE
-
-    ;; (min 2 (- _gid_p2 + 19)) == 2
-    ;; ^ Add Simplifier to solve this!
-    blueprint))
-;; (defclass Collapse (OptimizationRule) nil)
-
-;; [TODO] FlashAttention from Tensor Graph, This will require a rewriting of runtime graph.
-;; (defclass FuseWithParent (OptimizationRule) nil)
-(defclass TensorCore (OptimizationRule) nil) ;; Memo: PostRejectionで探索する, suddenly 8x8x8とかで探索する。
+    ;; [TODO]
+  blueprint)
 
 (defclass SplitReduce (OptimizationRule)
-  ;; :mark :reductionを使用するようにしたい。 (TODO: It has two mode, :warp level and :block level)
-  nil)
-;; RootがReschedule->Reorderなら...的な話かも
-;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
-;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
-;; PPRINTを充実させるか，とっととParser作ってもろて
-;; - poly-ir-schedule-node: これを追加するべきか？
-;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
+  ((size :initarg :size :accessor splitreduce-size)
+   (mode :initarg :mode :type (member :warp :block) :initform :warp :accessor splitreduce-mode)))
+
+(defmethod optrule-generate-search-space (poly bands (id (eql :SplitReduce)))
+
+  )
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt SplitReduce))
+  (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
+         (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (splitreduce-size opt))))
+         (vectorize-inner (schedule-node-get-child band-parent 0))
+         (vectorize-inner (isl::schedule-node-band-sink vectorize-inner))
+         (mode (ecase (splitreduce-mode opt) (:warp "WARPREDUCE") (:block "BLOCKREDUCE")))
+         (vectorize-inner (schedule-node-insert-mark
+                           vectorize-inner
+                           ;; Note: The vectorized loop should be freezed (= nobody can touch this!)
+                           (directive->id (directive mode (splitreduce-size opt) depth NIL)))))
+    (setf (poly-schedule poly) (schedule-node-get-schedule vectorize-inner))))
+
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :WarpReduce)) bands blueprint)
+  blueprint)
+
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :BlockReduce)) bands blueprint)
+  blueprint)
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] FuseWithParent
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (2 . (:NoOpt :Parallel :TileGPU))
-    (t . (:NoOpt :Tile))
-;    (t . (:NoOpt :Tile :Vectorize :TensorCore :SplitReduce))
-    ))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+    (t . (:NoOpt :Tile :Vectorize :SplitReduce))))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
@@ -1437,69 +1441,9 @@ for (int i=0; i<32; i+=2)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
-;; [TODO]
-;; BEAM Enhancements
-;; - [ ] Transform More Things on ISL
-;;  - [ ] Unroll
-;;    - [ ] Scalarifyが完全に邪魔
-;;    - [ ] Vectorizeも
-;;    - [ ] TensorCore検索
-;;  - [ ] TileGPU
-;;  - [ ] Coalesce
-;;  - [ ] Shared Memory, ReduceSplit
-;;  - [ ] Interchange
-;; - [ ] More Beautiful Logger
-;; - [ ] Finally Clean up Codes
-;; - [ ] Support Symbolics
 
-
-;; [TODO] 戻ったらやること
-;; - [x] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
-;;   - [x] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
-;;   - [x] RuntimeGraph作れるように。
-;; - [x] TileGPUの付与について -> ScheduleTreeをRootからTraverseして探索する方法に変える
-;;   - [x] これによって，複数のTileGPUが付与される。
-;; - [x] 探索空間下に戻す
-;; - [x] Measure the score based on GFLOPs
-;; - [ ] Parallel+TILE is not working
-;; - [ ] LoopCollapse Standalone
-;; - [ ] Implement Float4(Upcast) Workload
-;;  - [ ] val_2のIndexingで悩むが，これはUnrollする範囲にEXPR Definitionがあるかどうかで決めれば良い？(Scalar Expr == Let in Common Lisp)
-;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
-;;    - [ ] これはLoop Fissionをサポートしていないのが悪い。(FOR(EXPR, ))を満たさないのは。
-;;    - [ ] !sigmoid -> TypeInference
-;;    - [ ] Range Repro ->
-;;    - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
-;;  - [ ] TypeInference+Unrollを再利用することで実装
-;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
-;;  - [ ] TileGPU, VISIBLE=Tに変更する (so further vectorized)
-                                        ;
-                                        ; [TODO]
-;; - [x] Bring Back Metal Renderer
-;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
-;; - [x] Define AutoSchedulerConfig
-;; - [x] TileGPU -> use render-ops.lisp feature and insert mark
-;;  - [x] Provide the directive class, and parse utils
-;;  - [x] TileGPU is just splitting the band w/ coincidence parts
-;;  - [ ] Optimization on Reduction
-;;  - [ ] TensorCore, SIMD, i.e., float4
-;;  - [ ] Support Loop Fission, and post loop collapse.
-;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
-;;  - [ ] How to implement loop coalescing to the band tile?
-;;  - [ ] float4, unroll!
-;; - Then all have to do is to get optimal kernel!
-;; - カーネルの分割/融合を正しくサポートする
-;; - Loop Interchange is REQUIRED
-;; - 4. fix a bug in threefry2x32
-;; - 5. ループの途中でincf挿入するやつやりたい?
-;; - 6. BEAM Cacheを実装する
-;; - 7. Symbolic Kernelに対して，探索したSchedule Commandsを適用する？
-;; - 8. val_2がSeparateされたとき，追加も一時領域Bufferを作成する (そんな難しくないという認識)
-;;  - 1. DetectSeparateScheduledを実装
-;;  - 2. Extractするときに，ISLに登録した通りにBufferを登録する。Argsは増えることになる。
-;; - 9. Support Symbolics. I think it is doable.
-
-;; Paper: https://arxiv.org/pdf/2410.03210
+;;  - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
+;;; Paper: https://arxiv.org/pdf/2410.03210
 ;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
 ;; https://chatgpt.com/c/6870e59d-2970-8005-abda-1b62c5808111?model=o3-pro
 ;; o3-pro proposed the following:

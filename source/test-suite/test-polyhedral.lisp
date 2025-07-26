@@ -308,6 +308,9 @@
   ;; - Reminder Creation
   ;; [TODO] これが終わったら，ConvNDでもVectorizeを適用することを考える
   ;; [TODO] Vectorize ==> BANDをInnermostへSinkしたい...
+  ;; Workload
+  ;; - DirectiveをちゃんとFORに適用させる or DirectiveMarkにSequenceを挿入したい？
+  ;; - ReminderはPaddingで表現する
   (testing "Vectorize at K"
     (with-polyhedral
         ;; TODO: If the loop was smaller than width?
@@ -315,6 +318,9 @@
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 1 (get-depth (getband gemm 1))))
          (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 0) :axis 0)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 2) :axis 2)))
+         
+         (print (getband gemm 2))
          (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
@@ -324,6 +330,18 @@
           )))
   ;; [TODO] Softmax Vectorize
   )
+
+(deftest test-warp/block-reduction
+  (with-polyhedral ((softmax ($softmax (make-tensor `(512 512))))
+                    (setf softmax (apply-optimization softmax (make-instance 'Reschedule :outer-coincidence 1)))
+                    (setf softmax (apply-optimization softmax (make-instance 'SplitReduce :mode :warp :size 4 :band (getband softmax 2) :axis 2)))
+                    
+                    (print softmax)
+                    )
+      ((softmax-kernels extra-allocs)
+        (assert (= 1 (length softmax-kernels)))
+        (let ((sftmx (car softmax-kernels)))
+          (print-blueprint sftmx t)))))
 ;; [TODO] Write
 (deftest test-polyhedral-flash-attention
   (testing "Scheduling"
@@ -371,6 +389,7 @@
 ;;  - [x] Fix FlashAttention CSE
 ;;  - [ ] Fix null stashed problem (?) CSE+Tile?
 ;; - [ ] 次にVectorize/TensorCore, これは今日やる
+;; - [ ] TileGPUを実装し直す。バンドの深さに制約をかけない (全部band-coalsceしてから置き換えるだけ)
 ;; - [ ] 最後にGROUP/GROUPTOP
 ;; - [ ] 全てにAccuarcy Test実装する
 ;; - [ ] TODO: CIでFlashAttentionを回す(CI BEAM)
