@@ -637,6 +637,8 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                        (fmt "~a; // EXPR(STORE)" (e (car (node-reads node))))
                        (fmt "~(~a~) = ~a; // expr" (car (node-writes node)) (e (car (node-reads node))))))
                   (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
+                  (:DEFINE-LOCAL (fmt "~(~a~)x~{~a~^x~} ~(~a~);"
+                                      (getattr node :dtype) (node-reads node) (car (node-writes node))))
                   (:RANGE)
                   (:FOR
                    (multiple-value-bind (range body) (apply #'values (node-reads node))

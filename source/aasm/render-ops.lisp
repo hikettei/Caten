@@ -53,6 +53,16 @@ Constraints:
   (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name))
   (emit (make-node :Render :DEFINE-GLOBAL (list name) nil :dtype dtype :pointer-p pointer-p :mode mode)))
 
+(defun %local (name size dtype)
+  (declare (type dtype-t dtype) (type list size) (type symbol name))
+  (emit (make-node :Render :DEFINE-LOCAL (list name) size :dtype dtype)))
+
+(defun %swizzle (name indices &key (out (gensym "SWIZZLE")))
+  "name[indices[0]][indices[1]][...]"
+  (declare (type symbol name) (type list indices))
+  (let ((indices (map 'list #'node->id1 indices)))
+    (emit (make-node :Render :SWIZZLE (list out) (append (list name) indices)))))
+
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
 (defun %defsmem (&key (size `(4)) (dtype *default-float*) (out (gensym "SMEM")))
@@ -367,7 +377,7 @@ Constraints:
 (defun ast-rewrite-expr-as-ssa-style (graph &key (simplify-load nil)
                                       &aux
                                         (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph))))
-                                        (whitelist `(:DEFINE-GLOBAL :ALLOCATE :RANGE :LOAD :BIND :SETF)))
+                                        (whitelist `(:DEFINE-GLOBAL :DEFINE-LOCAL :ALLOCATE :RANGE :LOAD :BIND :SETF)))
   "ast-rewrite-expr-as-ssa-style decomposes all EXPRs in the graph as:
 ```
 A <- EXPR(a+b*c)
@@ -429,6 +439,7 @@ A <- L
                                `(:EXPR ,(if id (node-id id) (node-id node)))))
                             (:BIND `(:BIND ,(e (car (node-reads node))) :as ,(getattr node :value)))
                             (:DEFINE-GLOBAL `(:DEFINE-GLOBAL ,(car (node-writes node)) ,(getattr node :pointer-p)))
+                            (:DEFINE-LOCAL  `(:DEFINE-LOCAL ,(car (node-writes node)) ,(node-reads node)))
                             (:ALLOCATE `(:ALLOCATE ,@(map 'list #'e (node-reads node)) :dtype ,(getattr node :dtype)))
                             (:LOAD
                              (let ((alloc (id->value graph (car (node-reads node)))))
@@ -952,6 +963,85 @@ for (int i=0; i<M; i+=32)
       (insert-nodes graph (graph-nodes (clone-graph)))
       (%progn out))))
 
+(defun filter-extract-load/acc/alu/store (graph filter)
+  (declare (type FastGraph graph) (type node filter))
+  (let ((stores) (loads) (alus) (accs) (seen (make-hash-table)))
+    (labels ((e (id expr-depth &aux (node (id->value graph id)))
+               (when (null node) (return-from e))
+               (when (gethash (node-id node) seen) (return-from e))
+               (setf (gethash (node-id node) seen) t)
+               (case (node-type node)
+                 (:EXPR
+                  (incf expr-depth)
+                  (when (> expr-depth 1) (return-from e))
+                  (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                      (push node alus)
+                      (push node accs))
+                  (e (car (node-reads node)) expr-depth))
+                 (:AREF (push node loads))
+                 (:SETF
+                  (push (id->value graph (car (node-reads node))) stores)
+                  (e (second (node-reads node)) expr-depth))
+                 (otherwise
+                  (mapc #'(lambda (x) (e x expr-depth)) (node-reads node))))))
+      (e (car (node-writes filter)) 0))
+    (values loads accs alus stores)))
+
+(defun %clone-node (node)
+  (let ((copy (copy-node node)))
+    (setf (node-id copy) (gensym "NID")
+          (node-reads copy) (copy-list (node-reads copy))
+          (node-writes copy) (copy-list (node-writes copy)))
+    copy))
+
+(defun ast-rewrite-and-clone (graph id filter &aux (seen (make-hash-table)))
+  "Filter: A lambda function which returns a node, filter(cloned_node, new_reads)"
+  (labels ((e (id expr-depth &aux (node (id->value graph id)))
+             (when (null node) (return-from e id))
+             (when (gethash id seen) (return-from e (gethash id seen)))
+             (when (eql (node-type node) :EXPR) (incf expr-depth))
+             (when (> expr-depth 1) (return-from e (gethash id seen id)))
+             (when (eql (node-type node) :DEFINE-GLOBAL) (return-from e id))
+             (when (eql (node-type node) :DEFINE-LOCAL) (return-from e id))
+             (let* ((new-reads (map 'list #'(lambda (x) (e x expr-depth)) (node-reads node)))
+                    (new-node (funcall filter (%clone-node node) new-reads))
+                    (newid (gensym)))
+               (assert (node-p new-node))
+               (assert (= 1 (length (node-writes new-node))))
+               (setf (gethash (car (node-writes new-node)) seen) newid
+                     (gethash newid seen) newid
+                     (node-writes new-node) (list newid))
+               (emit new-node)
+               (return-from e new-node))))
+    (car (node-writes (e id 0)))))
+;; VECTORIZE Directive ==> たまに付与に失敗してる？
+(defun make-vectorized-form (graph band filter-rewriter &key (dtype :int64) (is-reminder-p t) (suffix "_1") &aux (seen (make-hash-table)))
+  "is-reminder-p: If set to T, uses max(...) as a loop bound, otherwise, replaced w/ vectorize amount."
+  (labels ((e (id gids &key (size) &aux (node (id->value graph id)))
+             (when (null node) (return-from e node))
+             (when (gethash (node-id node) seen) (return-from e (gethash (node-id node) seen)))
+             (ecase (node-type node)
+               ((:PROGN :EXPR) ;; Filter
+                (let ((newnode (funcall filter-rewriter gids (map 'list #'(lambda (x) (getattr (id->value *ctx* x) :idx)) gids) seen)))
+                  (emit newnode)
+                  (setf (gethash (node-id node) seen) (car (node-writes newnode)))))
+               (:RANGE
+                   (assert size)
+                   (let* ((cpy (%clone-node node)) (newid (ngid (car (node-writes cpy)) suffix)))
+                     (when (null is-reminder-p) (setf (car (node-reads cpy)) (node->id1 (%expr (%load (%salloc :dtype dtype) size)))))
+                     (setf (getattr cpy :idx) (ngid (getattr cpy :idx) suffix)
+                           (node-writes cpy) (list newid))
+                     (emit cpy)
+                     (setf (gethash (node-id node) seen) newid)))
+               (:FOR
+                (let* ((cpy (%clone-node node)) (newid (ngid (car (node-writes node)) suffix))
+                       (n1 (e (car (node-reads cpy)) nil :size (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr cpy :directive)))))
+                  (setf (node-writes cpy) (list newid)
+                        (node-reads cpy) (list n1 (e (second (node-reads cpy)) (append gids (list n1)))))
+                  (emit cpy)
+                  (setf (gethash (node-id node) seen) newid))))))
+    (e (car (node-writes band)) nil)))
+
 (defun ast-band-vectorize (graph band &key (dtype :int64))
   "
 ```
@@ -987,6 +1077,7 @@ if (dom==10) // Full Tile or not?
 }
 ```
 ^ TpSortでIf融合できると嬉しい。
+^ ReminderはあとでUnrollする。
 (values graph fail_reason)"
   (let ((seen (make-hash-table)) (bands) (filter))
     (labels ((explore (id &aux (node (id->value graph id)))
@@ -1012,15 +1103,109 @@ if (dom==10) // Full Tile or not?
                  (otherwise (return-from ast-band-vectorize (values graph (format nil "The node ~a is not supported" (node-type node))))))))
       (explore (car (node-writes band))))
     (setf bands (reverse bands))
-    (print bands)
-    (print filter)
-    (PRINT "A")
-    ;; FilterSubgraphのCopyを前と同じ容量で作る。ただし，IDXは_pで
-    graph))
+    (multiple-value-bind (loads accs alus stores) (filter-extract-load/acc/alu/store graph filter)
+      (print bands)
+      (print filter)
+      (PRINT "++++++++++++++")
+      (print loads)
+      (print accs)
+      (print alus)
+      (print stores)
+      ;; HashTable作って，VectorizedIDを保存する？
+      ;; 4x4x4じゃなくて，4x4にしたい。
+      ;; - WMMAの部分もそう, 
+      (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands)))
+        ;; [TODO] Introduce node X = DEFINE_LOCAL(SIZE) :attr :float4, dtype: ...
+        ;; FilterSubgraphのCopyを前と同じ容量で作る。ただし，IDXは_pで
+        (insert-nodes
+         graph
+         (graph-nodes
+          (with-blueprint (:noopt t)
+            (%bind
+             (car (node-writes band))
+             (%progn
+              ;; Declarations
+              (loop for load in loads           
+                    collect
+                    (%local (ngid (car (node-writes load)) "_vectorized")
+                            vectorize-space (tensor-relay-dtype (car (relay-writes (read-type-relay load))))))
+              ;;(loop for load in loads                                                      
+              ;;      collect
+              ;;      (%local (ngid (car (node-writes load)) "_shared")
+              ;;              vectorize-space (tensor-relay-dtype (car (relay-writes (read-type-relay load))))))
+              (loop for acc in accs
+                    collect
+                    (%local (ngid (car (node-writes acc)) "_acc")
+                            vectorize-space (tensor-relay-dtype (car (relay-writes (read-type-relay acc))))))
+              ;; Accs (VECTORIZED)
+              (make-vectorized-form
+               graph band
+               #'(lambda (gids gids1 seen)
+                   (%progn
+                    (loop for acc in accs
+                          collect
+                          (%expr (node->id1 (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc))))))))
+               :is-reminder-p nil)
+              ;; Loads (VECTORIZED)
+              (loop for suffix1 in (list "_vectorized"); "_shared")
+                    for suffix2_prefix in (list "_vload" "_rload")
+                    for vectorized-p in (list nil t)
+                    collect
+                    (loop for load in loads
+                          for nth upfrom 0
+                          for suffix2 = (format nil "~a_~a" suffix2_prefix nth)
+                          collect
+                          (make-vectorized-form
+                           graph band
+                           #'(lambda (gids gids1 seen)
+                               (%progn
+                                (%expr
+                                 (node->id1
+                                  (%setf (%swizzle (ngid (car (node-writes load)) suffix1) gids)
+                                         (ast-rewrite-and-clone
+                                          graph (car (node-writes load))
+                                          #'(lambda (node reads)
+                                              (declare (ignore reads))
+                                              (case (node-type node)
+                                                (:LOAD
+                                                 (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1)))
+                                                   (when new-gid (setf (getattr node :value) new-gid))
+                                                   node))
+                                                (:RANGE (gethash (car (node-writes node)) seen node))
+                                                (otherwise node)))))))))
+                           :is-reminder-p vectorized-p
+                           :suffix suffix2)))
+              ;; ALUs (Vectorized)
+              (flet ((newid (x) (car (node-writes x))))
+                (loop for alu in alus
+                      collect
+                      (ast-rewrite-and-clone
+                       graph
+                       (car (node-writes alu))
+                       #'(lambda (node reads)
+                       ;    (setf (node-reads node) (map 'list #'newid reads))
+                           node))))
+              ;; ALUs (Reminder)
+              (flet ((newid (x) x))
+                (make-vectorized-form
+                 graph band
+                 #'(lambda (gids gids1 seen)
+                     (%progn
+                      (loop for alu in alus
+                            collect
+                            (ast-rewrite-and-clone
+                             graph
+                             (car (node-writes alu))
+                             #'(lambda (node reads)
+                                 node)))))))
+              ;; STORE (Rev of LOAD)
+              ))))))
+      (caten/codegen/blueprint:print-blueprint graph t)
+      (PRINT "FINISHED")
+      graph)))
+;; DEFINE-FLOAT-8x8
 ;; (defun ast-band-split-reduce ()) <- ReductionがなかったらError
 ;; SplitReduce, SyncThreads, SharedMemory
-
-;; Collapse
 (defun ast-band-collapse (graph bands &key (dtype :int64) (parallel nil))
   "
 for i in range(M):

@@ -137,6 +137,18 @@ Declares a buffer.
                          (if (getattr node :pointer-p)
                              (funcall (ast-type-map :DEFINE-GLOBAL) id->type node)
                              (list (make-tensor-relay nil nil (getattr node :dtype) nil)))))
+
+(defnode (:Render :DEFINE-LOCAL) (RenderOps)
+         "
+```
+X <- (SIZE1, SIZE2)
+```
+Declares SIZE1 x SIZE2 x ... local buffer
+"
+         :slots ((dtype))
+         :type-relay #'(lambda (id->type node)
+                         (assert (every #'integerp (node-reads node)))
+                         (funcall (ast-type-map :DEFINE-GLOBAL) id->type node)))
                          
 
 ;;; JITOps
@@ -145,6 +157,7 @@ Declares a buffer.
 ```
 X <- Aref(Array, Index)
 ```
+Reads a scalar value from global buffer (DEFINE-GLOBAL)
 "
          :slots nil
          :type-relay #'(lambda (id->type node)
@@ -158,6 +171,24 @@ X <- Aref(Array, Index)
                              (T
                               (error "The first argument for :Aref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
 
+(defnode (:JIT :Swizzle) (RenderOps)
+         "
+```
+X <- Swizzle(Array, index[0], index[1], ...)
+```
+Reads a scalar value from local buffer (DEFINE-LOCAL)
+"
+         :slots nil
+         :type-relay #'(lambda (id->type node)
+                         (let ((arg (gethash (car (node-reads node)) id->type)))
+                           (cond
+                             ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-LOCAL)) ;; Load buffer from DRAM
+                              (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil)))
+                             ((typep arg 'TensorRelay)
+                              (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil)))
+                             (T
+                              (error "The first argument for :Aref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
+;;[TODO] Remove
 (defnode (:JIT :Pack) (RenderOps)
          "
 ```
@@ -181,7 +212,7 @@ X <- pack(pointer, val1, val2, val3, ..., contiguous=boolean)
                   (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil :vectorize vectorize)))
                  (T
                   (error "The first argument for :Pack should be either of :DEFINE-GLOBAL or TensorRelay"))))))
-
+;; [TODO]Remove
 (defnode (:JIT :Unpack) (RenderOps)
          "
 ```
@@ -230,11 +261,11 @@ Corresponds to:
          :type-relay #'(lambda (id->type node)
                          (declare (ignore id->type))
                          (list (make-tensor-relay nil nil (getattr node :dtype) nil))))
-         
+;; [TODO] Remove
 (defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
          :slots ((dtype :type keyword) (size :type integer))
          :type-relay (ast-type-map :DEFINE-SHARED-MEMORY))
-
+;; [TODO] Remove
 (defnode (:Render :FUNCTION) () "An entry point for the RenderGraph"
          :slots ((name :type symbol))
          :type-relay (ast-type-map :FUNCTION))
