@@ -1004,8 +1004,11 @@ for (int i=0; i<M; i+=32)
              (when (eql (node-type node) :DEFINE-GLOBAL) (return-from e id))
              (when (eql (node-type node) :DEFINE-LOCAL) (return-from e id))
              (let* ((new-reads (map 'list #'(lambda (x) (e x expr-depth)) (node-reads node)))
-                    (new-node (funcall filter (%clone-node node) new-reads))
+                    (c (%clone-node node))
+                    (_ (setf (node-reads c) (map 'list #'(lambda (x) (if (node-p x) (car (node-writes x)) x)) new-reads)))
+                    (new-node (funcall filter c new-reads))
                     (newid (gensym)))
+               (declare (ignore _))
                (assert (node-p new-node))
                (assert (= 1 (length (node-writes new-node))))
                (setf (gethash (car (node-writes new-node)) seen) newid
@@ -1022,7 +1025,7 @@ for (int i=0; i<M; i+=32)
              (when (gethash (node-id node) seen) (return-from e (gethash (node-id node) seen)))
              (ecase (node-type node)
                ((:PROGN :EXPR) ;; Filter
-                (let ((newnode (funcall filter-rewriter gids (map 'list #'(lambda (x) (getattr (id->value *ctx* x) :idx)) gids) seen)))
+                (let ((newnode (funcall filter-rewriter gids (map 'list #'(lambda (x) (id->value *ctx* x)) gids) seen)))
                   (emit newnode)
                   (setf (gethash (node-id node) seen) (car (node-writes newnode)))))
                (:RANGE
@@ -1141,6 +1144,7 @@ if (dom==10) // Full Tile or not?
               (make-vectorized-form
                graph band
                #'(lambda (gids gids1 seen)
+                   (declare (ignore gids1))
                    (%progn
                     (loop for acc in accs
                           collect
@@ -1168,10 +1172,21 @@ if (dom==10) // Full Tile or not?
                                               (declare (ignore reads))
                                               (case (node-type node)
                                                 (:LOAD
-                                                 (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1)))
-                                                   (when new-gid (setf (getattr node :value) new-gid))
+                                                 (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1
+                                                                      :key #'(lambda (x) (getattr x :idx)))))
+                                                   (when new-gid (setf (getattr node :value) (getattr new-gid :idx)))
                                                    node))
-                                                (:RANGE (gethash (car (node-writes node)) seen node))
+                                                (:RANGE
+                                                    (let ((new-gid (find (ngid (getattr node :idx) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                                      (if new-gid
+                                                          (let ((n (%clone-node new-gid)))
+                                                            (setf (node-writes n) (node-writes node))
+                                                            
+                                                            (print "rewrite acc+")
+                                                            (print node)
+                                                            (print new-gid)
+                                                            n)
+                                                          node)))
                                                 (otherwise node)))))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))
@@ -1200,6 +1215,8 @@ if (dom==10) // Full Tile or not?
                                  node)))))))
               ;; STORE (Rev of LOAD)
               ))))))
+;      (print graph)
+;      (pprint-graph graph)
       (caten/codegen/blueprint:print-blueprint graph t)
       (PRINT "FINISHED")
       graph)))
