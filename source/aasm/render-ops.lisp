@@ -1009,51 +1009,10 @@ for (int i=0; i<M; i+=32)
     (let ((new-graph (apply #'make-graph (map 'list #'%cpy-node (graph-nodes graph)))))
       (setf (graph-outputs new-graph) (map 'list #'newid (graph-outputs graph)))
       new-graph)))
-
-;; [TODO]
-(defun vectorizer (graph body amount)
-  (let* ((body-graph (ast-make-subgraph graph (car (node-writes body)) :expr-depth 1))
-         (loads (loop for node in (graph-nodes body-graph)
-                      if (eql (node-type node) :Aref)
-                        collect node))
-         (load-ids (map 'list #'(lambda (x) (declare (ignore x)) (gensym "load_")) loads))
-         (aref->id (make-hash-table))
-         (new-compute (unroll-graph-with-count body-graph amount)))
-    (loop for id in load-ids for node in loads do
-      (setf (gethash (print (intern (format nil "~a_~a" (node-id node) amount))) aref->id) id))
-    (flet ((new-aref-id (sym &aux (val (id->value new-compute sym)))
-             (if (and val (eql (node-type val) :AREF))
-                 (or (gethash (node-id val) aref->id) (error "?"))
-                 sym))))
-;      (loop for node in (graph-nodes new-compute) do
-;        (setf (node-reads node) (map 'list #'new-aref-id (node-reads node)))
-;        (emit node)))
-    (expr-rewrite-flatten new-compute) ;; new-compute can be a progn graph!
-    (flet ((aref-unroll-n (aref n)
-             )
-           (is-contiguous ()
-             ))
-      ;; [TODO] Rewrite Aref -> Float4
-      ;; [TODO] Add New Float4 Ops for renderer
-      ;; [TODO] Sort body topologically!
-      ;; [TODO] After vectorize, tensorcore, splitreduce
-      ;; index simplify is REQUIRED (Node is singleton?)
-      ;; - i.e.: ReExprify
-      ;; - need: Topological Sort in Progn, remove duplicated computation, and then construct again ...
-      (%progn
-       ;; vectorize
-       (map
-        'list
-        #'(lambda (write-to x)
-            (%expr (%pack x nil :contiguous (is-contiguous)) :out write-to))
-        load-ids loads)
-       ;; compute
-       (loop for node in (tpsort-graph new-compute)
-             if (eql :EXPR (node-type node))
-               collect node)
-       ;; devectorize
-       ;; SETFを検知，accでdevectorizeを挿入
-       ))))
+;; [TODO] TensorCore/Vectorize Workload
+;; - N次元でUnroll/Vectorizeする
+;; - その中で，8x8x8みたいなパターンがあったらそれは置き換える
+;; - 残りはUnroll
 
 (defun ast-band-vectorize (graph band amount &key (rewriter #'vectorizer) (dtype :int64))
   (declare (type FastGraph graph) (type fixnum amount) (type node band))
@@ -1073,7 +1032,6 @@ for (int i=0; i<M; i+=32)
                 "ast-band-vectorize: @VECTORIZE Loop should have step=1")
         ;; If pack-width == amount ==> packable
         ;; If pack-width !+ amount ==> reminder or padding
-        (pprint-graph graph :id (car (node-writes pack-width)))
         ;; TODO: Assume The loop is always INNERMOST
         (insert-nodes
          graph
@@ -1084,7 +1042,7 @@ for (int i=0; i<M; i+=32)
             (%bind
              (car (node-writes band))
              (%progn
-              (%if cnd (funcall rewriter graph body amount))
+              ;;(%if cnd (funcall rewriter graph body amount))
               (%if (%not cnd)
                    (%range (getattr range :idx) nil
                            (node->id body) :range range)))))))
@@ -1092,48 +1050,6 @@ for (int i=0; i<M; i+=32)
 
 ;; (defun ast-band-tensorcore ()) <- これはもう手作業で書く。WMMAがなければError
 ;; (defun ast-band-split-reduce ()) <- ReductionがなかったらError
-
-;; [TODO] Remove This!
-(defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64) (rewriter #'ast-unroll-body) &aux (n-unroll (car local-sizes)))
-  (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
-  (let ((range (id->value graph (car (node-reads band)))))
-    (assert (and range (eql (node-type range) :RANGE)))
-    (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band local-sizes)
-      ;; The work here is to remove away local-bands
-      ;; also inserting reminder bands in the gloal-bands
-      ;; [TODO] Insert Reminder Statements
-      ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies?
-      ;; note: do not run verify-graph during %ast-band-tile
-      (flet ((expr-out (id &aux (node (id->value graph id)))
-               (if (numberp id)
-                   id
-                   (car (node-reads node)))))
-        (let* ((reminder-graph (compute-unroll-reminder reminder (expr-out (car (node-reads range))) (expr-out (second (node-reads range))) n-unroll))
-               (reminder-expr (%expr (car (graph-outputs reminder-graph))))
-               (new-step (%mul n-unroll (second (node-reads range))))
-               (new-step-expr (%expr (node->id1 new-step)))
-               (idx1 (getattr (id->value graph (car (node-reads (car global-bands)))) :idx))
-               (idx2 (getattr (id->value graph (car (node-reads (car local-bands)))) :idx))
-               (range1 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-expr) (node->id1 new-step-expr))
-                                  :idx idx1 :dtype dtype))
-               (reminder-size-tmp (%neg (car (graph-outputs reminder-graph))))
-               (reminder-size (%add (expr-out (car (node-reads range))) reminder-size-tmp))
-               (reminder-size-expr (%expr (node->id1 reminder-size)))
-               (range2 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-size-expr) (second (node-reads range)))
-                                  :idx idx2 :dtype dtype))
-               (body1 (funcall rewriter graph (car local-bands) idx2 n-unroll)) ;; Unrolled body
-               (body2 (ast-unroll-reminder graph (car local-bands) idx1 (car (graph-outputs reminder-graph)))) ;; Reminder body (idx2 is rewritten as idx2 + reminder_graph.out)
-               (main-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range1) (node->id1 body1)) :mark :noopt))
-               (reminder-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range2) (node->id1 body2)) :mark :noopt))
-               (prgn (%bind (car (node-writes (car global-bands))) (%progn main-band reminder-band))))
-          (let ((nodes
-                  (append
-                   (graph-nodes reminder-graph)
-                   (list new-step new-step-expr reminder-size-tmp reminder-expr reminder-size-expr
-                         body1 body2 range
-                         range1 reminder-size range2 main-band reminder-band prgn))))
-            (insert-nodes graph (apply #'append (map 'list #'node-force-number-bypass nodes)))
-            graph))))))
 ;; SplitReduce, SyncThreads, SharedMemory
 
 ;; Collapse

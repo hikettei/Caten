@@ -1263,6 +1263,7 @@ for (int i=0; i<32; i+=2)
   (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
          (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
          (vectorize-inner (schedule-node-get-child band-parent 0))
+         (vectorize-inner (isl::schedule-node-band-sink vectorize-inner)) 
          (vectorize-inner (schedule-node-insert-mark
                            vectorize-inner
                            ;; Note: The vectorized loop should be freezed (= nobody can touch this!)
@@ -1273,11 +1274,7 @@ for (int i=0; i<32; i+=2)
   (let ((d (getattr (car bands) :directive)))
     ;; (RANGE SIZE STEP) (assert step is one)
     ;; SIZE個のElementsをRegisterにPackして計算する操作 = VECTORIZE
-    (loop for band in bands do
-      (setf
-       blueprint
-       (simplify-ast (caten/aasm::ast-band-vectorize blueprint band (directive-amount d)))))
-    (simplify-ast blueprint)
+
     ;; (min 2 (- _gid_p2 + 19)) == 2
     ;; ^ Add Simplifier to solve this!
     blueprint))

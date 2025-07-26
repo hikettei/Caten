@@ -306,24 +306,22 @@
   ;; - Innermost Unroll (i.e.: k)
   ;; and ..
   ;; - Reminder Creation
+  ;; [TODO] これが終わったら，ConvNDでもVectorizeを適用することを考える
+  ;; [TODO] Vectorize ==> BANDをInnermostへSinkしたい...
   (testing "Vectorize at K"
     (with-polyhedral
         ;; TODO: If the loop was smaller than width?
         ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 1 (get-depth (getband gemm 1))))
-         (let ((k-band (getband gemm 1)))
-           (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band k-band :axis 1)))
-           (print gemm)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 3 :band (getband gemm 0) :axis 0)))
+         (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
           (ok (= 1 (length new-kernels)))
           (ok (= 0 (length extra-allocs)))
 
           )))
-  (testing "Vectorize at I,J"
-
-    )
   ;; [TODO] Softmax Vectorize
   )
 ;; [TODO] Write
@@ -335,7 +333,15 @@
           (let ((kernel (car attn-kernels)))
             (print-blueprint kernel t)))))
   (testing "Search"
-    (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5)))))
+    (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5))))
+                      (setf attn (apply-optimization attn (make-instance 'Reschedule :outer-coincidence 1))) ;; Loop Fusion
+                      (setf attn (apply-optimization attn (make-instance 'TileGPU :local-size 2 :band (getband attn 0) :axis 0)))
+                      ;; [TODO]
+                      ;; Apply:
+                      ;;   Vectorize, TensorCore, SplitReduce
+                      (psched attn)
+                      (print attn)
+                      nil)
         ((attn-kernels extra-allocs)
           (assert (= 1 (length attn-kernels)))
           (let ((kernel (car attn-kernels)))
@@ -359,9 +365,10 @@
         (let ((sftmx (car softmax-kernels)))
           (print-blueprint sftmx t))))))
 ;; [TODO] Polyhedral TODO
-;; - [ ] Finalize CSE
-;;  - [ ] val_9，というか(setf X)にBIND生成を矯正させる
-;;  - [ ] Fix FlashAttention CSE
+;; - [ ] Parallel+TILE is breaked
+;; - [x] Finalize CSE
+;;  - [x] val_9，というか(setf X)にBIND生成を矯正させる
+;;  - [x] Fix FlashAttention CSE
 ;;  - [ ] Fix null stashed problem (?) CSE+Tile?
 ;; - [ ] 次にVectorize/TensorCore, これは今日やる
 ;; - [ ] 最後にGROUP/GROUPTOP
@@ -369,6 +376,7 @@
 ;; - [ ] TODO: CIでFlashAttentionを回す(CI BEAM)
 ;; - [ ] Loop FissionしてからのTileGPU動いたっけ？ ==> OK
 ;; - [ ] Fix RANDN
+;;  - [ ] Matmul, Randnした後のTensorViewを正しく修正する。
 ;; - [ ] Things to fix: (1.) FlashAttention Schedule is too slow, (2.) Softmax is not working?
 ;; - [ ] After that, proceed to Vectorize/TensorCore/GROUP (1day)
 ;; - [ ] Setup CI, Benchmark, Poster
