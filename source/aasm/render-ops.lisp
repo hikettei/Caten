@@ -169,6 +169,9 @@ Constraints:
               (loop for node in (graph-nodes graph)
                     if (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx)) do
                       (let ((load (with-context-nodes (out (%bind (car (node-writes node)) (%iconst 0 :dtype dtype))))))
+                        (dolist (load (graph-nodes graph))
+                          (when (and (eql (node-type load) :LOAD) (eql (getattr load :value) (getattr node :idx)))
+                            (setf (getattr load :value) 0)))
                         (insert-nodes graph load)))
               (insert-nodes graph (append =0 (list expr)))
               body))))))
