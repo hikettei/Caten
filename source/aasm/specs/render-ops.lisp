@@ -203,6 +203,9 @@ X <- VECTOR(LocalVar, size1, size2, ...)
                              ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-LOCAL))
                               (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil
                                                        :vectorize (cdr (node-reads node)))))
+                             ((and (typep arg 'TensorRelay))
+                              (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil
+                                                       :vectorize (cdr (node-reads node)))))
                              (T
                               (error "The first argument for :VECTOR should be a SRAM Load (i.e.: :DEFINE-LOCAL)~%Getting ~a" arg))))))
 ;;[TODO] Remove

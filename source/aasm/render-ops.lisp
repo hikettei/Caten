@@ -1187,7 +1187,6 @@ if (dom==10) // Full Tile or not?
     (multiple-value-bind (loads accs alus stores) (filter-extract-load/acc/alu/store graph filter)
       (print bands)
       (print filter)
-      
       (PRINT "++++++++++++++")
       (print "LOADS")
       (print loads)
@@ -1249,9 +1248,9 @@ if (dom==10) // Full Tile or not?
         ;; - [ ] TensorCore
         ;; WIP Things:
         ;; - [ ] BIND, SetfでSortできるように注意
-        ;; - [ ] _1のgidの処理をどうするか。まだSpaceは正しくない。
+        ;; - [x] _1のgidの処理をどうするか。まだSpaceは正しくない。
         ;; - [x] SETF
-        ;; - [ ] @VECTORIZE Directive，たまに付与に失敗してる・・・(Randomly Fails why)
+        ;; - [x] @VECTORIZE Directive，たまに付与に失敗してる・・・(Randomly Fails why)
         ;; - [ ] TypeInference Fails
         ;; - [ ] Simplify, TPSort!
         ;; - [ ] TileGPU+VECTORIZE
@@ -1259,6 +1258,7 @@ if (dom==10) // Full Tile or not?
         ;; - 一旦non-isolatedだけでcompile目指してみる
         ;; - [ ] PARALLEL+Tile Bug あとで直さないと...
         ;; :VECTORIZEについて，EXPR+VECTORIZEの形で常に現れるようにしたい。(ASTLoopにする。vectorizeがめんどくさくても，render-nodeで{a0+b0, ...的にかけるようにしたい})
+        ;; - まずはSimplifierとTpSort, 次にSoftmaxとFlashAttention
         (insert-nodes
          graph
          (graph-nodes
@@ -1377,8 +1377,7 @@ if (dom==10) // Full Tile or not?
                                    gids)))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))))))))
-;;      (simplify-ast graph)
-      (caten/codegen/blueprint:print-blueprint graph t)
+;;       (caten/codegen/blueprint:print-blueprint graph t)
       graph)))
 ;; DEFINE-FLOAT-8x8
 ;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)
@@ -1399,7 +1398,6 @@ for x in range(M*N*K):
 "
   (declare (type FastGraph graph) (type list bands))
   (when (= (length bands) 1) (return-from ast-band-collapse graph))
-  ;; [TODO] Loop Interchange?
   (flet ((maybe-fixnum (x)
            (if (numberp x)
                (%load (%salloc :dtype dtype) x)
