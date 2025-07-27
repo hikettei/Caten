@@ -1218,6 +1218,7 @@ val_0[i] = val_0_tmp // EXPR(STORE)
     (multiple-value-bind (new-id rewritten) (graph-rewrite-setf-is-expr graph (id->value graph (second (node-reads filter))))
       (insert-nodes graph (graph-nodes rewritten))
       (setf (second (node-reads filter)) new-id)))
+  (graph-infer-type-relay graph)
   graph)
 
 (defun ensure-aref-name (graph aref)

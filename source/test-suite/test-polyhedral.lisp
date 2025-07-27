@@ -350,7 +350,16 @@
   )
 
 (deftest test-vectorize-flash-attention
-  )
+  (testing "Scheduling"
+    (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5))))
+                      (setf attn (apply-optimization attn (make-instance 'Reschedule :outer-coincidence 1)))
+                      ;;(setf attn (apply-optimization attn (make-instance 'Vectorize :width 4 :band (getband attn 0) :axis 0)))
+                      (print attn))
+        ((attn-kernels extra-allocs)
+          (assert (= 1 (length attn-kernels)))
+          (let ((kernel (car attn-kernels)))
+            (print-blueprint kernel t)
+            )))))
 
 (deftest test-polyhedral-vectorize-1
   (testing "Vectorize at K"
