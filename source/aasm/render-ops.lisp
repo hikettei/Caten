@@ -63,9 +63,9 @@ Constraints:
   (let ((indices (map 'list #'node->id1 indices)))
     (emit (make-node :Render :SWIZZLE (list out) (append (list name) indices)))))
 
-(defun %vector (from shape indices &key (out (gensym "VECTOR")))
-  (declare (type symbol from) (type list indices))
-  (emit (make-node :JIT :VECTOR (list out) (append (list from) (flatten indices)) :shape shape)))
+(defun %vector (from indices &key (out (gensym "VECTOR")))
+  (declare (type symbol from))
+  (emit (make-node :JIT :VECTOR (list out) (append (list from) indices))))
 
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
@@ -998,6 +998,7 @@ for (int i=0; i<M; i+=32)
   (node nil :type (or null Node))
   (space nil :type list)
   (gids nil :type list)
+  (map nil :type list)
   (block-size nil :type list)
   (bind-to nil :type (or Null node)))
 
@@ -1046,14 +1047,13 @@ for (int i=0; i<M; i+=32)
            (make-list width :initial-element 0)))
    gids spaces))
 
-(defun %vector-from-vectorized (bands vectorized)
-  ;; [TODO] GIDS
+(defun %vector-from-vectorized (ranges vectorized)
   (%vector
    (node->id1 (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to vectorized)) :value (vectorized-name vectorized))))
-   (vectorized-block-size vectorized)
-   (make-space-from-bands vectorized (vectorized-gids vectorized) (vectorized-block-size vectorized))))
+   (append (vectorized-map vectorized)
+           (loop for i upfrom 0 below (- (length ranges) (length (vectorized-map vectorized))) collect 1))))
 
-(defun ast-vectorize-alu (graph bands alu ctx &aux (seen (make-hash-table)))
+(defun ast-vectorize-alu (graph ranges alu ctx &aux (seen (make-hash-table)))
   "
 VectorizeContext
 acc | acc_acc[_gid_p3][_gid_p4]
@@ -1075,17 +1075,17 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
              (:EXPR
               (let ((vec (gethash (car (node-writes node)) ctx)))
                 (if vec
-                    (%vector-from-vectorized bands vec)
+                    (%vector-from-vectorized ranges vec)
                     node)))
              (:AREF
               (let ((vec (gethash (car (node-reads node)) ctx)))
                 (if vec
-                    (%vector-from-vectorized bands vec)
+                    (%vector-from-vectorized ranges vec)
                     node)))
              (:BIND
                  (let ((vec (gethash (getattr node :value) ctx)))
                    (if vec
-                       (%vector-from-vectorized bands vec)
+                       (%vector-from-vectorized ranges vec)
                        node)))
              (otherwise
               node))))
@@ -1159,8 +1159,6 @@ if (dom==10) // Full Tile or not?
         ...;
 }
 ```
-^ TpSortでIf融合できると嬉しい。
-^ ReminderはあとでUnrollする。
 (values graph fail_reason)"
   (let ((seen (make-hash-table)) (bands) (filter))
     (labels ((explore (id &aux (node (id->value graph id)))
@@ -1200,7 +1198,8 @@ if (dom==10) // Full Tile or not?
       (PRINT "STORES")
       (print stores)
       (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands))
-            (store-vec-tmp (make-hash-table)))
+            (store-vec-tmp (make-hash-table))
+            (ranges))
         ;; Update Contexts
         (flet ((node->gid (node)
                  (let ((range (id->value graph (car (node-reads node)))))
@@ -1210,24 +1209,36 @@ if (dom==10) // Full Tile or not?
                  (loop with dep-ids = (aref-depends-on graph node)
                        for band in bands for size in vectorize-space
                        if (find (getattr (id->value graph (car (node-reads band))) :idx) dep-ids)
-                         collect (cons band size))))
+                         collect (cons band size)))
+               (make-map (node)
+                 (loop with dep-ids = (aref-depends-on graph node)
+                       for band in bands for size in vectorize-space
+                       if (find (getattr (id->value graph (car (node-reads band))) :idx) dep-ids)
+                         collect size
+                       else
+                         collect 1)))
+          (setf ranges (map 'list #'node->gid bands))
           (loop for load in loads do
             (let ((depend-bands (depend-bands load)))
               (setf (gethash (car (node-reads load)) vectorize-context)
                     (make-vectorized :name (ngid (car (node-reads load)) "_vectorized") :node load :gids (map 'list (compose #'node->gid #'car) depend-bands)
+                                     :map (make-map load)
                                      :space (map 'list #'car depend-bands) :block-size (map 'list #'cdr depend-bands)))))
           (loop for store in stores do
             (let ((depend-bands (depend-bands (id->value graph (car (node-reads store))))))
               (setf (gethash (node-id store) store-vec-tmp)
                     (make-vectorized :name (car (node-writes store)) :node store :gids (map 'list (compose #'node->gid #'car) depend-bands)
+                                     :map (make-map (id->value graph (car (node-reads store))))
                                      :space (map 'list #'car depend-bands) :block-size (map 'list #'cdr depend-bands)))))
           (loop for acc in accs do
             (setf (gethash (car (node-writes acc)) vectorize-context)
                   (make-vectorized :name (ngid (car (node-writes acc)) "_acc") :node acc
                                    :space bands :block-size vectorize-space
+                                   :map  vectorize-space
                                    :gids (map 'list #'node->gid bands)))))
         ;; [TODO]
-        ;; - [ ] VECTOR(, gid) Problem Resolve
+        ;; - [x] VECTOR(, gid) Problem Resolve
+        ;;  - [ ] Reminder計算時にどうやってASTForを挿入するつもりだったの？
         ;; - [ ] Add Some Simplifiers
         ;;  - [ ] Rewrite Directive After This Rewrite
         ;;  - [ ] Loop Collapse, contiguous=true option, etc
@@ -1246,6 +1257,8 @@ if (dom==10) // Full Tile or not?
         ;; - [ ] TileGPU+VECTORIZE
         ;; - [ ] SplitReduce
         ;; - 一旦non-isolatedだけでcompile目指してみる
+        ;; - [ ] PARALLEL+Tile Bug あとで直さないと...
+        ;; :VECTORIZEについて，EXPR+VECTORIZEの形で常に現れるようにしたい。(ASTLoopにする。vectorizeがめんどくさくても，render-nodeで{a0+b0, ...的にかけるようにしたい})
         (insert-nodes
          graph
          (graph-nodes
@@ -1316,7 +1329,7 @@ if (dom==10) // Full Tile or not?
               ;; VectorizedALUs Rewriter
               (loop for alu in alus
                     collect
-                    (ast-vectorize-alu graph bands alu vectorize-context))
+                    (ast-vectorize-alu graph ranges alu vectorize-context))
               ;; Vectorized/Reminder Stores
               (loop for suffix1 in (list "_vectorized") ;; _shared
                     for suffix2_prefix in (list "_vstore" "_rstore")

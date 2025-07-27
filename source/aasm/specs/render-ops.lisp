@@ -192,17 +192,17 @@ Reads a scalar value from local buffer (DEFINE-LOCAL)
 (defnode (:JIT :VECTOR) (RenderOps)
          "
 ```
-X <- VECTOR(LocalVar, 0, 1, 2, 3, ..., n, shape=(a, b, ...))
+X <- VECTOR(LocalVar, size1, size2, ...)
 ```
-where n = a*b*...
 "
          :slots ((shape :type list))
          :type-relay #'(lambda (id->type node)
                          (let ((arg (gethash (car (node-reads node)) id->type)))
+                           (assert (every #'integerp (cdr (node-reads node))))
                            (cond
                              ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-LOCAL))
                               (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil
-                                                       :vectorize (getattr node :shape))))
+                                                       :vectorize (cdr (node-reads node)))))
                              (T
                               (error "The first argument for :VECTOR should be a SRAM Load (i.e.: :DEFINE-LOCAL)~%Getting ~a" arg))))))
 ;;[TODO] Remove
