@@ -1238,15 +1238,22 @@ if (dom==10) // Full Tile or not?
                                                (otherwise node))))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))
-              ;; ALUs (Vectorized)
-              ;; ここで，PACKED的なのを挿入, DEFINE-LOCALしたやつを横にSwizzleして, Broadcastを表現するイメージ
-              ;; PatternmatcherでTensorCore Mappingを実装できる。
-              ;; ちょっと休憩，ここから頭使うところなので。
-              ;; {x.1 x.2 x.3 x.4} * {y.0 y.0 y.0 y.0} <- UnrollしたIndexをちゃんと与える。
-              ;; 8x8x8のSimplifyはあとでできるようにする。
-              ;; acc{{0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}}
-              ;; += x{{0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}}
-              ;; * y{{0, 0, 0, 0}, {1, 1, 1, 1}, {2, 2, 2, 2}, {3, 3, 3, 3}}
+              ;; VectorizedALUs Rewriter
+              ;; VectorizeContext:
+              ;; acc | acc_acc[_gid_p3][_gid_p4]
+              ;; X   | X[_gid_p4][_gid_p5]
+              ;; Y   | Y[_gid_p3][_gid_p5]
+              ;; VectorizedCompute
+              ;; @VECTORIZE(4)  for (int _gid_p3_1_vload=0; _gid_p3_1_vload<4; _gid_p3_1_vload+=1)  [B1]
+              ;;   @VECTORIZE(4)  for (int _gid_p4_1_vload=0; _gid_p4_1_vload<4; _gid_p4_1_vload+=1)  [B1]
+              ;;     @VECTORIZE(4)  for (int _gid_p5_vload=0; _gid_p5_vload<4; _gid_p5_vload+=1)  [B2]
+              ;;       acc_acc[_gid_p3][_gid_p4] = acc_acc[_gid_p3][_gid_p4] + X[_gid_p4][_gid_p5] * Y[_gid_3][_gid_p5]
+              ;; Later rewritten as unrolling
+              ;; Finally, the form will be rewritten as:
+              ;; VECTORIZED(acc_acc, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 0, 0, 0}) +=
+              ;;   VECTORIZED(X    , {0, 0, 0, 0}, {0, 1, 2, 3}, {0, 1, 2, 3}) *
+              ;;   VECTORIZED(Y    , {0, 1, 2, 3}, {0, 0, 0, 0}, {0, 1, 2, 3})
+              ;; If PatternMatcher detects this access pattern, this can be further rewritten as TensorCore or SIMD otherwise unrolled              
               ;(flet ((newid (x) (car (node-writes x))))
               ;  (loop for alu in alus
               ;        collect
