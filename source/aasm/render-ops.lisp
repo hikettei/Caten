@@ -1036,7 +1036,7 @@ for (int i=0; i<M; i+=32)
     (assert (eql (node-type aref) :AREF))
     (e (second (node-reads aref))))
   (remove-duplicates deps))
-;; VECTORIZE Directive ==> たまに付与に失敗してる？
+
 (defstruct (Vectorized)
   (name nil :type symbol)
   (node nil :type (or null Node))
@@ -1115,10 +1115,6 @@ VECTOR(acc_acc, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 0, 0, 0}) +=
   VECTOR(Y    , {0, 1, 2, 3}, {0, 0, 0, 0}, {0, 1, 2, 3})
 If PatternMatcher detects this access pattern, this can be further rewritten as TensorCore or SIMD otherwise unrolled"
   (declare (type hash-table ctx) (type node alu) (type graph graph))
-  ;; WIP Things:
-  ;; - [ ] BIND, SetfでSortできるように注意
-  ;; - [ ] _1のgidの処理をどうするか。まだSpaceは正しくない。
-  ;; - [x] SETF
   (flet ((rewrite (node)
            (case (node-type node)
              (:EXPR
@@ -1257,11 +1253,21 @@ if (dom==10) // Full Tile or not?
                   (make-vectorized :name (ngid (car (node-writes acc)) "_acc") :node acc
                                    :space bands :block-size vectorize-space
                                    :gids (map 'list #'node->gid bands)))))
-              
-        ;; [TODO] Introduce node X = DEFINE_LOCAL(SIZE) :attr :float4, dtype: ...
-        ;; FilterSubgraphのCopyを前と同じ容量で作る。ただし，IDXは_pで
-        ;; - Accへ分類される条件を厳しくする。(SETF ACC (REDUCTION))の引数である必要がある。
-        ;; - SoftmaxもVectorizeできる？How to sort filter as EXPR?
+        ;; [TODO]
+        ;; - [ ] VECTOR(, gid) Problem Resolve
+        ;; - [ ] Add Some Simplifiers
+        ;;  - [ ] Rewrite Directive After This Rewrite
+        ;;  - [ ] Loop Collapse, contiguous=true option, etc
+        ;;  - [ ] VECTORIZE->STORE->VECTORIZE Fusion
+        ;; - [ ] Softmax Vectorize
+        ;; - [ ] Add Renderer Support
+        ;; - [ ] Reminder Computation
+        ;; - [ ] TensorCore
+        ;; WIP Things:
+        ;; - [ ] BIND, SetfでSortできるように注意
+        ;; - [ ] _1のgidの処理をどうするか。まだSpaceは正しくない。
+        ;; - [x] SETF
+        ;; - [ ] @VECTORIZE Directive，たまに付与に失敗してる・・・
         (insert-nodes
          graph
          (graph-nodes
@@ -1306,6 +1312,7 @@ if (dom==10) // Full Tile or not?
                           (make-vectorized-form
                            graph band ctx
                            #'(lambda (gids gids1 seen)
+                               (declare (ignore seen))
                                (%expr
                                 (ensure-setf ctx
                                  (%setf (%swizzle (ngid (car (node-writes load)) suffix1) gids)
@@ -1350,7 +1357,9 @@ if (dom==10) // Full Tile or not?
                            graph band ctx
                            #'(lambda (gids gids1 seen)
                                (declare (ignore seen))
-                               (assert (and aref (eql (node-type aref) :AREF))) (assert ctx)
+                               (assert (and aref (eql (node-type aref) :AREF)))
+                               (print store)
+                               (assert ctx)
                                (%expr
                                 (ensure-setf
                                  ctx
