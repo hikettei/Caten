@@ -1151,8 +1151,10 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
                                   (%expr (node->id1
                                           (%setf (%vector-from-vectorized ranges ctx)
                                                  (car (node-reads node))))))))
+                     
                      (setf node new-node)
-                     (setf (vectorized-bind-to ctx) new-node))))))
+                     (setf (vectorized-bind-to ctx) new-node)
+                     node)))))
            node)))))
 ;; (defun ast-unroll-vector (graph id)) [TODO]
 (defun ensure-setf (ctx expr)
@@ -1199,8 +1201,11 @@ val_0[i] = val_0_tmp // EXPR(STORE)
                for expr = (id->value graph node) for entry = (id->value graph (car (node-reads expr)))
                collect
                (if (and (eql (node-type entry) :SETF)
-                        (let ((place (id->value graph (second (node-reads entry)))))
-                          (null (find (node-type place) `(:BIND :EXPR)))))
+                        (let ((x (id->value graph (car (node-reads entry))))
+                              (place (id->value graph (second (node-reads entry)))))
+                          (and
+                           (null (find (node-type place) `(:BIND :EXPR)))
+                           (eql (node-type x) :AREF))))
                    (let ((tmpid (gensym)))
                      (list
                       (%expr (second (node-reads entry)) :out tmpid)
