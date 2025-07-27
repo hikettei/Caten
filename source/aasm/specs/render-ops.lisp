@@ -263,7 +263,9 @@ Writes the value of EXPR into the corresponding region of AREF.
          "
 ```
 ID <- BIND(X, value=value)
-```"
+```
+The X is always EXPR otherwise Caten cannot tpsort ASTGraph. (TODO: Check this during type inference)
+"
          :slots ((value))
          :type-relay (make-type-relay 0))
 
