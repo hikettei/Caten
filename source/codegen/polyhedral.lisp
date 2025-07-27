@@ -1314,23 +1314,31 @@ for (int i=0; i<32; i+=2)
               do (assert (and (integerp size) (>= size 1)) () "vectorize-search-space must be a list of fixnum greater than zero!")
               collect
               (make-instance 'Vectorize :width size :band band :axis nth))))
+;; [TODO] Use cffi-grovel not to generate a dynamic FFI as cffi:defcallback is not supported on all platforms while
+;; @VECTORIZE is important feature.
+(cffi:defcallback isl-insert-mark-to-filter :pointer
+    ((schedule-node :pointer) (user :pointer))
+  (case (isl::%isl-schedule-node-get-type schedule-node)
+    (:schedule-node-leaf
+     (isl::%isl-schedule-node-insert-mark
+      (isl::%isl-schedule-node-parent schedule-node) ;; todo: assert parent is schedule_node_band
+      (isl::identifier-handle
+       (isl::copy ;; note: extra copy!
+        (directive->id
+         (str->directive (cffi:foreign-string-to-lisp user)))))))
+    (otherwise
+     schedule-node)))
 
-(defun schedule-node-insert-directive (schedule-node band directive &aux (changed-p nil))
-  (flet ((mupa->str (mupa)
-           (assert mupa)
-           (isl::%isl-multi-union-pw-aff-to-str (isl::multi-union-pw-aff-handle mupa))))
-    (let ((tgt-sched (mupa->str (schedule-node-band-get-partial-schedule band))))
-      (map-schedule-node-children
-       #'(lambda (type band mark)
-           (when (and (eql type :schedule-node-band) (null mark))
-             ;; [TODO] Isn't there other way to compare two schedules?
-             (when (string= (mupa->str (schedule-node-band-get-partial-schedule band)) tgt-sched)
-               (let ((new-band (schedule-node-insert-mark band (directive->id directive))))
-                 (setf changed-p t schedule-node new-band)))))
-       (schedule-get-root (schedule-node-get-schedule schedule-node)))
-      (if changed-p
-          (schedule-node-insert-directive schedule-node band directive)
-          schedule-node))))
+(defun schedule-node-insert-directive (schedule-node target-band directive &aux (changed-p nil))
+  ;; Inserts directive to the all of subtree filter nodes
+  (if (eql (schedule-node-get-type schedule-node) :schedule-node-sequence)
+      (cffi:with-foreign-strings ((directive (directive->str directive)))
+        (isl::%make-schedule-node
+         (isl::%isl-schedule-node-map-descendant-bottom-up
+          (isl::schedule-node-handle (isl::copy schedule-node))
+          (cffi:callback isl-insert-mark-to-filter)
+          directive)))
+      (schedule-node-insert-mark schedule-node (directive->id directive))))
  
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
   (assert (optrule-band opt))
