@@ -1159,6 +1159,17 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
   (setf (vectorized-bind-to ctx) setf)
   (node->id1 setf))
 
+(defun find-ctx-from-node (graph vectorize-context node)
+  (or
+   (when (eql (node-type node) :BIND)
+     (gethash (getattr node :value) vectorize-context))
+   (when (eql (node-type node) :AREF)
+     (or
+      (gethash (car (node-reads node)) vectorize-context)
+      (let ((bind (id->value graph (car (node-reads node)))))
+        (when (and bind (eql (node-type bind) :BIND))
+          (gethash (getattr bind :value) vectorize-context)))))))
+
 (defun ast-band-vectorize (graph band &key (dtype :int64) (vectorize-context (make-hash-table)))
   "
 ```
@@ -1233,20 +1244,27 @@ if (dom==10) // Full Tile or not?
       (print alus)
       (PRINT "STORES")
       (print stores)
-      (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands)))
+      (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands))
+            (store-vec-tmp (make-hash-table)))
         ;; Update Contexts
         (flet ((node->gid (node)
                  (let ((range (id->value graph (car (node-reads node)))))
                    (assert range) (assert (eql :RANGE (node-type range)))
-                   (getattr range :idx))))
+                   (getattr range :idx)))
+               (depend-bands (node)
+                 (loop with dep-ids = (aref-depends-on graph node)
+                       for band in bands for size in vectorize-space
+                       if (find (getattr (id->value graph (car (node-reads band))) :idx) dep-ids)
+                         collect (cons band size))))
           (loop for load in loads do
-            (let ((depend-bands
-                    (loop with dep-ids = (aref-depends-on graph load)
-                          for band in bands for size in vectorize-space
-                          if (find (getattr (id->value graph (car (node-reads band))) :idx) dep-ids)
-                            collect (cons band size))))
+            (let ((depend-bands (depend-bands load)))
               (setf (gethash (car (node-reads load)) vectorize-context)
                     (make-vectorized :name (ngid (car (node-reads load)) "_vectorized") :node load :gids (map 'list (compose #'node->gid #'car) depend-bands)
+                                     :space (map 'list #'car depend-bands) :block-size (map 'list #'cdr depend-bands)))))
+          (loop for store in stores do
+            (let ((depend-bands (depend-bands (id->value graph (car (node-reads store))))))
+              (setf (gethash (node-id store) store-vec-tmp)
+                    (make-vectorized :name (car (node-writes store)) :node store :gids (map 'list (compose #'node->gid #'car) depend-bands)
                                      :space (map 'list #'car depend-bands) :block-size (map 'list #'cdr depend-bands)))))
           (loop for acc in accs do
             (setf (gethash (car (node-writes acc)) vectorize-context)
@@ -1347,19 +1365,17 @@ if (dom==10) // Full Tile or not?
                     (loop for store in stores for nth upfrom 0
                           for suffix2 = (format nil "~a_~a" suffix2_prefix nth)
                           for aref = (id->value graph (car (node-reads store)))
-                          for ctx = (or
-                                     (gethash (car (node-reads aref)) vectorize-context)
-                                     (let ((bind (id->value graph (car (node-reads aref)))))
-                                       (when (and bind (eql (node-type bind) :BIND))
-                                         (gethash (getattr bind :value) vectorize-context))))
+                          for ctx = (gethash (node-id store) store-vec-tmp)
+                          for sctx = (or
+                                      (find-ctx-from-node graph vectorize-context (id->value graph (nth 0 (node-reads store))))
+                                      (find-ctx-from-node graph vectorize-context (id->value graph (nth 1 (node-reads store)))))
                           collect
                           (make-vectorized-form
                            graph band ctx
                            #'(lambda (gids gids1 seen)
                                (declare (ignore seen))
                                (assert (and aref (eql (node-type aref) :AREF)))
-                               (print store)
-                               (assert ctx)
+                               (assert ctx) (assert sctx)
                                (%expr
                                 (ensure-setf
                                  ctx
@@ -1383,12 +1399,12 @@ if (dom==10) // Full Tile or not?
                                          (otherwise node))))
                                   (%swizzle
                                    (node->id1
-                                    (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to ctx))
-                                                     :value (vectorized-name ctx))))
+                                    (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to sctx))
+                                                     :value (vectorized-name sctx))))
                                    gids)))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))))))))
-      (caten/codegen/blueprint:print-blueprint graph t)
+      ;; (caten/codegen/blueprint:print-blueprint graph t)
       graph)))
 ;; DEFINE-FLOAT-8x8
 ;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)
