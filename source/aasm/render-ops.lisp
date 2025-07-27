@@ -529,6 +529,22 @@ A <- L
                  (e (car (node-reads expr))))
                (assert (every #'symbolp ids))
                (remove-duplicates ids))
+             (expr-depend-vectors (expr &aux (seen (make-hash-table)) (ids))
+               (assert (and expr (eql (node-type expr) :EXPR)))
+               (labels ((e (id &aux (node (id->value graph id)))
+                          (when (or (null node) (gethash (node-id node) seen))
+                            (return-from e))
+                          (setf (gethash (node-id node) seen) t)
+                          (case (node-type node)
+                            (:EXPR nil)
+                            (:VECTOR
+                             (let ((val (id->value graph (car (node-reads node)))))
+                               (if (eql (node-type val) :BIND)
+                                   (push (car (node-reads val)) ids)
+                                   (push (car (node-reads node)) ids))))
+                            (otherwise (mapc #'e (node-reads node))))))
+                 (e (car (node-reads expr))))
+               (remove-duplicates ids))
              (get-loops (ls) (loop for l in ls if (eql :loop (getf l :type)) collect l))
              (expr-schedule-write (expr)
                ;; Reductionを定義するとき
@@ -558,13 +574,23 @@ A <- L
                    (list :should-seen nil
                          :should-unseen nil
                          :should-after aft))))
+             (expr-vector-schedule (reader-expr defid &aux (node (id->value graph defid)))
+               (when (null node) (return-from expr-vector-schedule))
+               (let* ((reader-ids (map 'list #'(lambda (x) (getf x :idx)) (get-loops (gethash (node-id reader-expr) node-to-loops))))
+                      (defids (map 'list #'(lambda (x) (getf x :idx)) (get-loops (gethash (node-id node) node-to-loops))))
+                      (aft (loop for d in defids if (null (find d reader-ids)) collect d)))
+                 (when aft
+                   (list :should-seen nil :should-unseen nil :should-after aft))))
              (id-is-reduction-p (id) (gethash id id-cache))      
              (expr-depends-on (expr)
+               ;; Constructs a dependency object which is used to sort nodes
                (let* ((depends-on (expr-depend-vars expr))
+                      (vectors (loop for id in (expr-depend-vectors expr)
+                                     collect (expr-vector-schedule expr id)))
                       (w  (expr-schedule-write expr))
                       (rs (loop for r in depends-on for s = (expr-schedule-read expr r)
                                 if s collect s)))
-                 (list :schedule (append rs (if w (list w)))
+                 (list :schedule (append rs (if w (list w)) vectors)
                        :reads depends-on
                        :conditions (loop for scp in (gethash (node-id expr) node-to-loops)
                                          if (eql (getf scp :type) :if) collect (node-id (getf scp :if-node))))))
