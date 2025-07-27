@@ -255,6 +255,7 @@
                     ;; Pop loop from stack after processing body
                     (when idx (pop (ctx-stack ctx)))))
                  (:PROGN (dolist (child-id (node-reads node)) (traverse (id->value graph child-id))))
+                 (:DEFINE-LOCAL)
                  (:IF
                   (when allow-if (push (list :type :if :if-node node) (ctx-stack ctx)))
                   (traverse (id->value graph (second (node-reads node))))
@@ -805,10 +806,8 @@ if (not ensure_domain_is_right)
           (ctx (make-hash-table)))
       (dolist (trigger triggers)
         (setf blueprint (caten/aasm::ast-band-vectorize blueprint trigger :vectorize-context ctx)))
-      ;; Important: RANGE, CONDITIONもCSEの対象に，
-      (caten/codegen/blueprint:print-blueprint blueprint t)
-      blueprint
-      )))
+      (simplify-ast blueprint)
+      blueprint)))
 
 (defun %finalize-blueprint-from-polyhedral (polyhedral pctx kernel)
   "Convert ISL polyhedral representation back to blueprint graph"

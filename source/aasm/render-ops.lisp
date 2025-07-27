@@ -378,7 +378,7 @@ Constraints:
 (defun ast-rewrite-expr-as-ssa-style (graph &key (simplify-load nil)
                                       &aux
                                         (visited (make-hash-table)) (toplevel (id->value graph (car (graph-outputs graph))))
-                                        (whitelist `(:DEFINE-GLOBAL :DEFINE-LOCAL :ALLOCATE :RANGE :LOAD :BIND :SETF)))
+                                        (whitelist `(:DEFINE-GLOBAL :DEFINE-LOCAL :ALLOCATE :RANGE :LOAD :BIND :SETF :VECTOR :SWIZZLE)))
   "ast-rewrite-expr-as-ssa-style decomposes all EXPRs in the graph as:
 ```
 A <- EXPR(a+b*c)
@@ -521,18 +521,13 @@ A <- L
                             (return-from e))
                           (setf (gethash (node-id node) seen) t)
                           (case (node-type node)
-                            (:AREF
-                             ;; val_9[xx] = ...
-                             ;; val_2 = val_9[xx] ...
-                             ;; [TODO] FlashAttention, Softmax Patch is needed
-                             ;; [TODO] Extra deps i am missing?
-                             (mapc #'e (node-reads node)))
                             (:EXPR  (push (car (node-writes node)) ids))
                             (:RANGE (push (getattr node :idx) ids))
                             (:LOAD  (when (find (getattr node :value) range-ids) (push (getattr node :value) ids)))
-                            (:BIND (mapc #'e (node-reads node)))
+                            (:BIND  (mapc #'e (node-reads node)))
                             (otherwise (mapc #'e (node-reads node))))))
                  (e (car (node-reads expr))))
+               (assert (every #'symbolp ids))
                (remove-duplicates ids))
              (get-loops (ls) (loop for l in ls if (eql :loop (getf l :type)) collect l))
              (expr-schedule-write (expr)
@@ -636,6 +631,9 @@ A <- L
                               (explore ctx x :prgn node))
                           (node-reads node))
                          (sync (length (node-reads node)))))
+                     (:DEFINE-LOCAL ;; [TODO] Allow relocating define-local?
+                      (push (car (node-writes node)) (%tctx-variables ctx))
+                      ) ;; [TODO] Relocate?
                      (:EXPR
                       (assert prgn)
                       (let ((cnd (gethash (node-id node) expr-to-condition)))
@@ -671,7 +669,7 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
   (ast-ensure-expr-is-singleton graph) ;; ensure all expr is singleton
   (ast-fixup-scope graph) ;; rewrite and fixup scopes, sort topologically
   (ast-rewrite-ssa-style-as-tree graph) ;; and then construct tree-style expr again
-  (simplify-ast graph)
+  (simplify-ast (simplify-ast graph))
   (ast-simplify-progn graph)) ;; simplify and that's it!
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &key (include-expr nil) &aux (seen nil) (nodes))
@@ -1110,9 +1108,9 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
                    (setf (vectorized-bind-to vectorized) node)))))
            node)))))
 ;; (defun ast-unroll-vector (graph id)) [TODO]
-(defun ensure-setf (ctx setf)
-  (setf (vectorized-bind-to ctx) setf)
-  (node->id1 setf))
+(defun ensure-setf (ctx expr)
+  (setf (vectorized-bind-to ctx) expr)
+  expr)
 
 (defun find-ctx-from-node (graph vectorize-context node)
   (or
@@ -1251,7 +1249,7 @@ if (dom==10) // Full Tile or not?
         ;; - [x] _1のgidの処理をどうするか。まだSpaceは正しくない。
         ;; - [x] SETF
         ;; - [x] @VECTORIZE Directive，たまに付与に失敗してる・・・(Randomly Fails why)
-        ;; - [ ] TypeInference Fails
+        ;; - [x] TypeInference Fails
         ;; - [ ] Simplify, TPSort!
         ;; - [ ] TileGPU+VECTORIZE
         ;; - [ ] SplitReduce
@@ -1259,6 +1257,7 @@ if (dom==10) // Full Tile or not?
         ;; - [ ] PARALLEL+Tile Bug あとで直さないと...
         ;; :VECTORIZEについて，EXPR+VECTORIZEの形で常に現れるようにしたい。(ASTLoopにする。vectorizeがめんどくさくても，render-nodeで{a0+b0, ...的にかけるようにしたい})
         ;; - まずはSimplifierとTpSort, 次にSoftmaxとFlashAttention
+        ;; ;; Important: RANGE, CONDITIONもCSEの対象に，
         (insert-nodes
          graph
          (graph-nodes
@@ -1289,7 +1288,7 @@ if (dom==10) // Full Tile or not?
                    (%progn
                     (loop for acc in accs for ctx = (gethash (car (node-writes acc)) vectorize-context)
                           collect
-                          (%expr (ensure-setf ctx (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc))))))))
+                          (ensure-setf ctx (%expr (node->id1 (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc)))))))))
                :is-reminder-p nil)
               ;; Loaders (Vectorized)
               (loop for suffix1 in (list "_vectorized"); "_shared")
@@ -1304,26 +1303,28 @@ if (dom==10) // Full Tile or not?
                            graph band ctx
                            #'(lambda (gids gids1 seen)
                                (declare (ignore seen))
-                               (%expr
-                                (ensure-setf ctx
-                                 (%setf (%swizzle (ngid (car (node-writes load)) suffix1) gids)
-                                        (ast-rewrite-and-clone
-                                         graph (car (node-writes load))
-                                         #'(lambda (node reads)
-                                             (declare (ignore reads))
-                                             (case (node-type node)
-                                               (:LOAD
-                                                (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
-                                                  (when new-gid (setf (getattr node :value) (getattr new-gid :idx)))
-                                                  node))
-                                               (:RANGE
-                                                   (let ((new-gid (find (ngid (getattr node :idx) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
-                                                     (if new-gid
-                                                         (let ((n (%clone-node new-gid)))
-                                                           (setf (node-writes n) (node-writes node))
-                                                           n)
-                                                         node)))
-                                               (otherwise node))))))))
+                               (ensure-setf
+                                ctx
+                                (%expr
+                                 (node->id1
+                                  (%setf (%swizzle (ngid (car (node-writes load)) suffix1) gids)
+                                         (ast-rewrite-and-clone
+                                          graph (car (node-writes load))
+                                          #'(lambda (node reads)
+                                              (declare (ignore reads))
+                                              (case (node-type node)
+                                                (:LOAD
+                                                 (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                                   (when new-gid (setf (getattr node :value) (getattr new-gid :idx)))
+                                                   node))
+                                                (:RANGE
+                                                    (let ((new-gid (find (ngid (getattr node :idx) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                                      (if new-gid
+                                                          (let ((n (%clone-node new-gid)))
+                                                            (setf (node-writes n) (node-writes node))
+                                                            n)
+                                                          node)))
+                                                (otherwise node)))))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))
               ;; VectorizedALUs Rewriter
@@ -1349,32 +1350,33 @@ if (dom==10) // Full Tile or not?
                                (declare (ignore seen))
                                (assert (and aref (eql (node-type aref) :AREF)))
                                (assert ctx) (assert sctx)
-                               (%expr
-                                (ensure-setf
-                                 ctx
-                                 (%setf
-                                  (ast-rewrite-and-clone
-                                   graph (car (node-reads store))
-                                   #'(lambda (node reads)
-                                       (declare (ignore reads))
-                                       (case (node-type node)
-                                         (:LOAD
-                                          (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
-                                            (when new-gid (setf (getattr node :value) (getattr new-gid :idx)))
-                                            node))
-                                         (:RANGE
-                                             (let ((new-gid (find (ngid (getattr node :idx) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
-                                               (if new-gid
-                                                   (let ((n (%clone-node new-gid)))
-                                                     (setf (node-writes n) (node-writes node))
-                                                     n)
-                                                   node)))
-                                         (otherwise node))))
-                                  (%swizzle
-                                   (node->id1
-                                    (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to sctx))
-                                                     :value (vectorized-name sctx))))
-                                   gids)))))
+                               (ensure-setf
+                                ctx
+                                (%expr
+                                 (node->id1
+                                  (%setf
+                                   (ast-rewrite-and-clone
+                                    graph (car (node-reads store))
+                                    #'(lambda (node reads)
+                                        (declare (ignore reads))
+                                        (case (node-type node)
+                                          (:LOAD
+                                           (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                             (when new-gid (setf (getattr node :value) (getattr new-gid :idx)))
+                                             node))
+                                          (:RANGE
+                                              (let ((new-gid (find (ngid (getattr node :idx) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                                (if new-gid
+                                                    (let ((n (%clone-node new-gid)))
+                                                      (setf (node-writes n) (node-writes node))
+                                                      n)
+                                                    node)))
+                                          (otherwise node))))
+                                   (%swizzle
+                                    (node->id1
+                                     (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to sctx))
+                                                      :value (vectorized-name sctx))))
+                                    gids))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))))))))
 ;;       (caten/codegen/blueprint:print-blueprint graph t)
