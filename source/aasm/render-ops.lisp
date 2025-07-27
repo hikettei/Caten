@@ -1340,14 +1340,17 @@ if (dom==10) // Full Tile or not?
                     (loop for store in stores for nth upfrom 0
                           for suffix2 = (format nil "~a_~a" suffix2_prefix nth)
                           for aref = (id->value graph (car (node-reads store)))
-                          for ctx = (gethash (car (node-reads aref)) vectorize-context)
+                          for ctx = (or
+                                     (gethash (car (node-reads aref)) vectorize-context)
+                                     (let ((bind (id->value graph (car (node-reads aref)))))
+                                       (when (and bind (eql (node-type bind) :BIND))
+                                         (gethash (getattr bind :value) vectorize-context))))
                           collect
                           (make-vectorized-form
                            graph band ctx
                            #'(lambda (gids gids1 seen)
+                               (declare (ignore seen))
                                (assert (and aref (eql (node-type aref) :AREF))) (assert ctx)
-                               ;; <-- BINDの可能性があるじゃん？
-                               ;; [TODO] Aref[0] --> BINDかもしれないから全部書き換えるべき
                                (%expr
                                 (ensure-setf
                                  ctx
@@ -1375,35 +1378,8 @@ if (dom==10) // Full Tile or not?
                                                      :value (vectorized-name ctx))))
                                    gids)))))
                            :is-reminder-p vectorized-p
-                           :suffix suffix2)))
-              ;(flet ((newid (x) (car (node-writes x))))
-              ;  (loop for alu in alus
-              ;        collect
-              ;        (ast-rewrite-and-clone
-              ;         graph
-              ;         (car (node-writes alu))
-              ;         #'(lambda (node reads)
-              ;         ;    (setf (node-reads node) (map 'list #'newid reads))
-              ;             node))))
-              ;; ALUs (Reminder)
-              ;(flet ((newid (x) x))
-              ;  (make-vectorized-form
-              ;   graph band
-              ;   #'(lambda (gids gids1 seen)
-              ;       (%progn
-              ;        (loop for alu in alus
-              ;              collect
-              ;              (ast-rewrite-and-clone
-              ;               graph
-              ;               (car (node-writes alu))
-              ;               #'(lambda (node reads)
-              ;                   node)))))))
-              ;; STORE (Rev of LOAD)
-              ))))))
-;      (print graph)
-;      (pprint-graph graph)
+                           :suffix suffix2)))))))))
       (caten/codegen/blueprint:print-blueprint graph t)
-      (PRINT "FINISHED")
       graph)))
 ;; DEFINE-FLOAT-8x8
 ;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)
