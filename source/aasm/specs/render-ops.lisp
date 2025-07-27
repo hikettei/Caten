@@ -148,7 +148,7 @@ Declares SIZE1 x SIZE2 x ... local buffer
          :slots ((dtype))
          :type-relay #'(lambda (id->type node)
                          (assert (every #'integerp (node-reads node)))
-                         (funcall (ast-type-map :DEFINE-GLOBAL) id->type node)))
+                         (funcall (ast-type-map :DEFINE-LOCAL) id->type node)))
                          
 
 ;;; JITOps
@@ -187,7 +187,7 @@ Reads a scalar value from local buffer (DEFINE-LOCAL)
                              ((typep arg 'TensorRelay)
                               (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil)))
                              (T
-                              (error "The first argument for :Swizzle should be either of :DEFINE-GLOBAL or TensorRelay"))))))
+                              (error "The first argument for :Swizzle should be either of :DEFINE-LOCAL or TensorRelay~% getting ~a" arg))))))
 
 (defnode (:JIT :VECTOR) (RenderOps)
          "
@@ -204,7 +204,7 @@ where n = a*b*...
                               (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil
                                                        :vectorize (getattr node :shape))))
                              (T
-                              (error "The first argument for :VECTOR should be a SRAM Load (i.e.: :DEFINE-LOCAL)"))))))
+                              (error "The first argument for :VECTOR should be a SRAM Load (i.e.: :DEFINE-LOCAL)~%Getting ~a" arg))))))
 ;;[TODO] Remove
 (defnode (:JIT :Pack) (RenderOps)
          "
