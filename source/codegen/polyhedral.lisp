@@ -806,11 +806,6 @@ if (not ensure_domain_is_right)
       (dolist (trigger triggers)
         (setf blueprint (caten/aasm::ast-band-vectorize blueprint trigger :vectorize-context ctx)))
       ;; Important: RANGE, CONDITIONもCSEの対象に，
-      ;; How to impl: 一旦，EXPR_Blockでお茶をにごす
-      ;; And then: Mask, TensorCore, Vectorize, などを適用して，コンパイルできる形へする
-      ;; - 1. @VECTORIZE(4)はacc_tmp mutationしない
-      ;; - 2. DEFINE_SIMGROUP的なのを書き変えれるように
-      ;; - 3. TensorRelay Type Inference
       (caten/codegen/blueprint:print-blueprint blueprint t)
       blueprint
       )))
