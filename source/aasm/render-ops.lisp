@@ -920,30 +920,6 @@ for (int i=0; i<M; i+=32)
     (explore (second (node-reads band)) nil))
   nodes)
 
-(defun ast-unroll-reminder (graph reminder idx offset)
-  "Rewrites the IDX -> IDX+UNROLL_OFFSET"
-  (let ((nodes (apply #'make-graph (ast-band-children graph reminder)))
-        (out (second (node-reads reminder))))
-    (setf (graph-outputs nodes) (list out)
-          nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
-          nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
-    (labels ((%cpy-node (node)
-               (let ((node (copy-node node)))
-                 (setf (node-id node) (gensym "NID"))
-                 node))
-             (newid (id &aux (node (id->value graph id)))
-               (if (and id (eql (node-type node) :RANGE) (eql idx (getattr node :idx)))
-                   offset
-                   (if (eql id idx) offset id)))
-             (clone-graph ()
-               (with-context
-                   (_ (loop for node_ in nodes for node = (%cpy-node node_)
-                            do (setf (node-reads node) (map 'list #'newid (node-reads node))
-                                     (node-writes node) (map 'list #'newid (node-writes node)))
-                               (emit node))))))
-      (insert-nodes graph (graph-nodes (clone-graph)))
-      (%progn out))))
-
 (defun filter-extract-load/acc/alu/store (graph filter)
   (declare (type FastGraph graph) (type node filter))
   (let ((stores) (loads) (alus) (accs) (seen (make-hash-table)))
@@ -1070,15 +1046,14 @@ for (int i=0; i<M; i+=32)
            (make-list width :initial-element 0)))
    gids spaces))
 
-(defun %vector-from-vectorized (vectorized)
+(defun %vector-from-vectorized (bands vectorized)
   ;; [TODO] GIDS
   (%vector
-   (node->id1 (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to vectorized))
-                               :value (vectorized-name vectorized))))
+   (node->id1 (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to vectorized)) :value (vectorized-name vectorized))))
    (vectorized-block-size vectorized)
    (make-space-from-bands vectorized (vectorized-gids vectorized) (vectorized-block-size vectorized))))
 
-(defun ast-vectorize-alu (graph alu ctx &aux (seen (make-hash-table)))
+(defun ast-vectorize-alu (graph bands alu ctx &aux (seen (make-hash-table)))
   "
 VectorizeContext
 acc | acc_acc[_gid_p3][_gid_p4]
@@ -1100,17 +1075,17 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
              (:EXPR
               (let ((vec (gethash (car (node-writes node)) ctx)))
                 (if vec
-                    (%vector-from-vectorized vec)
+                    (%vector-from-vectorized bands vec)
                     node)))
              (:AREF
               (let ((vec (gethash (car (node-reads node)) ctx)))
                 (if vec
-                    (%vector-from-vectorized vec)
+                    (%vector-from-vectorized bands vec)
                     node)))
              (:BIND
                  (let ((vec (gethash (getattr node :value) ctx)))
                    (if vec
-                       (%vector-from-vectorized vec)
+                       (%vector-from-vectorized bands vec)
                        node)))
              (otherwise
               node))))
@@ -1341,7 +1316,7 @@ if (dom==10) // Full Tile or not?
               ;; VectorizedALUs Rewriter
               (loop for alu in alus
                     collect
-                    (ast-vectorize-alu graph alu vectorize-context))
+                    (ast-vectorize-alu graph bands alu vectorize-context))
               ;; Vectorized/Reminder Stores
               (loop for suffix1 in (list "_vectorized") ;; _shared
                     for suffix2_prefix in (list "_vstore" "_rstore")
