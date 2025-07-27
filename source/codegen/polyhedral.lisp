@@ -801,9 +801,10 @@ if (not ensure_domain_is_right)
                          do (return-from vectorize-is-toplevel-p nil))
                  t))))
     (let ((triggers (loop for node in (graph-nodes blueprint)
-                          if (vectorize-is-toplevel-p node) collect node)))
+                          if (vectorize-is-toplevel-p node) collect node))
+          (ctx (make-hash-table)))
       (dolist (trigger triggers)
-        (setf blueprint (caten/aasm::ast-band-vectorize blueprint trigger)))
+        (setf blueprint (caten/aasm::ast-band-vectorize blueprint trigger :vectorize-context ctx)))
       ;; Important: RANGE, CONDITIONもCSEの対象に，
       ;; How to impl: 一旦，EXPR_Blockでお茶をにごす
       ;; And then: Mask, TensorCore, Vectorize, などを適用して，コンパイルできる形へする

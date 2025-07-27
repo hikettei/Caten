@@ -63,6 +63,10 @@ Constraints:
   (let ((indices (map 'list #'node->id1 indices)))
     (emit (make-node :Render :SWIZZLE (list out) (append (list name) indices)))))
 
+(defun %vector (from shape indices &key (out (gensym "VECTOR")))
+  (declare (type symbol from) (type list indices))
+  (emit (make-node :JIT :VECTOR (list out) (append (list from) (flatten indices)) :shape shape)))
+
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
 (defun %defsmem (&key (size `(4)) (dtype *default-float*) (out (gensym "SMEM")))
@@ -1000,9 +1004,9 @@ for (int i=0; i<M; i+=32)
              (when (null node) (return-from e id))
              (when (gethash id seen) (return-from e (gethash id seen)))
              (when (eql (node-type node) :EXPR) (incf expr-depth))
-             (when (> expr-depth 1) (return-from e (gethash id seen id)))
-             (when (eql (node-type node) :DEFINE-GLOBAL) (return-from e id))
-             (when (eql (node-type node) :DEFINE-LOCAL) (return-from e id))
+             (when (> expr-depth 1) (return-from e (gethash id seen node)))
+             (when (eql (node-type node) :DEFINE-GLOBAL) (return-from e node))
+             (when (eql (node-type node) :DEFINE-LOCAL) (return-from e node))
              (let* ((new-reads (map 'list #'(lambda (x) (e x expr-depth)) (node-reads node)))
                     (c (%clone-node node))
                     (_ (setf (node-reads c) (map 'list #'(lambda (x) (if (node-p x) (car (node-writes x)) x)) new-reads)))
@@ -1011,8 +1015,8 @@ for (int i=0; i<M; i+=32)
                (declare (ignore _))
                (assert (node-p new-node))
                (assert (= 1 (length (node-writes new-node))))
-               (setf (gethash (car (node-writes new-node)) seen) newid
-                     (gethash newid seen) newid
+               (setf (gethash (car (node-writes new-node)) seen) new-node
+                     (gethash newid seen) new-node
                      (node-writes new-node) (list newid))
                (emit new-node)
                (return-from e new-node))))
@@ -1074,7 +1078,25 @@ for (int i=0; i<M; i+=32)
                       (setf (gethash (node-id node) seen) (second (node-reads cpy)))))))))
     (e (car (node-writes band)) nil)))
 
-(defun ast-vectorize-alu (graph alu ctx)
+(defun make-space-from-bands (vectorized gids spaces)
+  (declare (type vectorized vectorized) (type list gids) (type list spaces))
+  (map
+   'list
+   #'(lambda (gid width)
+       (if (find gid (vectorized-gids vectorized))
+           (loop for i from 0 below width collect i)
+           (make-list width :initial-element 0)))
+   gids spaces))
+
+(defun %vector-from-vectorized (vectorized)
+  ;; [TODO]
+  (%vector
+   (node->id1 (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to vectorized))
+                               :value (vectorized-name vectorized))))
+   (vectorized-block-size vectorized)
+   (make-space-from-bands vectorized (vectorized-gids vectorized) (vectorized-block-size vectorized))))
+
+(defun ast-vectorize-alu (graph alu ctx &aux (seen (make-hash-table)))
   "
 VectorizeContext
 acc | acc_acc[_gid_p3][_gid_p4]
@@ -1091,16 +1113,52 @@ VECTOR(acc_acc, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 0, 0, 0}) +=
   VECTOR(Y    , {0, 1, 2, 3}, {0, 0, 0, 0}, {0, 1, 2, 3})
 If PatternMatcher detects this access pattern, this can be further rewritten as TensorCore or SIMD otherwise unrolled"
   (declare (type hash-table ctx) (type node alu) (type graph graph))
-  ;; [Note] BINDに注意する!!!
-  (ast-rewrite-and-clone
-   graph
-   (car (node-writes alu))
-   #'(lambda (node new-reads)
-       (print "VECTOR REWRITE")
-       (print new-reads)
-       (print node)
-       node)))
+  ;; WIP Things:
+  ;; - [ ] BIND, SetfでSortできるように注意
+  ;; - [ ] _1のgidの処理をどうするか。まだSpaceは正しくない。
+  ;; - [x] SETF
+  (flet ((rewrite (node)
+           (case (node-type node)
+             (:EXPR
+              (let ((vec (gethash (car (node-writes node)) ctx)))
+                (if vec
+                    (%vector-from-vectorized vec)
+                    node)))
+             (:AREF
+              (let ((vec (gethash (car (node-reads node)) ctx)))
+                (if vec
+                    (%vector-from-vectorized vec)
+                    node)))
+             (:BIND
+                 (warn "BIND is not implemented??")
+               node)
+             (otherwise
+              node))))
+    (ast-rewrite-and-clone
+     graph
+     (car (node-writes alu))
+     #'(lambda (node new-reads)
+         (let ((new-reads (map 'list #'rewrite new-reads)))
+           (setf (node-reads node) (map 'list #'node->id1 new-reads))
+           (let ((prev (id->value *ctx* (car (node-reads node)))))
+             ;; Updates SETF and BIND dependencies trigger w/ EXPR+SETF
+             ;; Assumes VECTOR is expanded w/ following structure:
+             ;; - VECTOR(BIND(SOME_ID, CTX_KEY), ...)
+             (when (and (eql (node-type node) :EXPR) prev (eql (node-type prev) :SETF))
+               (let* ((prev-reads (map 'list #'(lambda (x) (id->value *ctx* x)) (node-reads prev)))
+                      (vector (car prev-reads))
+                      (bind   (when (and vector (eql :VECTOR (node-type vector))) (id->value *ctx* (car (node-reads vector)))))
+                      (key    (when (and bind (eql :BIND (node-type bind))) (getattr bind :value)))
+                      (vectorized (find key (hash-table-values ctx) :key #'vectorized-name)))
+                 (when (and key vectorized)
+                   ;; Just updating bind-to is ok as long as you are using %vector-from-vectorized
+                   (setf (vectorized-bind-to vectorized) node)))))
+           node)))))
 ;; (defun ast-unroll-vector (graph id)) [TODO]
+(defun ensure-setf (ctx setf)
+  (setf (vectorized-bind-to ctx) setf)
+  (node->id1 setf))
+
 (defun ast-band-vectorize (graph band &key (dtype :int64) (vectorize-context (make-hash-table)))
   "
 ```
@@ -1170,9 +1228,6 @@ if (dom==10) // Full Tile or not?
       (print accs)
       (print alus)
       (print stores)
-      ;; HashTable作って，VectorizedIDを保存する？
-      ;; 4x4x4じゃなくて，4x4にしたい。
-      ;; - WMMAの部分もそう, 
       (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands)))
         ;; Update Contexts
         (flet ((node->gid (node)
@@ -1186,11 +1241,11 @@ if (dom==10) // Full Tile or not?
                           if (find (getattr (id->value graph (car (node-reads band))) :idx) dep-ids)
                             collect (cons band size))))
               (setf (gethash (car (node-reads load)) vectorize-context)
-                    (make-vectorized :name (car (node-reads load)) :node load :gids (map 'list (compose #'node->gid #'car) depend-bands)
+                    (make-vectorized :name (ngid (car (node-reads load)) "_vectorized") :node load :gids (map 'list (compose #'node->gid #'car) depend-bands)
                                      :space (map 'list #'car depend-bands) :block-size (map 'list #'cdr depend-bands)))))
           (loop for acc in accs do
             (setf (gethash (car (node-writes acc)) vectorize-context)
-                  (make-vectorized :name (car (node-writes acc)) :node acc
+                  (make-vectorized :name (ngid (car (node-writes acc)) "_acc") :node acc
                                    :space bands :block-size vectorize-space
                                    :gids (map 'list #'node->gid bands)))))
               
@@ -1228,9 +1283,7 @@ if (dom==10) // Full Tile or not?
                    (%progn
                     (loop for acc in accs for ctx = (gethash (car (node-writes acc)) vectorize-context)
                           collect
-                          (let ((setf (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc)))))
-                            (setf (vectorized-bind-to ctx) setf)
-                            (%expr (node->id1 setf))))))
+                          (%expr (ensure-setf ctx (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc))))))))
                :is-reminder-p nil)
               ;; Loaders (Vectorized)
               (loop for suffix1 in (list "_vectorized"); "_shared")
@@ -1239,12 +1292,13 @@ if (dom==10) // Full Tile or not?
                     collect
                     (loop for load in loads for nth upfrom 0
                           for suffix2 = (format nil "~a_~a" suffix2_prefix nth)
+                          for ctx = (gethash (car (node-reads load)) vectorize-context)
                           collect
                           (make-vectorized-form
                            graph band (gethash (car (node-reads load)) vectorize-context)
                            #'(lambda (gids gids1 seen)
                                (%expr
-                                (node->id1
+                                (ensure-setf ctx
                                  (%setf (%swizzle (ngid (car (node-writes load)) suffix1) gids)
                                         (ast-rewrite-and-clone
                                          graph (car (node-writes load))
@@ -1299,6 +1353,7 @@ if (dom==10) // Full Tile or not?
       (PRINT "FINISHED")
       graph)))
 ;; DEFINE-FLOAT-8x8
+;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)
 ;; (defun ast-band-split-reduce ()) <- ReductionがなかったらError
 ;; SplitReduce, SyncThreads, SharedMemory
 (defun ast-band-collapse (graph bands &key (dtype :int64) (parallel nil))
