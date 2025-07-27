@@ -979,7 +979,10 @@ for (int i=0; i<M; i+=32)
                   (incf expr-depth)
                   (when (> expr-depth 1) (return-from e))
                   (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
-                      (push node alus)
+                      (let ((expr (id->value graph (second (node-reads (id->value graph (car (node-reads node))))))))
+                        (if (or (eql (node-type expr) :EXPR) (eql (node-type expr) :BIND))
+                            nil
+                            (push node alus)))
                       (push node accs))
                   (e (car (node-reads node)) expr-depth))
                  (:AREF (push node loads))
@@ -1285,7 +1288,9 @@ if (dom==10) // Full Tile or not?
         ;; - [ ] BIND, SetfでSortできるように注意
         ;; - [ ] _1のgidの処理をどうするか。まだSpaceは正しくない。
         ;; - [x] SETF
-        ;; - [ ] @VECTORIZE Directive，たまに付与に失敗してる・・・
+        ;; - [ ] @VECTORIZE Directive，たまに付与に失敗してる・・・(Randomly Fails why)
+        ;; - [ ] TypeInference Fails
+        ;; - [ ] Simplify, TPSort!
         (insert-nodes
          graph
          (graph-nodes
@@ -1404,7 +1409,8 @@ if (dom==10) // Full Tile or not?
                                    gids)))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))))))))
-      ;; (caten/codegen/blueprint:print-blueprint graph t)
+;;      (simplify-ast graph)
+      (caten/codegen/blueprint:print-blueprint graph t)
       graph)))
 ;; DEFINE-FLOAT-8x8
 ;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)
