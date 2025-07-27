@@ -1500,7 +1500,7 @@ if (dom==10) // Full Tile or not?
                                     gids))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))))))))
-      (caten/codegen/blueprint:print-blueprint graph t)
+      ;; (caten/codegen/blueprint:print-blueprint graph t)
       graph)))
 ;; DEFINE-FLOAT-8x8
 ;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)

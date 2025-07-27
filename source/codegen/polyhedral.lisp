@@ -1101,7 +1101,7 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
      (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
-     (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+     ;(make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0))))
@@ -1390,7 +1390,8 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (2 . (:NoOpt :Parallel :TileGPU))
-    (t . (:NoOpt  :SplitReduce))))
+    (3 . (:NoOpt :Tile))
+    (t . (:NoOpt)))) ;; Vectorize, SplitReduce
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
