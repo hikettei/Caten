@@ -340,6 +340,19 @@
   ;; [TODO] Softmax Vectorize
   )
 
+(deftest test-polyhedral-vectorize-1
+  (testing "Vectorize at K"
+    (with-polyhedral
+        ;; TODO: If the loop was smaller than width?
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :serialize-sccs 1)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 0)))
+;;         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 1)))
+         (print gemm))
+        ((new-kernels extra-allocs)
+          (print-blueprint (nth 1 new-kernels) t)
+          ))))
+
 (deftest test-warp/block-reduction
   (with-polyhedral ((softmax ($softmax (make-tensor `(512 512))))
                     (setf softmax (apply-optimization softmax (make-instance 'Reschedule :outer-coincidence 1)))
@@ -358,7 +371,8 @@
         ((attn-kernels extra-allocs)
           (assert (= 1 (length attn-kernels)))
           (let ((kernel (car attn-kernels)))
-            (print-blueprint kernel t)))))
+            (print-blueprint kernel t)
+            ))))
   (testing "Search"
     (with-polyhedral ((attn ($flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5))))
                       (setf attn (apply-optimization attn (make-instance 'Reschedule :outer-coincidence 1))) ;; Loop Fusion

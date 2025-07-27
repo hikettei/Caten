@@ -984,7 +984,9 @@ for (int i=0; i<M; i+=32)
                   (e (car (node-reads node)) expr-depth))
                  (:AREF (push node loads))
                  (:SETF
-                  (push (id->value graph (car (node-reads node))) stores)
+                  (let ((place (id->value graph (car (node-reads node)))))
+                    (when (and place (eql :AREF (node-type place)))
+                      (push node stores)))
                   (e (second (node-reads node)) expr-depth))
                  (otherwise
                   (mapc #'(lambda (x) (e x expr-depth)) (node-reads node))))))
@@ -1089,7 +1091,7 @@ for (int i=0; i<M; i+=32)
    gids spaces))
 
 (defun %vector-from-vectorized (vectorized)
-  ;; [TODO]
+  ;; [TODO] GIDS
   (%vector
    (node->id1 (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to vectorized))
                                :value (vectorized-name vectorized))))
@@ -1130,8 +1132,10 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
                     (%vector-from-vectorized vec)
                     node)))
              (:BIND
-                 (warn "BIND is not implemented??")
-               node)
+                 (let ((vec (gethash (getattr node :value) ctx)))
+                   (if vec
+                       (%vector-from-vectorized vec)
+                       node)))
              (otherwise
               node))))
     (ast-rewrite-and-clone
@@ -1223,10 +1227,15 @@ if (dom==10) // Full Tile or not?
     (multiple-value-bind (loads accs alus stores) (filter-extract-load/acc/alu/store graph filter)
       (print bands)
       (print filter)
+      
       (PRINT "++++++++++++++")
+      (print "LOADS")
       (print loads)
+      (PRINT "ACCS")
       (print accs)
+      (PRINT "ALUS")
       (print alus)
+      (PRINT "STORES")
       (print stores)
       (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands)))
         ;; Update Contexts
@@ -1295,7 +1304,7 @@ if (dom==10) // Full Tile or not?
                           for ctx = (gethash (car (node-reads load)) vectorize-context)
                           collect
                           (make-vectorized-form
-                           graph band (gethash (car (node-reads load)) vectorize-context)
+                           graph band ctx
                            #'(lambda (gids gids1 seen)
                                (%expr
                                 (ensure-setf ctx
@@ -1323,6 +1332,50 @@ if (dom==10) // Full Tile or not?
               (loop for alu in alus
                     collect
                     (ast-vectorize-alu graph alu vectorize-context))
+              ;; Vectorized/Reminder Stores
+              (loop for suffix1 in (list "_vectorized") ;; _shared
+                    for suffix2_prefix in (list "_vstore" "_rstore")
+                    for vectorized-p in (list nil t)
+                    collect
+                    (loop for store in stores for nth upfrom 0
+                          for suffix2 = (format nil "~a_~a" suffix2_prefix nth)
+                          for aref = (id->value graph (car (node-reads store)))
+                          for ctx = (gethash (car (node-reads aref)) vectorize-context)
+                          collect
+                          (make-vectorized-form
+                           graph band ctx
+                           #'(lambda (gids gids1 seen)
+                               (assert (and aref (eql (node-type aref) :AREF))) (assert ctx)
+                               ;; <-- BINDの可能性があるじゃん？
+                               ;; [TODO] Aref[0] --> BINDかもしれないから全部書き換えるべき
+                               (%expr
+                                (ensure-setf
+                                 ctx
+                                 (%setf
+                                  (ast-rewrite-and-clone
+                                   graph (car (node-reads store))
+                                   #'(lambda (node reads)
+                                       (declare (ignore reads))
+                                       (case (node-type node)
+                                         (:LOAD
+                                          (let ((new-gid (find (ngid (getattr node :value) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                            (when new-gid (setf (getattr node :value) (getattr new-gid :idx)))
+                                            node))
+                                         (:RANGE
+                                             (let ((new-gid (find (ngid (getattr node :idx) suffix2) gids1 :key #'(lambda (x) (getattr x :idx)))))
+                                               (if new-gid
+                                                   (let ((n (%clone-node new-gid)))
+                                                     (setf (node-writes n) (node-writes node))
+                                                     n)
+                                                   node)))
+                                         (otherwise node))))
+                                  (%swizzle
+                                   (node->id1
+                                    (emit (make-node :JIT :BIND (list (gensym)) (node-writes (vectorized-bind-to ctx))
+                                                     :value (vectorized-name ctx))))
+                                   gids)))))
+                           :is-reminder-p vectorized-p
+                           :suffix suffix2)))
               ;(flet ((newid (x) (car (node-writes x))))
               ;  (loop for alu in alus
               ;        collect
