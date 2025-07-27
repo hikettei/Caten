@@ -960,7 +960,10 @@ for (int i=0; i<M; i+=32)
                         (if (or (eql (node-type expr) :EXPR) (eql (node-type expr) :BIND))
                             nil
                             (push node alus)))
-                      (push node accs))
+                      (let ((depend-ids (aref-depends-on graph node :strict nil)))
+                        (if depend-ids
+                            (push node alus)
+                            (push node accs))))
                   (e (car (node-reads node)) expr-depth))
                  (:AREF (push node loads))
                  (:SETF
@@ -1004,7 +1007,7 @@ for (int i=0; i<M; i+=32)
                (return-from e new-node))))
     (car (node-writes (e id 0)))))
 
-(defun aref-depends-on (graph aref &aux (seen (make-hash-table)) (deps))
+(defun aref-depends-on (graph aref &key (strict t) &aux (seen (make-hash-table)) (deps))
   (labels ((e (id &aux (node (id->value graph id)))
              (when (or (null node) (gethash (node-id node) seen)) (return-from e))
              (setf (gethash (node-id node) seen) t)
@@ -1013,8 +1016,8 @@ for (int i=0; i<M; i+=32)
                (:RANGE (push (getattr node :idx) deps))
                (:EXPR)
                (otherwise (mapc #'e (node-reads node))))))
-    (assert (eql (node-type aref) :AREF))
-    (e (second (node-reads aref))))
+    (when strict (assert (eql (node-type aref) :AREF)))
+    (if strict (e (second (node-reads aref))) (mapc #'e (node-reads aref))))
   (remove-duplicates deps))
 
 (defstruct (Vectorized)
@@ -1099,17 +1102,23 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
              (:EXPR
               (let ((vec (gethash (car (node-writes node)) ctx)))
                 (if vec
-                    (%vector-from-vectorized ranges vec)
+                    (progn
+                      (setf (gethash (car (node-writes alu)) ctx) vec)
+                      (%vector-from-vectorized ranges vec))
                     node)))
              (:AREF
               (let ((vec (gethash (car (node-reads node)) ctx)))
                 (if vec
-                    (%vector-from-vectorized ranges vec)
+                    (progn
+                      (setf (gethash (car (node-writes alu)) ctx) vec)
+                      (%vector-from-vectorized ranges vec))
                     node)))
              (:BIND
                  (let ((vec (gethash (getattr node :value) ctx)))
                    (if vec
-                       (%vector-from-vectorized ranges vec)
+                       (progn
+                         (setf (gethash (car (node-writes alu)) ctx) vec)
+                         (%vector-from-vectorized ranges vec))
                        node)))
              (otherwise
               node))))
@@ -1131,7 +1140,17 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
                       (vectorized (find key (hash-table-values ctx) :key #'vectorized-name)))
                  (when (and key vectorized)
                    ;; Just updating bind-to is ok as long as you are using %vector-from-vectorized
-                   (setf (vectorized-bind-to vectorized) node)))))
+                   (setf (vectorized-bind-to vectorized) node))))
+             (when (and (eql (node-type node) :EXPR) prev (not (eql (node-type prev) :SETF)))
+               (let ((ctx (gethash (car (node-writes alu)) ctx)))
+                 (when ctx
+                   (let ((new-node
+                           (%bind (car (node-writes node))
+                                  (%expr (node->id1
+                                          (%setf (%vector-from-vectorized ranges ctx)
+                                                 (car (node-reads node))))))))
+                     (setf node new-node)
+                     (setf (vectorized-bind-to ctx) new-node))))))
            node)))))
 ;; (defun ast-unroll-vector (graph id)) [TODO]
 (defun ensure-setf (ctx expr)
@@ -1140,6 +1159,7 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
 
 (defun find-ctx-from-node (graph vectorize-context node)
   (or
+   (gethash (car (node-writes node)) vectorize-context)
    (when (eql (node-type node) :BIND)
      (gethash (getattr node :value) vectorize-context))
    (when (eql (node-type node) :AREF)
@@ -1148,6 +1168,50 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
       (let ((bind (id->value graph (car (node-reads node)))))
         (when (and bind (eql (node-type bind) :BIND))
           (gethash (getattr bind :value) vectorize-context)))))))
+
+(defun graph-rewrite-setf-is-expr (graph filter)
+  "
+Rewrites filter subgraph to ensure value in SETF(place, value) is always an expr.
+```
+val_0[i] = sin(val_0[i])
+```
+=>
+```
+val_0_tmp = sin(val_0[i]) // EXPR
+val_0[i] = val_0_tmp // EXPR(STORE)
+```
+"
+  (declare (type graph graph))
+  (assert (find (node-type filter) `(:EXPR :PROGN)))
+  (let ((nodes (if (eql (node-type filter) :PROGN)
+                   (node-reads filter)
+                   (node-writes filter)))
+        (id (gensym)))
+    (values
+     id
+     (with-blueprint (:noopt t)
+       (%bind
+        id
+        (%progn
+         (loop for node in nodes
+               for expr = (id->value graph node) for entry = (id->value graph (car (node-reads expr)))
+               collect
+               (if (and (eql (node-type entry) :SETF)
+                        (let ((place (id->value graph (second (node-reads entry)))))
+                          (null (find (node-type place) `(:BIND :EXPR)))))
+                   (let ((tmpid (gensym)))
+                     (list
+                      (%expr (second (node-reads entry)) :out tmpid)
+                      (%expr (node->id1 (%setf (car (node-reads entry)) tmpid)))))
+                   node))))))))
+
+(defun ast-preprocess-for-vectorize (graph filters)
+  (dolist (filter filters)
+    (assert (eql (node-type filter) :FOR))
+    (multiple-value-bind (new-id rewritten) (graph-rewrite-setf-is-expr graph (id->value graph (second (node-reads filter))))
+      (insert-nodes graph (graph-nodes rewritten))
+      (setf (second (node-reads filter)) new-id)))
+  graph)
 
 (defun ast-band-vectorize (graph band &key (vectorize-context (make-hash-table)))
   "
@@ -1271,18 +1335,19 @@ if (dom==10) // Full Tile or not?
         ;; - [ ] Reminder Computation
         ;; - [ ] TensorCore
         ;; WIP Things:
-        ;; - [ ] BIND, SetfでSortできるように注意
+        ;; - [x] BIND, SetfでSortできるように注意
         ;; - [x] _1のgidの処理をどうするか。まだSpaceは正しくない。
         ;; - [x] SETF
         ;; - [x] @VECTORIZE Directive，たまに付与に失敗してる・・・(Randomly Fails why)
         ;; - [x] TypeInference Fails
-        ;; - [ ] Simplify, TPSort!
+        ;; - [x] Simplify, TPSort!
         ;; - [ ] TileGPU+VECTORIZE
         ;; - [ ] SplitReduce
         ;; - 一旦non-isolatedだけでcompile目指してみる
         ;; - [ ] PARALLEL+Tile Bug あとで直さないと...
         ;; :VECTORIZEについて，EXPR+VECTORIZEの形で常に現れるようにしたい。(ASTLoopにする。vectorizeがめんどくさくても，render-nodeで{a0+b0, ...的にかけるようにしたい})
-        ;; - まずはSimplifierとTpSort, 次にSoftmaxとFlashAttention
+        ;; Softmax/FlashAttention, Reminder, Renderer, TensorCore
+        ;; 次にSoftmaxとFlashAttention
         ;; ;; Important: RANGE, CONDITIONもCSEの対象に，
         (insert-nodes
          graph
@@ -1375,7 +1440,13 @@ if (dom==10) // Full Tile or not?
                            #'(lambda (gids gids1 seen)
                                (declare (ignore seen))
                                (assert (and aref (eql (node-type aref) :AREF)))
-                               (assert ctx) (assert sctx)
+                               (print (id->value graph (nth 0 (node-reads store))))
+                               (print (id->value graph (nth 1 (node-reads store))))
+                               (print (hash-table-keys vectorize-context))
+                               ;; [TODO] SCTXを消して，Moveが確実にできるようにしたい。
+                               ;; 1. それか，この場合，ALUから消して，全部Swizzleで実行するようにしてもいいと思う。
+                               ;; 2. 
+                               (assert sctx) ;; ALUのSCTXが常に返却されるようにしたい。
                                (ensure-setf
                                 ctx
                                 (%expr
@@ -1405,7 +1476,7 @@ if (dom==10) // Full Tile or not?
                                     gids))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))))))))
-;;       (caten/codegen/blueprint:print-blueprint graph t)
+      (caten/codegen/blueprint:print-blueprint graph t)
       graph)))
 ;; DEFINE-FLOAT-8x8
 ;; VECTOR_LOAD_SIMPLIFY_PATTERN (CONTIGUOUS=True/False)

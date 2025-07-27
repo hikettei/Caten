@@ -111,6 +111,9 @@
 (with-traced-polyhedral ($softmax softmax *strategy*)
   (defun softmax (tensor) (!softmax tensor)))
 
+(with-traced-polyhedral ($sin sin-graph *strategy*)
+  (defun sin-graph (tensor) (!sin tensor)))
+
 (with-traced-polyhedral ($softmax_jit softmax-jit *strategy*)
   @caten.jit () {
   (defun softmax-jit ((Pointer X Type (A B)))
@@ -373,6 +376,12 @@
         (assert (= 1 (length softmax-kernels)))
         (let ((sftmx (car softmax-kernels)))
           (print-blueprint sftmx t)))))
+
+(deftest test-polyhedral-vec
+  (with-polyhedral ((sin ($sin (make-tensor `(10 10))))
+                    (setf sin (apply-optimization sin (make-instance 'Vectorize :width 4 :band (getband sin 0) :axis 0))))
+      ((sin-kernels extra-allocs)
+        (print-blueprint (car sin-kernels) t))))
 ;; [TODO] Write
 (deftest test-polyhedral-flash-attention
   (testing "Scheduling"
