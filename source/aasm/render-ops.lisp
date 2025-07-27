@@ -1097,7 +1097,7 @@ VECTOR(acc_acc, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 0, 0, 0}) +=
   VECTOR(Y    , {0, 1, 2, 3}, {0, 0, 0, 0}, {0, 1, 2, 3})
 If PatternMatcher detects this access pattern, this can be further rewritten as TensorCore or SIMD otherwise unrolled"
   (declare (type hash-table ctx) (type node alu) (type graph graph))
-  (flet ((rewrite (node)
+  (flet ((rewrite (node used-from)
            (case (node-type node)
              (:EXPR
               (let ((vec (gethash (car (node-writes node)) ctx)))
@@ -1107,26 +1107,28 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
                       (%vector-from-vectorized ranges vec))
                     node)))
              (:AREF
-              (let ((vec (gethash (car (node-reads node)) ctx)))
+              (let ((vec (gethash (print (ensure-aref-name graph node)) ctx)))
                 (if vec
                     (progn
                       (setf (gethash (car (node-writes alu)) ctx) vec)
                       (%vector-from-vectorized ranges vec))
                     node)))
              (:BIND
-                 (let ((vec (gethash (getattr node :value) ctx)))
-                   (if vec
-                       (progn
-                         (setf (gethash (car (node-writes alu)) ctx) vec)
-                         (%vector-from-vectorized ranges vec))
-                       node)))
+                 (if (eql (node-type used-from) :AREF)
+                     node
+                     (let ((vec (gethash (getattr node :value) ctx)))
+                       (if vec
+                           (progn
+                             (setf (gethash (car (node-writes alu)) ctx) vec)
+                             (%vector-from-vectorized ranges vec))
+                           node))))
              (otherwise
               node))))
     (ast-rewrite-and-clone
      graph
      (car (node-writes alu))
      #'(lambda (node new-reads)
-         (let ((new-reads (map 'list #'rewrite new-reads)))
+         (let ((new-reads (map 'list #'(lambda (x) (rewrite x node)) new-reads)))
            (setf (node-reads node) (map 'list #'node->id1 new-reads))
            (let ((prev (id->value *ctx* (car (node-reads node)))))
              ;; Updates SETF and BIND dependencies trigger w/ EXPR+SETF
@@ -1213,6 +1215,13 @@ val_0[i] = val_0_tmp // EXPR(STORE)
       (setf (second (node-reads filter)) new-id)))
   graph)
 
+(defun ensure-aref-name (graph aref)
+  (let ((bind (or (id->value graph (car (node-reads aref)))
+                  (id->value *ctx* (car (node-reads aref))))))
+    (if (and bind (eql (node-type bind) :BIND))
+        (getattr bind :value)
+        (car (node-reads aref)))))
+
 (defun ast-band-vectorize (graph band &key (vectorize-context (make-hash-table)))
   "
 ```
@@ -1273,9 +1282,13 @@ if (dom==10) // Full Tile or not?
       (explore (car (node-writes band))))
     (setf bands (reverse bands))
     (multiple-value-bind (loads accs alus stores) (filter-extract-load/acc/alu/store graph filter)
+      (setf loads (loop for l in loads
+                        if (null (gethash (ensure-aref-name graph l) vectorize-context))
+                        collect l))
       (print bands)
       (print filter)
       (PRINT "++++++++++++++")
+      (print (hash-table-keys vectorize-context))
       (print "LOADS")
       (print loads)
       (PRINT "ACCS")
@@ -1284,6 +1297,10 @@ if (dom==10) // Full Tile or not?
       (print alus)
       (PRINT "STORES")
       (print stores)
+      ;; 問題が三つある:
+      ;; - DEFINE-LOCALのスコープ(これは並列化より下の次元にSortする)
+      ;; - val_0_vectorized is undefined
+      ;; - BINDされたあと，val_9がvectorizedにならない
       (let ((vectorize-space (map 'list #'(lambda (x) (uiop:symbol-call :caten/codegen/polyhedral :directive-amount (getattr x :directive))) bands))
             (store-vec-tmp (make-hash-table))
             (ranges))
@@ -1307,8 +1324,8 @@ if (dom==10) // Full Tile or not?
           (setf ranges (map 'list #'node->gid bands))
           (loop for load in loads do
             (let ((depend-bands (depend-bands load)))
-              (setf (gethash (car (node-reads load)) vectorize-context)
-                    (make-vectorized :name (ngid (car (node-reads load)) "_vectorized") :node load :gids (map 'list (compose #'node->gid #'car) depend-bands)
+              (setf (gethash (ensure-aref-name graph load) vectorize-context)
+                    (make-vectorized :name (ngid (ensure-aref-name graph load) "_vectorized") :node load :gids (map 'list (compose #'node->gid #'car) depend-bands)
                                      :map (make-map load)
                                      :space (map 'list #'car depend-bands) :block-size (map 'list #'cdr depend-bands)))))
           (loop for store in stores do
@@ -1343,6 +1360,7 @@ if (dom==10) // Full Tile or not?
         ;; - [x] Simplify, TPSort!
         ;; - [ ] TileGPU+VECTORIZE
         ;; - [ ] SplitReduce
+        ;; - [ ] Previously CacheをSkipさせる
         ;; - 一旦non-isolatedだけでcompile目指してみる
         ;; - [ ] PARALLEL+Tile Bug あとで直さないと...
         ;; :VECTORIZEについて，EXPR+VECTORIZEの形で常に現れるようにしたい。(ASTLoopにする。vectorizeがめんどくさくても，render-nodeで{a0+b0, ...的にかけるようにしたい})
@@ -1358,9 +1376,9 @@ if (dom==10) // Full Tile or not?
              (%progn
               ;; Declarations
               (loop for load in loads
-                    for ctx = (or (gethash (car (node-reads load)) vectorize-context) (error "The loader ~a is not in vectorized context." load))
+                    for ctx = (or (gethash (ensure-aref-name graph load) vectorize-context) (error "The loader ~a is not in vectorized context." load))
                     collect
-                    (%local (ngid (car (node-writes load)) "_vectorized")
+                    (%local (ngid (ensure-aref-name graph load) "_vectorized")
                             (vectorized-block-size ctx) (tensor-relay-dtype (car (relay-writes (read-type-relay load))))))
               ;;(loop for load in loads                                                      
               ;;      collect
@@ -1388,7 +1406,7 @@ if (dom==10) // Full Tile or not?
                     collect
                     (loop for load in loads for nth upfrom 0
                           for suffix2 = (format nil "~a_~a" suffix2_prefix nth)
-                          for ctx = (gethash (car (node-reads load)) vectorize-context)
+                          for ctx = (gethash (ensure-aref-name graph load) vectorize-context)
                           collect
                           (make-vectorized-form
                            graph band ctx
@@ -1398,7 +1416,7 @@ if (dom==10) // Full Tile or not?
                                 ctx
                                 (%expr
                                  (node->id1
-                                  (%setf (%swizzle (ngid (car (node-writes load)) suffix1) gids)
+                                  (%setf (%swizzle (vectorized-name ctx) gids)
                                          (ast-rewrite-and-clone
                                           graph (car (node-writes load))
                                           #'(lambda (node reads)
