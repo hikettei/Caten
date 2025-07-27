@@ -932,7 +932,7 @@ if (not ensure_domain_is_right)
         (dolist (user (id->users kernel undef-var))
           (when (eql (node-type user) :BIND)
             (dolist (usr (id->users kernel (car (node-writes user))))
-              (setf (node-reads usr) (print (map 'list #'(lambda (x) (if (eql (car (node-writes user)) x) (getattr user :value) x)) (node-reads usr)))))
+              (setf (node-reads usr) (map 'list #'(lambda (x) (if (eql (car (node-writes user)) x) (getattr user :value) x)) (node-reads usr))))
             (multiple-value-bind (dtype pointer-p) (id->tensor-info (getattr user :value))
               (insert-nodes kernel (list (%global (getattr user :value) dtype pointer-p))))))))))
 
@@ -1390,7 +1390,7 @@ for (int i=0; i<32; i+=2)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
     (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
     (2 . (:NoOpt :Parallel :TileGPU))
-    (t . (:NoOpt :Tile :Vectorize :SplitReduce))))
+    (t . (:NoOpt  :SplitReduce))))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
