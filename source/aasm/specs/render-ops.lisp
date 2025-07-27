@@ -187,7 +187,24 @@ Reads a scalar value from local buffer (DEFINE-LOCAL)
                              ((typep arg 'TensorRelay)
                               (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil)))
                              (T
-                              (error "The first argument for :Aref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
+                              (error "The first argument for :Swizzle should be either of :DEFINE-GLOBAL or TensorRelay"))))))
+
+(defnode (:JIT :VECTOR) (RenderOps)
+         "
+```
+X <- VECTOR(LocalVar, 0, 1, 2, 3, ..., n, shape=(a, b, ...))
+```
+where n = a*b*...
+"
+         :slots ((shape :type list))
+         :type-relay #'(lambda (id->type node)
+                         (let ((arg (gethash (car (node-reads node)) id->type)))
+                           (cond
+                             ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-LOCAL))
+                              (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil
+                                                       :vectorize (getattr node :shape))))
+                             (T
+                              (error "The first argument for :VECTOR should be a SRAM Load (i.e.: :DEFINE-LOCAL)"))))))
 ;;[TODO] Remove
 (defnode (:JIT :Pack) (RenderOps)
          "

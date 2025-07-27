@@ -1036,7 +1036,8 @@ for (int i=0; i<M; i+=32)
   (node nil :type (or null Node))
   (space nil :type list)
   (gids nil :type list)
-  (block-size nil :type list))
+  (block-size nil :type list)
+  (bind-to nil :type (or Null node)))
 
 (defun make-vectorized-form (graph band vectorize-context filter-rewriter &key (dtype :int64) (is-reminder-p t) (suffix "_1") &aux (seen (make-hash-table)))
   "is-reminder-p: If set to T, uses max(...) as a loop bound, otherwise, replaced w/ vectorize amount."
@@ -1073,6 +1074,33 @@ for (int i=0; i<M; i+=32)
                       (setf (gethash (node-id node) seen) (second (node-reads cpy)))))))))
     (e (car (node-writes band)) nil)))
 
+(defun ast-vectorize-alu (graph alu ctx)
+  "
+VectorizeContext
+acc | acc_acc[_gid_p3][_gid_p4]
+X   | X[_gid_p4][_gid_p5]
+Y   | Y[_gid_p3][_gid_p5]
+===>
+@VECTORIZE(4)  for (int _gid_p3_1_vload=0; _gid_p3_1_vload<4; _gid_p3_1_vload+=1)  [B1]
+  @VECTORIZE(4)  for (int _gid_p4_1_vload=0; _gid_p4_1_vload<4; _gid_p4_1_vload+=1)  [B1]
+    @VECTORIZE(4)  for (int _gid_p5_vload=0; _gid_p5_vload<4; _gid_p5_vload+=1)  [B2]
+      acc_acc[_gid_p3][_gid_p4] = acc_acc[_gid_p3][_gid_p4] + X[_gid_p4][_gid_p5] * Y[_gid_3][_gid_p5]
+Later rewritten as unrolling using VECTOR, Finally, the form will be rewritten as:
+VECTOR(acc_acc, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 0, 0, 0}) +=
+  VECTOR(X    , {0, 0, 0, 0}, {0, 1, 2, 3}, {0, 1, 2, 3}) *
+  VECTOR(Y    , {0, 1, 2, 3}, {0, 0, 0, 0}, {0, 1, 2, 3})
+If PatternMatcher detects this access pattern, this can be further rewritten as TensorCore or SIMD otherwise unrolled"
+  (declare (type hash-table ctx) (type node alu) (type graph graph))
+  ;; [Note] BINDに注意する!!!
+  (ast-rewrite-and-clone
+   graph
+   (car (node-writes alu))
+   #'(lambda (node new-reads)
+       (print "VECTOR REWRITE")
+       (print new-reads)
+       (print node)
+       node)))
+;; (defun ast-unroll-vector (graph id)) [TODO]
 (defun ast-band-vectorize (graph band &key (dtype :int64) (vectorize-context (make-hash-table)))
   "
 ```
@@ -1168,7 +1196,8 @@ if (dom==10) // Full Tile or not?
               
         ;; [TODO] Introduce node X = DEFINE_LOCAL(SIZE) :attr :float4, dtype: ...
         ;; FilterSubgraphのCopyを前と同じ容量で作る。ただし，IDXは_pで
-        ;; [TODO] Accへ分類される条件を厳しくする。
+        ;; - Accへ分類される条件を厳しくする。(SETF ACC (REDUCTION))の引数である必要がある。
+        ;; - SoftmaxもVectorizeできる？How to sort filter as EXPR?
         (insert-nodes
          graph
          (graph-nodes
@@ -1195,11 +1224,13 @@ if (dom==10) // Full Tile or not?
               (make-vectorized-form
                graph band nil
                #'(lambda (gids gids1 seen)
-                   (declare (ignore gids1))
+                   (declare (ignore gids1 seen))
                    (%progn
-                    (loop for acc in accs
+                    (loop for acc in accs for ctx = (gethash (car (node-writes acc)) vectorize-context)
                           collect
-                          (%expr (node->id1 (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc))))))))
+                          (let ((setf (%setf (%swizzle (ngid (car (node-writes acc)) "_acc") gids) (car (node-reads acc)))))
+                            (setf (vectorized-bind-to ctx) setf)
+                            (%expr (node->id1 setf))))))
                :is-reminder-p nil)
               ;; Loaders (Vectorized)
               (loop for suffix1 in (list "_vectorized"); "_shared")
@@ -1229,31 +1260,15 @@ if (dom==10) // Full Tile or not?
                                                      (if new-gid
                                                          (let ((n (%clone-node new-gid)))
                                                            (setf (node-writes n) (node-writes node))
-                                                           
-                                                           (print "rewrite acc+")
-                                                           (print node)
-                                                           (print new-gid)
                                                            n)
                                                          node)))
                                                (otherwise node))))))))
                            :is-reminder-p vectorized-p
                            :suffix suffix2)))
               ;; VectorizedALUs Rewriter
-              ;; VectorizeContext:
-              ;; acc | acc_acc[_gid_p3][_gid_p4]
-              ;; X   | X[_gid_p4][_gid_p5]
-              ;; Y   | Y[_gid_p3][_gid_p5]
-              ;; VectorizedCompute
-              ;; @VECTORIZE(4)  for (int _gid_p3_1_vload=0; _gid_p3_1_vload<4; _gid_p3_1_vload+=1)  [B1]
-              ;;   @VECTORIZE(4)  for (int _gid_p4_1_vload=0; _gid_p4_1_vload<4; _gid_p4_1_vload+=1)  [B1]
-              ;;     @VECTORIZE(4)  for (int _gid_p5_vload=0; _gid_p5_vload<4; _gid_p5_vload+=1)  [B2]
-              ;;       acc_acc[_gid_p3][_gid_p4] = acc_acc[_gid_p3][_gid_p4] + X[_gid_p4][_gid_p5] * Y[_gid_3][_gid_p5]
-              ;; Later rewritten as unrolling
-              ;; Finally, the form will be rewritten as:
-              ;; VECTORIZED(acc_acc, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 0, 0, 0}) +=
-              ;;   VECTORIZED(X    , {0, 0, 0, 0}, {0, 1, 2, 3}, {0, 1, 2, 3}) *
-              ;;   VECTORIZED(Y    , {0, 1, 2, 3}, {0, 0, 0, 0}, {0, 1, 2, 3})
-              ;; If PatternMatcher detects this access pattern, this can be further rewritten as TensorCore or SIMD otherwise unrolled              
+              (loop for alu in alus
+                    collect
+                    (ast-vectorize-alu graph alu vectorize-context))
               ;(flet ((newid (x) (car (node-writes x))))
               ;  (loop for alu in alus
               ;        collect
