@@ -352,9 +352,6 @@ Constraints:
 ;; - Relocate EXPR if it is independent of loop
 ;; - Topological Sort of PROGN
 ;; - Reexprify
-;; [TODO] expr-prognify, tpsort-progn, reexprify ===> 共通項削除！
-;; [TODO] %progn-sortだけ切り出しておく
-;; [TODO] For LoopのIndexを考慮して，早めに切り出しておく。。。
 (defun ast-ensure-progn (graph &aux (visited (make-hash-table)))
   "Inserts extra PROGN undernearth :FOR and :IF"
   (labels ((explore (x &aux (node (id->value graph x)))
@@ -911,26 +908,6 @@ for (int i=0; i<M; i+=32)
                         (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size)))) body))))))
         (verify-graph graph)
         graph))))
-;; Unrolling, Upcast, Vectorize, TensorCore
-(defgeneric compute-unroll-reminder (reminder size step n-unroll)
-  (:documentation "Finds the maximum integer which satisfies MOD(SIZE//STEP, n_unroll) == 0"))
-
-(defmethod compute-unroll-reminder ((reminder (eql :idiv)) size step n-unroll)
-  (let* ((id (gensym))
-         (g (with-context (out (%mul step (%mul n-unroll (%idiv (%idiv size step) n-unroll)) :id id)))))
-    (setf (graph-outputs g) (list id))
-    g))
-
-(defun node-force-number-bypass (node)
-  "Inserts %LOAD if the node is trying to load number directly"
-  (when (eql (node-type node) :RANGE) (return-from node-force-number-bypass (list node)))
-  (with-context-nodes
-      (_
-       (loop for r in (node-reads node)
-             for nth upfrom 0
-             if (integerp r) do (setf (nth nth (node-reads node)) (node->id1 (%iconst r)))
-             else if (floatp r) do (setf (nth nth (node-reads node)) (node->id1 (%fconst r)))))
-      (__ (emit node))))
 
 (defun ast-band-children (graph band &key (nodes nil) (seen nil))
   (labels ((explore (id seen-expr-p &aux (node (id->value graph id)))
@@ -1173,7 +1150,7 @@ If PatternMatcher detects this access pattern, this can be further rewritten as 
         (when (and bind (eql (node-type bind) :BIND))
           (gethash (getattr bind :value) vectorize-context)))))))
 
-(defun ast-band-vectorize (graph band &key (dtype :int64) (vectorize-context (make-hash-table)))
+(defun ast-band-vectorize (graph band &key (vectorize-context (make-hash-table)))
   "
 ```
 @VECTORIZE for (...) <--- band
@@ -1291,6 +1268,9 @@ if (dom==10) // Full Tile or not?
         ;; - [ ] @VECTORIZE Directive，たまに付与に失敗してる・・・(Randomly Fails why)
         ;; - [ ] TypeInference Fails
         ;; - [ ] Simplify, TPSort!
+        ;; - [ ] TileGPU+VECTORIZE
+        ;; - [ ] SplitReduce
+        ;; - 一旦non-isolatedだけでcompile目指してみる
         (insert-nodes
          graph
          (graph-nodes
