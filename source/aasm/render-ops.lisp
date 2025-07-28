@@ -796,16 +796,19 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
     (insert-nodes graph (graph-nodes sb)))
   graph)
 
-(defun ast-synchronize-read-write (graph &aux (seen (make-hash-table)) (id->state (make-hash-table)))
+(defun ast-synchronize-read-write (graph &aux (id->state (make-hash-table)) (seen (make-hash-table)))
   (labels ((e (id mode &aux (node (id->value graph id)))
-             (when (or (null node) (gethash (node-id node) seen))
-               (return-from e))
+             (when (null node) (return-from e))
+             (when (gethash (node-id node) seen)
+               (when (null (find (node-type node) `(:AREF :DEFINE-GLOBAL)))
+                 (return-from e)))
              (setf (gethash (node-id node) seen) t)
              (case (node-type node)
                (:SETF
                 (e (car (node-reads node)) :write)
                 (e (second (node-reads node)) :read))
                (:DEFINE-GLOBAL
+                (assert mode)
                 (let ((state (gethash (car (node-writes node)) id->state)))
                   (if (null state)
                       (setf (gethash (car (node-writes node)) id->state) mode)
