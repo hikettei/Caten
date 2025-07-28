@@ -1199,21 +1199,27 @@ Returns T if the current schedule does not break any dependences in dep."
          (dim (space-dim band-space 3)))
     (multi-val-from-val-list band-space (apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
 
-(defclass Tile (OptimizationRule) ((size :initarg :size :accessor tile-size)))
+(defclass Tile (OptimizationRule)
+  ((size :initarg :size :accessor tile-size)
+   (sink :initarg :sink :accessor tile-sink :initform nil)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   (loop for band in bands for nth upfrom 0
         append
         (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::tile-search-space)
               do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero! getting ~a" size)
-              collect
-              (make-instance 'Tile :size size :band band :axis nth))))
-
+              append
+              (list
+               (make-instance 'Tile :size size :band band :axis nth)
+               (make-instance 'Tile :size size :band band :axis nth :sink t)))))
+               
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Tile))
   (setf
    (poly-schedule poly)
    (schedule-node-get-schedule
-    (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt))))))
+    (funcall
+     (if (tile-sink poly) #'isl::schedule-node-band-sink #'identity)
+     (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt)))))))
 
 (defclass TileGPU (OptimizationRule)
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)
