@@ -27,7 +27,7 @@
 
 (in-package :caten/codegen/polyhedral)
 
-(defparameter *allow-compilation-error-during-beam* nil)
+(defparameter *allow-compilation-error-during-beam* t)
 (defparameter *+inf* (expt 2 32))
 
 (define-condition beam-post-rejection (error)
@@ -1474,7 +1474,7 @@ for (int i=0; i<32; i+=2)
     ($kernel dep read-args
              (make-instance
               kernel-cls
-              :name (intern (format nil "~a_~a" (kernel-name base-kernel) nth))
+              :name (intern (format nil "~a_~a" (gensym "BEAM") nth))
               :blueprint blueprint
               :args args
               :flops (kernel-flops base-kernel))
