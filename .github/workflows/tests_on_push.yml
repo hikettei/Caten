@@ -115,7 +115,7 @@ jobs:
           ros -e '(ql:register-local-projects)' -q
           CI=1 BACKEND=METAL OPTIMIZE=1 make test
   BEAM_Fuzzer:
-    name: BEAM Fuzzer on ${{ matrix.backend }} (${{ matrix.lisp }})
+    name: (${{ matrix.backend }}) AutoScheduler on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -180,7 +180,7 @@ jobs:
           ros -e '(ql:register-local-projects)' -q
           BEAM=100 JIT_DEBUG=3 BACKEND=CLANG ros run --load ./examples/flash-attention.lisp
   BEAM_Fuzzer_Mac:
-    name: BEAM Fuzzer on ${{ matrix.backend }} (${{ matrix.lisp }})
+    name: (${{ matrix.backend }}) AutoScheduler on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
