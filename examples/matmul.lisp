@@ -199,9 +199,10 @@ Error details: ~a" c))))
        :output-format :png))))
 
 (defun benchmark (&key
-                  (impls (list 'NaiveLispMatmul 'OpenBLAS 'CatenMatmul))
+                  (impls (list 'NaiveLispMatmul 'CatenMatmul))
                   (n-profile 1)
                   &aux (results))
+  (when *openblas-available-p* (push 'OpenBLAS impls))
   (loop for N in `(256 512 1024 2048)
         for *config* = (make-config :N N) 
         for settings = (map 'list #'make-instance impls) do
