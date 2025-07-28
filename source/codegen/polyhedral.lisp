@@ -1441,6 +1441,7 @@ for (int i=0; i<32; i+=2)
   `((0 . ,(SelectOneFromOpts :Reschedule))    ;; ScheduleTree Generation Strategy (They will never evaluated w/o mutated w/ :Parallel :TileGPU)
     (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; Combile Reschedule x Parallel/TileGPU{local_size1, ...}
     (2 . ,(SearchUntilSaturated :Interchange))
+    ;; (3 . ,(SearchUntilSaturated :Vectorize :SplitReduce)) [TOOD]
     (t . ,(SelectOneFromOpts :NoOpt :Tile)) ;; Iterate until gaining no improvements
     ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
     ))
@@ -1537,7 +1538,7 @@ for (int i=0; i<32; i+=2)
           (when (>= (ctx:getenv :JIT_DEBUG) 1)
             (let ((improvements
                     (when (poly-last-evaluation polyhedral)
-                      (* 100 (/ total (poly-last-evaluation polyhedral))))))
+                      (* 100 (/ (poly-last-evaluation polyhedral) total)))))
               (lformat "[Evaluation] | ~,5f seconds ~,4fGFLOps | ~a~%"
                        total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil)
                        (if improvements
@@ -1574,19 +1575,15 @@ for (int i=0; i<32; i+=2)
             (loop for (kernel . score) in beam do
               (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
                 (push (make-candidate new-kernel) candidates)))
-            (setf candidates (loop for c in (append candidates beam)
-                                   if (not (= (cdr c) *+inf*))
-                                     collect c))
             (setf candidates (sort candidates #'< :key #'cdr))
             (let* ((new-beam (subseq candidates 0 (min (length candidates) beam-width)))
                    (improvements (* 100 (/ (cdar beam) (cdar new-beam)))))
               (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "~,4f% Improvements in this generation." improvements))
               (when (and
                      (every
-                      #'(lambda (x) (>= (1+ (poly-stage (car x))) (length *search-space*)))
+                      #'(lambda (x) (>= (poly-stage (car x)) (length *search-space*)))
                       candidates)
                      (<= improvements 100.0))
-                (setf beam new-beam)
                 (return-from beam))
               (setf beam new-beam)))
           (let ((best-kernel (car beam)))
