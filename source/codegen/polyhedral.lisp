@@ -1550,7 +1550,7 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 1e-5) ;; 改善率で計測すべきでは
+                                       (threshold 1e-10)
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler))
                                        (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
