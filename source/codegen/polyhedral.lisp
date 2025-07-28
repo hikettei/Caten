@@ -1441,7 +1441,7 @@ for (int i=0; i<32; i+=2)
   `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))    ;; ScheduleTree Generation Strategy (They will never evaluated w/o mutated w/ :Parallel :TileGPU)
     (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; Combile Reschedule x Parallel/TileGPU{local_size1, ...}
     (2 . ,(SearchUntilSaturated :Interchange)) ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
-    (t . ,(SelectOneFromOpts :NoOpt :Tile)) ;; [TODO] ここでのTileはNoSegv, 
+    (t . ,(SelectOneFromOpts :NoOpt :Tile)) ;; Iterate until gaining no improvements
     ))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
@@ -1550,7 +1550,6 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 1e-6)
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler))
                                        (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
@@ -1568,20 +1567,24 @@ for (int i=0; i<32; i+=2)
                (beam (map 'list #'(lambda (x) (cons x *+inf*)) (polyhedral-ir-mutate-for-children origin))))
           ;; Print Info
           (when (>= (ctx:getenv :JIT_DEBUG) 2)
-            (lformat "Strategy: max_iters=~a, band_count=~a, threshold=~a~%" max-iters band-count threshold))
+            (lformat "Strategy: max_iters=~a, band_count=~a~%" max-iters band-count))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
             (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
             (loop for (kernel . score) in beam do
               (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
                 (push (make-candidate new-kernel) candidates)))
-            (when (null candidates) (return-from beam)) ;; no new candidates -> exit
+            (setf candidates (loop for c in (append candidates beam)
+                                   if (not (= (cdr c) *+inf*))
+                                     collect c))
             (setf candidates (sort candidates #'< :key #'cdr))
-            (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
+            (let* ((new-beam (subseq candidates 0 (min (length candidates) beam-width)))
+                   (improvements (* 100 (/ (cdar beam) (cdar new-beam)))))
+              (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "~,4f% Improvements in this generation." improvements))
               (when (and
-                     (every
-                      #'(lambda (x)(not (typep (car (poly-cmd-history (car x))) 'NoOpt)))
-                      new-beam)
-                     (< (abs (- (cdar beam) (cdar new-beam))) threshold))
+                     (some
+                      #'(lambda (x) (>= (poly-stage (car x)) (length *search-space*)))
+                      candidates)
+                     (<= improvements 100.0))
                 (setf beam new-beam)
                 (return-from beam))
               (setf beam new-beam)))

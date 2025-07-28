@@ -29,7 +29,7 @@
                                       (case (getattr arg :mode) (:read "const ") (otherwise ""))
                                       (->cdtype (getattr arg :dtype))
                                       (if (getattr arg :pointer-p) "*" "")
-                                      (if (and (eql :read (getattr arg :mode)) (getattr arg :pointer-p))
+                                      (if (getattr arg :pointer-p)
                                           " restrict"
                                           "")
                                       (car (node-writes arg)))
