@@ -139,6 +139,7 @@
    (domain   :accessor poly-domain :initarg :domain)
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
+   (stage :accessor poly-stage :initform 0 :initarg :stage)
    (blueprint :accessor poly-blueprint :initarg :blueprint)
    (ctx :accessor poly-ctx :initarg :ctx)
    (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)
@@ -164,7 +165,7 @@
       pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
-  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :strategy (poly-strategy pg)))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :strategy (poly-strategy pg) :stage (poly-stage pg)))
 
 (defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
   (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
@@ -1310,15 +1311,21 @@ for (int i=0; i<32; i+=2)
          (insert-nodes new-bp (append (list thread) x y z)))))
     new-bp))
 
-(defclass Parallel (OptimizationRule) ((depth :initarg :depth :accessor parallel-depth)))
+(defclass Parallel (OptimizationRule)
+  ((depth :initarg :depth :accessor parallel-depth)
+   (nth-kernel :initarg :nth-kernel :accessor parallel-nth-kernel)))
+
 (defmethod optrule-generate-search-space (poly bands (id (eql :Parallel)))
   (when (= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
-    (loop for band in bands for nth upfrom 0
-          for valid-p = (schedule-node-band-no-directive-p band "PARALLEL")
-          for coincident = (schedule-node-band-get-coincident band)
-          for split-at = (or (position 0 coincident) (length coincident))
-          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
-            collect (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at) :band band :axis nth))))
+    (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
+          if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'Parallel) (parallel-nth-kernel x) -1))))
+            append
+            (loop for band in bands for nth upfrom 0
+                  for valid-p = (schedule-node-band-no-directive-p band "PARALLEL")
+                  for coincident = (schedule-node-band-get-coincident band)
+                  for split-at = (or (position 0 coincident) (length coincident))
+                  if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+                    collect (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at) :band band :axis nth :nth-kernel nth-kernel)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
   (let* ((depth (or (parallel-depth opt) (schedule-node-get-band-depth (optrule-band opt))))
@@ -1410,27 +1417,46 @@ for (int i=0; i<32; i+=2)
   blueprint)
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] FuseWithParent
+(defun SelectOneFromOpts (&rest opts)
+  #'(lambda (polyhedral)
+      (let ((bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
+        (values
+         1
+         (loop for opt in opts
+               append (optrule-generate-search-space polyhedral bands opt))))))
+
+(defun SearchUntilSaturated (&rest opts)
+  #'(lambda (polyhedral)
+      (let* ((bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral))))
+             (candidates
+               (loop for opt in opts
+                     append (optrule-generate-search-space polyhedral bands opt)))
+             (noopt (list (optrule-generate-search-space polyhedral bands :NoOpt))))
+        (values
+         (if candidates 0 1)
+         (or candidates noopt)))))
+;; [TODO] :NoOpt ==> 実行時間は前回のCacheだけにする?
 (defparameter *search-space* ;; (n-generation . Candidates)
-  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
-    (t . (:NoOpt :Interchange :TileGPU)))) ;; Shuffle the memory order for finding the best candidate! ここで全部NoOptになったらFinish
-   ; (2 . (:NoOpt :Parallel :TileGPU))
-   ; (3 . (:NoOpt :Tile))
-   ; (t . (:NoOpt)))) ;; Vectorize, SplitReduce 
+  `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))
+    (1 . ,(SearchUntilSaturated :Parallel :TileGPU))
+    (2 . ,(SearchUntilSaturated :Interchange)) ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
+    (t . ,(SelectOneFromOpts :NoOpt))
+    ))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
-  (let ((n-generation (length (poly-cmd-history polyhedral)))
-        (bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
-    (loop for space in (cdr (or (find n-generation *search-space* :key #'car) (find t *search-space* :key #'car) (error "No *search-space* configuration for t")))
-          append (optrule-generate-search-space polyhedral bands space))))
+  (let* ((stage (poly-stage polyhedral))
+         (stage-for-generator (cdr (or (find stage *search-space* :key #'car) (find t *search-space* :key #'car) (error "No *search-space* configuration for t")))))
+    (funcall stage-for-generator polyhedral)))
 
 (defmethod polyhedral-ir-mutate-for-children ((polyhedral Polyhedral-IR))
-  (let* ((space (get-next-optimization-rules polyhedral))
-         (next-generations
-           (remove-duplicates
-            (loop for opt in space collect (apply-optimization polyhedral opt)) ;; [TODO] This should be lowered first.
-            :test #'string= :key #'pg-dump-into-str)))
-    (loop for gen in next-generations
-          if (verify-polyhedral-ir gen) collect gen)))
+  (multiple-value-bind (stage-incf space) (get-next-optimization-rules polyhedral)
+    (let ((next-generations
+            (remove-duplicates
+             (loop for opt in (alexandria:flatten space) collect (apply-optimization polyhedral opt)) ;; [TODO] This should be lowered first.
+             :test #'string= :key #'pg-dump-into-str)))
+      (dolist (n next-generations) (incf (poly-stage n) stage-incf))
+      (loop for gen in next-generations
+            if (verify-polyhedral-ir gen) collect gen))))
 
 (defun make-kernel-from-blueprint (base-node kernel-cls base-kernel blueprint nth dep)
   (let* ((args
@@ -1451,8 +1477,8 @@ for (int i=0; i<32; i+=2)
               :blueprint blueprint
               :args args
               :flops (kernel-flops base-kernel))
-             :optimized-p t
-             :out (car (node-writes base-node)))))
+              :optimized-p t
+              :out (car (node-writes base-node)))))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
