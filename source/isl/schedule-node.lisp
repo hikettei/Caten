@@ -162,6 +162,9 @@
 (defun schedule-node-band-member-set-coincident (band pos val)
   (%make-schedule-node (%isl-schedule-node-band-member-set-coincident (schedule-node-handle (copy band)) pos val)))
 
+(defun schedule-node-band-set-permutable (band val)
+  (%make-schedule-node (%isl-schedule-node-band-set-permutable (schedule-node-handle (copy band)) val)))
+
 (define-isl-function schedule-node-band-sink %isl-schedule-node-band-sink
   (:give schedule-node)
   (:take schedule-node))

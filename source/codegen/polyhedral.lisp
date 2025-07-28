@@ -1436,10 +1436,10 @@ for (int i=0; i<32; i+=2)
         (values
          (if candidates 0 1)
          (or candidates noopt)))))
-;; [TODO] :NoOpt ==> 実行時間は前回のCacheだけにする?
+
 (defparameter *search-space* ;; (n-generation . Candidates)
-  `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))    ;; } TODO: Reschedule x Parallel/TileGPUの組み合わせを生成して，ここでEvaluateすべき
-    (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; } Reschedule LEvelで実行は無駄
+  `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))    ;; ScheduleTree Generation Strategy (They will never evaluated w/o mutated w/ :Parallel :TileGPU)
+    (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; Combile Reschedule x Parallel/TileGPU{local_size1, ...}
     (2 . ,(SearchUntilSaturated :Interchange)) ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
     (t . ,(SelectOneFromOpts)) ;; Finished
     ))
@@ -1487,6 +1487,7 @@ for (int i=0; i<32; i+=2)
          (poly-bp-cache polyhedral))
     ;; [TODO]
     ;; - Log
+    ;; - Tree Mutation
     ;; Selecting A is AAA percent beneficial log
     (print "SKIP NOOPT")
     (return-from polyhedral-ir-evaluate (poly-last-evaluation polyhedral)))
@@ -1562,7 +1563,7 @@ for (int i=0; i<32; i+=2)
         (let* ((band-count (count :RANGE (graph-nodes (kernel-blueprint (getattr node :kernel-info))) :key #'node-type))
                (max-iters (+ 2 (* band-count per-band-optrules)))
                (origin (make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)) :strategy strategy))
-               (beam (list (cons origin *+inf*))))
+               (beam (map 'list #'(lambda (x) (cons x *+inf*)) (polyhedral-ir-mutate-for-children origin))))
           ;; Print Info
           (when (>= (ctx:getenv :JIT_DEBUG) 2)
             (lformat "Strategy: max_iters=~a, band_count=~a, threshold=~a~%" max-iters band-count threshold))
