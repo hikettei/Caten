@@ -1631,8 +1631,8 @@ for (int i=0; i<32; i+=2)
                                        (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
   (declare (ignore args))
   (when (getattr node :optimized-p) (return-from realize-node-with-autotuning t))
-  (when (>= (ctx:getenv :JIT_DEBUG) 2)
-    (separate/print-info spos "[SEARCH] ┃ Autotuning the kernel ~a" (kernel-name (getattr node :kernel-info))))
+  (when (>= (ctx:getenv :JIT_DEBUG) 1)
+    (separate/print-info spos "[SEARCH] ┃ Autotuning the kernel ~a (~a)" (kernel-name (getattr node :kernel-info)) (ctx:getenv :BACKEND)))
   (with-slots ((n caten/codegen/byoc::n-profile) (per-band-optrules caten/codegen/byoc::per-band-optrules)) strategy
     (with-isl-context
       (labels ((make-candidate (polyhedral-ir)
@@ -1643,8 +1643,8 @@ for (int i=0; i<32; i+=2)
                (origin (make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)) :strategy strategy))
                (beam (map 'list #'(lambda (x) (cons x *+inf*)) (polyhedral-ir-mutate-for-children origin))))
           ;; Print Info
-          (when (>= (ctx:getenv :JIT_DEBUG) 2)
-            (lformat "Strategy: max_iters=~a, band_count=~a threshold=~a~%" max-iters band-count threshold))
+          (when (>= (ctx:getenv :JIT_DEBUG) 1)
+            (lformat "Strategy: max_iters=~a, band_count=~a threshold=~a replay=~a~%" max-iters band-count threshold (if replayer "enabled" "disabled")))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
             (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
             (loop for (kernel . score) in beam do

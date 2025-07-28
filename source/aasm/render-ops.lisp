@@ -404,7 +404,7 @@ A <- L
                 ;; EXPR -> EXPR ==> STOP
                 (when expr-subgraph-p (return-from explore nil))
                 (explore (car (node-reads node)) :expr-subgraph-p t :scope scope))
-               ((:IF :FOR) (mapc #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope scope)) (cdr (node-reads node))))
+               ((:IF :FOR) (mapc #'(lambda (x) (explore x :expr-subgraph-p expr-subgraph-p :scope scope)) (node-reads node)))
                (otherwise
                 (when expr-subgraph-p
                   ;; Rewrite the node as EXPR
