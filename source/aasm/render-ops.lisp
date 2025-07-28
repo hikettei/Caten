@@ -422,61 +422,67 @@ A <- L
 
 (defun ast-ensure-expr-is-singleton (graph &aux (cached) (rewrite-map (make-hash-table)) (ecache (make-hash-table)))
   (declare (type FastGraph graph) (optimize (speed 3)))
-  (labels ((expr-search-key (expr)
-             (when (gethash (node-id expr) ecache) (return-from expr-search-key (gethash (node-id expr) ecache)))
-             (let ((c (id->value graph (car (node-reads expr))))
-                   (seen (make-hash-table)))
-               (assert (and (eql (node-type expr) :EXPR) c))
-               (labels ((e (id &aux (node (id->value graph id)))
-                          ;; [TODO] 足りないKeyがないか？
-                          (when (null node) (return-from e id))
-                          (when (gethash (node-id node) seen) (return-from e `(:SEEN ,id)))
-                          (setf (gethash (node-id node) seen) t)
-                          (case (node-type node)
-                            ;; [TODO] Float4 Support etc...
-                            (:SPACE `(:SPACE ,(getattr node :level) ,(getattr node :rank) ,(getattr node :dtype)))
-                            (:EXPR
-                             (let ((id (gethash (node-id node) rewrite-map)))
-                               `(:EXPR ,(if id (node-id id) (node-id node)))))
-                            (:BIND `(:BIND ,(e (car (node-reads node))) :as ,(getattr node :value)))
-                            (:DEFINE-GLOBAL `(:DEFINE-GLOBAL ,(car (node-writes node)) ,(getattr node :pointer-p)))
-                            (:DEFINE-LOCAL  `(:DEFINE-LOCAL ,(car (node-writes node)) ,(node-reads node)))
-                            (:ALLOCATE `(:ALLOCATE ,@(map 'list #'e (node-reads node)) :dtype ,(getattr node :dtype)))
-                            (:LOAD
-                             (let ((alloc (id->value graph (car (node-reads node)))))
-                               (if (and (eql (node-type alloc) :ALLOCATE) (null (node-reads alloc)))
-                                   `(:Var ,(getattr node :value) ,(getattr alloc :dtype))
-                                   `(:LOAD ,(e (car (node-reads node))) :value ,(getattr node :value)))))
-                            (:RANGE `(:Var ,(getattr node :idx) ,(getattr node :dtype)))
-                            (otherwise `(,(node-type node) (,@(map 'list #'e (node-reads node))))))))
-                 (setf (gethash (node-id expr) ecache) (e (car (node-writes c)))))))
-           (expr-eq (a b &aux (as (expr-search-key a)) (bs (expr-search-key b)))
-             ;; TODO:
-             ;; - :ADD :MULはInterchangeできる。
-             ;; ^ 一意に定まるようにSortする
-             (equal as bs)))
-    (loop for node in (reverse (tpsort-graph graph))
-          if (eql (node-type node) :EXPR) do
-            (let ((cache (find node cached :test #'expr-eq)))
-              (if cache
-                  (setf (gethash (node-id node) rewrite-map) cache)
-                  (push node cached)))) ;; first seen
-    (let ((newid-cache (make-hash-table)) (changed-p nil))
-      (flet ((newid (x)
-               (when (gethash x newid-cache) (return-from newid (gethash x newid-cache)))
-               (let ((val (id->value graph x)))
-                 (when (null val) (return-from newid (setf (gethash x newid-cache) x)))
-                 (when (not (eql (node-type val) :EXPR)) (return-from newid (setf (gethash x newid-cache) x)))
-                 (let ((replacements (gethash (node-id val) rewrite-map)))
-                   (if replacements
-                       (progn
-                         (setf changed-p t)
-                         (setf (gethash x newid-cache) (car (node-writes replacements))))
-                       (setf (gethash x newid-cache) x))))))
-        (loop for node in (graph-nodes graph) do
-          (setf (node-reads node) (map 'list #'newid (node-reads node))))
-        (verify-graph graph)
-        (if changed-p (ast-ensure-expr-is-singleton graph) graph)))))
+  (multiple-value-bind (node-to-loops all-loops exprs) (%make-parse-ctx graph)
+    (declare (ignore all-loops exprs))
+    (labels ((expr-conds (expr)
+               (loop for cond in (gethash (node-id expr) node-to-loops)
+                     if (eql (getf cond :type) :if)
+                       collect (node-id (getf cond :if-node))))
+             (expr-search-key (expr)
+               (when (gethash (node-id expr) ecache) (return-from expr-search-key (gethash (node-id expr) ecache)))
+               (let ((c (id->value graph (car (node-reads expr))))
+                     (seen (make-hash-table)))
+                 (assert (and (eql (node-type expr) :EXPR) c))
+                 (labels ((e (id &aux (node (id->value graph id)))
+                            ;; [TODO] 足りないKeyがないか？
+                            (when (null node) (return-from e id))
+                            (when (gethash (node-id node) seen) (return-from e `(:SEEN ,id)))
+                            (setf (gethash (node-id node) seen) t)
+                            (case (node-type node)
+                              ;; [TODO] Float4 Support etc...
+                              (:SPACE `(:SPACE ,(getattr node :level) ,(getattr node :rank) ,(getattr node :dtype)))
+                              (:EXPR
+                               (let ((id (gethash (node-id node) rewrite-map)))
+                                 `(:EXPR ,(if id (node-id id) (node-id node)))))
+                              (:BIND `(:BIND ,(e (car (node-reads node))) :as ,(getattr node :value)))
+                              (:DEFINE-GLOBAL `(:DEFINE-GLOBAL ,(car (node-writes node)) ,(getattr node :pointer-p)))
+                              (:DEFINE-LOCAL  `(:DEFINE-LOCAL ,(car (node-writes node)) ,(node-reads node)))
+                              (:ALLOCATE `(:ALLOCATE ,@(map 'list #'e (node-reads node)) :dtype ,(getattr node :dtype)))
+                              (:LOAD
+                               (let ((alloc (id->value graph (car (node-reads node)))))
+                                 (if (and (eql (node-type alloc) :ALLOCATE) (null (node-reads alloc)))
+                                     `(:Var ,(getattr node :value) ,(getattr alloc :dtype))
+                                     `(:LOAD ,(e (car (node-reads node))) :value ,(getattr node :value)))))
+                              (:RANGE `(:Var ,(getattr node :idx) ,(getattr node :dtype)))
+                              (otherwise `(,(node-type node) (,@(map 'list #'e (node-reads node))))))))
+                   (setf (gethash (node-id expr) ecache) `(:COND ,(expr-conds expr) ,(e (car (node-writes c))))))))
+             (expr-eq (a b &aux (as (expr-search-key a)) (bs (expr-search-key b)))
+               ;; TODO:
+               ;; - :ADD :MULはInterchangeできる。
+               ;; ^ 一意に定まるようにSortする
+               (equal as bs)))
+      (loop for node in (reverse (tpsort-graph graph))
+            if (eql (node-type node) :EXPR) do
+              (let ((cache (find node cached :test #'expr-eq)))
+                (if cache
+                    (setf (gethash (node-id node) rewrite-map) cache)
+                    (push node cached)))) ;; first seen
+      (let ((newid-cache (make-hash-table)) (changed-p nil))
+        (flet ((newid (x)
+                 (when (gethash x newid-cache) (return-from newid (gethash x newid-cache)))
+                 (let ((val (id->value graph x)))
+                   (when (null val) (return-from newid (setf (gethash x newid-cache) x)))
+                   (when (not (eql (node-type val) :EXPR)) (return-from newid (setf (gethash x newid-cache) x)))
+                   (let ((replacements (gethash (node-id val) rewrite-map)))
+                     (if replacements
+                         (progn
+                           (setf changed-p t)
+                           (setf (gethash x newid-cache) (car (node-writes replacements))))
+                         (setf (gethash x newid-cache) x))))))
+          (loop for node in (graph-nodes graph) do
+            (setf (node-reads node) (map 'list #'newid (node-reads node))))
+          (verify-graph graph)
+          (if changed-p (ast-ensure-expr-is-singleton graph) graph))))))
 
 (defun %make-parse-ctx (graph)
   (let* ((ctx (uiop:symbol-call :caten/codegen/polyhedral :make-scop-ctx-from-blueprint graph :allow-if t))
@@ -606,6 +612,8 @@ A <- L
                (and
                 (every #'(lambda (x) (satisfy-sched-p ctx x)) (getf cnd :schedule))
                 (every #'(lambda (x) (find x (%tctx-variables ctx))) (getf cnd :reads)) ;; all read vars are defined
+                ;; conditons must be completely match
+                (= (length (getf cnd :conditions)) (count-if #'identity (hash-table-values (%tctx-conditions ctx))) )
                 (every #'(lambda (x) (gethash x (%tctx-conditions ctx))) (getf cnd :conditions)))))
       (dolist (expr exprs) ;; exprs is tpsorted
         (setf (gethash (node-id expr) expr-to-condition) (expr-depends-on expr)))

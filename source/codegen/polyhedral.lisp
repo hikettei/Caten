@@ -869,9 +869,11 @@ if (not ensure_domain_is_right)
                     #'%add
                     (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg))))))
                (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
-               (make-new-aref (id read-from acc stride load-node)
+               (make-new-aref (id scal-id read-from acc stride load-node)
                  (with-context-nodes
-                     (out (%aref read-from (compute-idx acc stride load-node) :out id))))
+                     (out (%aref
+                           (emit (make-node :JIT :BIND (list (gensym)) (list scal-id) :value read-from))
+                           (compute-idx acc stride load-node) :out id))))
                (make-new-aref-bind (id bind-as base-read acc stride load-node)
                  (with-context-nodes
                      (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value bind-as)) (compute-idx acc stride load-node) :out id))))
@@ -898,7 +900,7 @@ if (not ensure_domain_is_right)
                          (if (eql x scal-id)
                              (let ((id (swpid scal-id count)))
                                (incf count)
-                               (insert-nodes blueprint (make-new-aref id argname acc stride node))
+                               (insert-nodes blueprint (make-new-aref id scal-id argname acc stride node))
                                id)
                              x)))
                 (loop for node in (graph-nodes blueprint)
@@ -912,7 +914,7 @@ if (not ensure_domain_is_right)
                       if (and (eql (node-type node) :BIND) (eql scal-id (getattr node :value)))
                         do (if (id->value blueprint (car (node-reads node))) ;; two case: the reductor is defined in the same group, or
                                (insert-nodes blueprint (make-new-aref-bind (car (node-writes node)) argname (car (node-reads node)) acc stride node))
-                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node)))))))))))
+                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) scal-id argname acc stride node)))))))))))
   (kernel-fixup-loop-fission-args kernels)
   (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes)))
 
@@ -1531,15 +1533,21 @@ for (int i=0; i<32; i+=2)
                     :transfer-into-array
                     (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime k))))
            (assert (and (arrayp v) (arrayp v1)))
-           (when (some #'(lambda (x y) (not (= x y))) v v1)
-             (push (list k (cons v v1)) result))))
+           (let ((diff (reduce #'max (map 'list #'abs (map 'list #'- v v1)))))
+             (when (> diff 0)
+               (push (list k diff) result)))))
      (beam-replayer-state replayer))
     (when result
       (funcall
        logger
        (with-output-to-string (out)
-         (format out "(BEAM_SAFETY=1) Found a distinct point during search.~%")
+         (format out "(BEAM_SAFETY>=1) Found a distinct point during search.~%")
          (format out "OptimizationRule=~a~%" (car (poly-cmd-history polyhedral)))
+         (format out "~a~%" polyhedral)
+         (format out "(Distinct_Ids, atol) = ~a~%" result)
+         (loop for nth upfrom 0 for blueprint in (poly-bp-cache polyhedral) do
+           (format out "// ~ath kernel~%" nth)
+           (format out "~a~%" (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) nil)))
          ;; [TODO] Compute atol/rtol, int, float, both supports
          )))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1581,7 +1589,11 @@ for (int i=0; i<32; i+=2)
         (handler-case
             (caten/codegen/byoc:%compile-kernel renderer (map 'list #'(lambda (x) (getattr x :kernel-info)) kernels) nil)
           (error (c)
-            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a ~%when evaluating~%~a" c polyhedral)
+            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a ~%when evaluating~%~a~%~a" c polyhedral
+                     (with-output-to-string (out)
+                       (loop for nth upfrom 0 for blueprint in kernels do
+                         (format out "// ~ath kernel~%" nth)
+                         (format out "~a~%" (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) nil)))))
             (return-from polyhedral-ir-evaluate *+inf*)))
         (let* ((extra-args
                  (loop for arg in (poly-extra-allocs polyhedral)
