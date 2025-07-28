@@ -1561,33 +1561,40 @@ for x in range(M*N*K):
              (with-context (_ (%expr (node->id (reduce #'%mul (map 'list #'(lambda (x) (apply #'%idiv (map 'list #'maybe-fixnum (node-reads x)))) ranges))) :out merged-size-out))))
            (merged-bands-idx (gensym))
            (merged-bands (with-context (_ (emit (make-node :Render :RANGE (list merged-bands-idx) (list merged-size-out (node->id (%expr (node->id1 (maybe-fixnum 1))))) :idx new-idx :dtype dtype)))))
-           (sizes (map 'list #'(lambda (r) (car (node-reads r))) ranges))
            (new-body-id (gensym))
            (new-body
-             ;; [TODO] Compute Step
              (with-context
                  (_
                   (%bind
                    new-body-id
                    ;; Rewrite i, j (idx)
-                   (let ((acc (maybe-fixnum 1)) out)
-                     (dolist (sz (reverse sizes))
-                       (push acc out)
-                       (setf acc (%mul (maybe-fixnum acc) (maybe-fixnum sz))))
+                   ;; stride_k = ∏_{j=k+1..n-1} D_j
+                   (let* ((sizes (map 'list #'(lambda (x) (apply #'%idiv (map 'list #'maybe-fixnum (node-reads x)))) ranges))
+                          (strides
+                            (loop for i from 0 below (length ranges)
+                                  collect
+                                  (reduce #'%mul (subseq sizes (1+ i)) :initial-value (maybe-fixnum 1)))))
                      (append
-                       (loop for r in ranges
-                             for b in bands
-                             for size in sizes
-                             for stride in (reverse out)
-                             do (%bind (car (node-writes r)) (%mul (%mod (%idiv merged-bands-idx stride) size) (second (node-reads r))))
-                                (loop for node in (graph-nodes graph)
-                                      if (or
-                                          (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr r :idx)))
-                                          (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr r :idx))))
-                                        do (%bind (car (node-writes node)) (%mod (%idiv merged-bands-idx stride) size))))
-                     (apply
-                      #'%progn
-                      (list (id->value graph (second (node-reads (car (last bands)))))))))))))
+                      (loop for r in ranges
+                            for b in bands
+                            for stride in strides
+                            do (%bind (car (node-writes r))
+                                      (%mul
+                                       (%mod (%idiv merged-bands-idx stride)
+                                             (%idiv (maybe-fixnum (car (node-reads r))) (maybe-fixnum (second (node-reads r)))))
+                                       (maybe-fixnum (second (node-reads r)))))
+                               (loop for node in (graph-nodes graph)
+                                     if (or
+                                         (and (eql (node-type node) :LOAD) (eql (getattr node :value) (getattr r :idx)))
+                                         (and (eql (node-type node) :RANGE) (eql (getattr node :idx) (getattr r :idx))))
+                                       do (%bind (car (node-writes node))
+                                                 (%mul
+                                                  (%mod (%idiv merged-bands-idx stride)
+                                                        (%idiv (maybe-fixnum (car (node-reads r))) (maybe-fixnum (second (node-reads r)))))
+                                                  (maybe-fixnum (second (node-reads r)))))))
+                      (apply
+                       #'%progn
+                       (list (id->value graph (second (node-reads (car (last bands)))))))))))))
            (outerband (make-node :Render :FOR (node-writes (car bands))
                                  (list merged-bands-idx new-body-id) :mark :noopt :parallel parallel)))
       (declare (ignore _))

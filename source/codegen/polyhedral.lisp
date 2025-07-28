@@ -1321,6 +1321,7 @@ for (int i=0; i<32; i+=2)
 
 (defclass Parallel (OptimizationRule)
   ((depth :initarg :depth :accessor parallel-depth)
+   (tile-size :initarg :tile-size :accessor parallel-tile-size :initform 1)
    (nth-kernel :initarg :nth-kernel :accessor parallel-nth-kernel)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Parallel)))
@@ -1333,13 +1334,22 @@ for (int i=0; i<32; i+=2)
                   for coincident = (schedule-node-band-get-coincident band)
                   for split-at = (or (position 0 coincident) (length coincident))
                   if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
-                    collect (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at) :band band :axis nth :nth-kernel nth-kernel)))))
+                    collect
+                  ;; [TODO] <--- Make it searchable, why sometimes compilation fail?
+                  ;; [TODO] Loop Coalesce Invaild
+                  ;; [TODO] Verify Result During BEAMをやってから
+                    (loop for size in `(64)
+                          collect
+                          (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at)
+                                                   :band band :axis nth :nth-kernel nth-kernel :tile-size size))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
   (let* ((depth (or (parallel-depth opt) (schedule-node-get-band-depth (optrule-band opt))))
+         (band (optrule-band opt))
+         (band (schedule-node-band-tile band (tiling-size band (parallel-tile-size opt))))
          (band (schedule-node-insert-mark
-                (optrule-band opt)
-                (directive->id (directive "PARALLEL" 0 depth t))))
+                band
+                (directive->id (directive "PARALLEL" 0 depth NIL))))
          (band (if (parallel-depth opt)
                    (schedule-node-band-split (schedule-node-get-child band 0) (parallel-depth opt))
                    band)))
@@ -1527,7 +1537,7 @@ for (int i=0; i<32; i+=2)
         (handler-case
             (caten/codegen/byoc:%compile-kernel renderer (map 'list #'(lambda (x) (getattr x :kernel-info)) kernels) nil)
           (error (c)
-            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
+            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a ~%when evaluating~%~a" c polyhedral)
             (return-from polyhedral-ir-evaluate *+inf*)))
         (let* ((extra-args
                  (loop for arg in (poly-extra-allocs polyhedral)
@@ -1559,6 +1569,7 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
+                                       (threshold 101.0)
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler))
                                        (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
@@ -1576,7 +1587,7 @@ for (int i=0; i<32; i+=2)
                (beam (map 'list #'(lambda (x) (cons x *+inf*)) (polyhedral-ir-mutate-for-children origin))))
           ;; Print Info
           (when (>= (ctx:getenv :JIT_DEBUG) 2)
-            (lformat "Strategy: max_iters=~a, band_count=~a~%" max-iters band-count))
+            (lformat "Strategy: max_iters=~a, band_count=~a threshold=~a~%" max-iters band-count threshold))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
             (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
             (loop for (kernel . score) in beam do
@@ -1590,7 +1601,7 @@ for (int i=0; i<32; i+=2)
                      (every
                       #'(lambda (x) (>= (poly-stage (car x)) (length *search-space*)))
                       candidates)
-                     (<= improvements 100.0))
+                     (<= improvements threshold))
                 (return-from beam))
               (setf beam new-beam)))
           (let ((best-kernel (car beam)))
