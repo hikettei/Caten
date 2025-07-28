@@ -1205,6 +1205,7 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   (loop for band in bands for nth upfrom 0
+        if (> (schedule-node-get-band-depth band) 1)
         append
         (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::tile-search-space)
               do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero! getting ~a" size)
