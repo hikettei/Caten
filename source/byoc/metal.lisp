@@ -180,6 +180,9 @@
         (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
     (format nil "~a.~a" lv dim)))
 
+(defmethod %render-node ((renderer Metal-Renderer) (id (eql :CAST)) node)
+  (format nil "(~(~a~))~a" (dtype->mtype (getattr node :dtype)) (render-node renderer (second (node-reads node)))))
+
 (defmethod %render-kernel ((renderer Metal-Renderer) kernel)
   (let ((args (kernel-args kernel)))
     (setf (metal-program kernel)
@@ -213,7 +216,7 @@
                     (fmt "~a;" (e (car (node-reads node))))
                     (let ((type (car (relay-writes (read-type-relay node)))))
                       (assert type () "The node ~a must be shape inferred." node)
-                      (fmt "~a ~(~a~) = ~a;" (->cdtype (tensor-relay-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
+                      (fmt "~(~a~) ~(~a~) = ~a;" (dtype->mtype (tensor-relay-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
                (:DEFINE-GLOBAL) (:RANGE) (:ALLOCATE) ;; [TODO] Add a simplifier which removes :DEFINE-GLOBAL, RANGE, ALLOCATE from :PROGN.reads
                (:FOR
                 (multiple-value-bind (range body) (apply #'values (node-reads node))
