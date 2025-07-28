@@ -45,6 +45,9 @@
         (subseq str 1 (1- len))
         str)))
 
+(defun kernel-has-parallel-p (kernel)
+  (some #'(lambda (x) (and (eql (node-type x) :FOR) (eql 1 (getattr x :parallel)))) (graph-nodes (kernel-blueprint kernel))))
+
 (defun render-bp (graph &aux (indent 0) (seen))
   (with-output-to-string (out)
     (labels ((indent () (make-string indent :initial-element #\space))
@@ -83,8 +86,8 @@
                           (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
                           (setf step (car (node-reads val)))))
                       (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a)"
-                           (if (> (getattr node :parallel) 0)
-                               (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr node :parallel) (indent))
+                           (if (eql (getattr node :parallel) 1)
+                               (format nil "#pragma omp parallel for~%~a" (indent))
                                "")
                            bind bind (trim-brackets (e size)) bind (trim-brackets (e step))))
                     (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
@@ -102,7 +105,7 @@
                  (otherwise (error "The node ~a is not a supported renderop by clang" node)))))
       (f (id->value graph (car (graph-outputs graph)))))))
 
-(defun header ()
+(defun header (use-omp)
   (format nil "~%#include <math.h>
 #include <stdint.h>
 ~a
@@ -112,13 +115,13 @@
 #define _nan NAN
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 "
-	  (if (= 1 (ctx:getenv :OMP))
+	  (if use-omp
 	      "#include <omp.h>"
 	      "")))
 
-(defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
+(defun load-foreign-function (source &key (use-omp) (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
   (declare (type string source compiler))
-  (when (= 1 (ctx:getenv :OMP))
+  (when use-omp
     (push "-fopenmp" compiler-flags))
   (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t :directory dir)
     nil
@@ -148,9 +151,9 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defun disassemble-foreign-code (source &key (compiler "gcc") (lang "c") (compiler-flags))
+(defun disassemble-foreign-code (source &key (use-omp) (compiler "gcc") (lang "c") (compiler-flags))
   (declare (type string source compiler))
-  (when (= 1 (ctx:getenv :OMP)) (push "-fopenmp" compiler-flags))
+  (when use-omp (push "-fopenmp" compiler-flags))
   (let* ((cmd (append (list compiler "-x" lang) compiler-flags (list "-" "-S" "-o" "-")))
 	 (process-info (uiop:launch-program cmd :input :stream :error-output :stream :output :stream))
 	 (input (uiop:process-info-input process-info))
@@ -207,17 +210,18 @@ Compiled with this command: ~a"
                   :void))))))))
 
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
-  (let ((code
-          (apply #'concatenate 'string
-                 (append
-                  (list (header))
-                  (map 'list #'clang-program items)))))
+  (let* ((use-omp (some #'kernel-has-parallel-p items))
+         (code
+           (apply #'concatenate 'string
+                  (append
+                   (list (header use-omp))
+                   (map 'list #'clang-program items)))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
     ;; [Note] -ffast-math and CI fails?
-    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
+    (load-foreign-function code :use-omp use-omp :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
     (when (>= (ctx:getenv :DISASSEMBLE) 1)
-      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
+      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :use-omp use-omp :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
       (setf (clang-caller item)
             (compile
