@@ -1499,8 +1499,52 @@ for (int i=0; i<32; i+=2)
               :flops (kernel-flops base-kernel))
               :optimized-p t
               :out (car (node-writes base-node)))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; When BEAM_SAFETY >= 1:
+;; - Create copies of all input and output variables before optimization.
+;; - On each execution of polyhedral-ir-evaluate, compare the computation results with the replay state.
+(defstruct BEAM-Replayer
+  (state (make-hash-table)))
 
-(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
+(defun make-replayer-from-kernel (runtime node)
+  (flet ((getvar (id)
+           (if (numberp id) id (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime id))))
+    (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
+      (caten/codegen/byoc:%compile-kernel renderer (list (getattr node :kernel-info)) nil))
+    (let ((arg-symbols (subseq (node-reads node) (getattr node :n-kernel-args)))
+          (replayer (make-beam-replayer)))
+      (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols))
+      (loop for arg in arg-symbols
+            for val = (getvar arg) do
+              (setf (gethash arg (beam-replayer-state replayer))
+                    (copy-seq
+                     (uiop:symbol-call :caten/runtime/buffer :transfer-into-array val))))
+      replayer)))
+
+(defun replay-kernel (polyhedral runtime replayer)
+  (declare (type BEAM-Replayer replayer))
+  (let ((result) (logger (ecase (ctx:getenv :BEAM_SAFETY) (0 #'print) (1 #'warn) (2 #'error))))
+    (maphash
+     #'(lambda (k v)
+         (let ((v1 (uiop:symbol-call
+                    :caten/runtime/buffer
+                    :transfer-into-array
+                    (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime k))))
+           (assert (and (arrayp v) (arrayp v1)))
+           (when (some #'(lambda (x y) (not (= x y))) v v1)
+             (push (list k (cons v v1)) result))))
+     (beam-replayer-state replayer))
+    (when result
+      (funcall
+       logger
+       (with-output-to-string (out)
+         (format out "(BEAM_SAFETY=1) Found a distinct point during search.~%")
+         (format out "OptimizationRule=~a~%" (car (poly-cmd-history polyhedral)))
+         ;; [TODO] Compute atol/rtol, int, float, both supports
+         )))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun polyhedral-ir-evaluate (polyhedral runtime node abstract-kernel n &key (replayer nil))
+  (declare (type Polyhedral-IR polyhedral))
   (when (and ;; No changes from previous optimization
          (typep (car (poly-cmd-history polyhedral)) 'NoOpt)
          (poly-bp-cache polyhedral))
@@ -1550,7 +1594,8 @@ for (int i=0; i<32; i+=2)
             (dotimes (i n)
               (dolist (node kernels)
                 (let ((arg-symbols (subseq (node-reads node) (getattr node :n-kernel-args))))
-                  (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
+                  (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))
+              (when replayer (replay-kernel polyhedral runtime replayer))))
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
           (when (>= (ctx:getenv :JIT_DEBUG) 1)
             (let ((improvements
@@ -1566,13 +1611,15 @@ for (int i=0; i<32; i+=2)
 
 (defun realize-node-with-autotuning (runtime node args
                                      &aux
-                                       (base-args (kernel-args (getattr node :kernel-info)))
-                                       (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
                                        (threshold (+ (ctx:getenv :BEAM_THRESHOLD) 100.0))
+                                       (replayer
+                                        (when (>= (ctx:getenv :BEAM_SAFETY) 1)
+                                          (make-replayer-from-kernel runtime node)))
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler))
                                        (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
+  (declare (ignore args))
   (when (getattr node :optimized-p) (return-from realize-node-with-autotuning t))
   (when (>= (ctx:getenv :JIT_DEBUG) 2)
     (separate/print-info spos "[SEARCH] ┃ Autotuning the kernel ~a" (kernel-name (getattr node :kernel-info))))
@@ -1580,7 +1627,7 @@ for (int i=0; i<32; i+=2)
     (with-isl-context
       (labels ((make-candidate (polyhedral-ir)
                  (declare (type Polyhedral-IR polyhedral-ir))
-                 (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) args n base-name base-args))))
+                 (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) n :replayer replayer))))
         (let* ((band-count (count :RANGE (graph-nodes (kernel-blueprint (getattr node :kernel-info))) :key #'node-type))
                (max-iters (+ 5 (* band-count per-band-optrules)))
                (origin (make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)) :strategy strategy))
