@@ -774,6 +774,7 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
                           ;; 2. exprify again
                           #'ast-simplify-constant
                           #'ast-purge-unused-expr
+                          #'ast-synchronize-read-write
                           #'(lambda (x) (graph-infer-type-relay x) x))))
   "Simplifies the AST"
   (declare (type FastGraph graph))
@@ -782,7 +783,7 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
     g))
 
 (defun simplify-ast (graph)
-  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'(lambda (x) (graph-infer-type-relay x) x))))
+  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'ast-synchronize-read-write #'(lambda (x) (graph-infer-type-relay x) x))))
 
 (defun ast-simplify-expr-subgraph (graph &aux (simplified-subgraphs))
   (loop for node in (graph-nodes graph)
@@ -793,6 +794,30 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
             (push expr-graph simplified-subgraphs)))
   (loop for sb in simplified-subgraphs do
     (insert-nodes graph (graph-nodes sb)))
+  graph)
+
+(defun ast-synchronize-read-write (graph &aux (seen (make-hash-table)) (id->state (make-hash-table)))
+  (labels ((e (id mode &aux (node (id->value graph id)))
+             (when (or (null node) (gethash (node-id node) seen))
+               (return-from e))
+             (setf (gethash (node-id node) seen) t)
+             (case (node-type node)
+               (:SETF
+                (e (car (node-reads node)) :write)
+                (e (second (node-reads node)) :read))
+               (:DEFINE-GLOBAL
+                (let ((state (gethash (car (node-writes node)) id->state)))
+                  (if (null state)
+                      (setf (gethash (car (node-writes node)) id->state) mode)
+                      (unless (eql state mode)
+                        (setf (gethash (car (node-writes node)) id->state) :io)))))
+               (otherwise
+                (mapc #'(lambda (x) (e x mode)) (node-reads node))))))
+    (e (car (graph-outputs graph)) :read))
+  (loop for node in (graph-nodes graph)
+        if (eql (node-type node) :DEFINE-GLOBAL) do
+          (let ((state (gethash (car (node-writes node)) id->state)))
+            (when state (setf (getattr node :mode) state))))
   graph)
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Tiling
