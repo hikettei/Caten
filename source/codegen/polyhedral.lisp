@@ -1131,18 +1131,38 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
 
+(defun schedule-get-roots (schedule)
+  (declare (type isl::schedule schedule))
+  (let ((root (schedule-node-get-child (schedule-get-root schedule) 0)))
+    (case (schedule-node-get-type root)
+      (:schedule-node-sequence
+       (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle root))))
+         (loop for i upfrom 0 below n-child
+               collect (schedule-node-get-child root i))))
+      (otherwise (list root)))))
+
+(defun schedule-get-band-and-kernel (schedule)
+  (let ((roots (schedule-get-roots schedule)))
+    (loop for ith upfrom 0 for root in roots
+          collect (cons ith (schedule-node-get-undernearth-bands root)))))
+
 (defclass Interchange (OptimizationRule)
-  ((order :initarg :order :accessor interchange-order :type list)))
+  ((order :initarg :order :accessor interchange-order :type list)
+   (nth-kernel :initarg :nth :accessor interchange-nth-kernel :initform 0)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Interchange)))
-  (loop for band in bands for nth upfrom 0
-        if (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+  (declare (ignore bands))
+  (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
+        ;; One Interchange can be attributed per one kernel
+        if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'Interchange) (interchange-nth-kernel x) -1))))
           append
-          (loop with default-perm = (caten/codegen/helpers:range 0 (schedule-node-get-band-depth band))
-                with permutations = (permutations default-perm)
-                for perm in permutations
-                when (not (equal perm default-perm))
-                  collect (make-instance 'Interchange :axis nth :band band :order perm))))
+          (loop for band in bands for axis upfrom 0
+                if (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+                  append
+                  (loop with default-perm = (caten/codegen/helpers:range 0 (schedule-node-get-band-depth band))
+                        with permutations = (permutations default-perm)
+                        for perm in permutations
+                        collect (make-instance 'Interchange :axis axis :band band :order perm :nth nth-kernel)))))
 
 (defun schedule-node-band-permute (band order)
   (declare (type isl:schedule-node-band band) (type list order))
@@ -1263,8 +1283,6 @@ for (int i=0; i<32; i+=2)
 =>
 
 "
-  ;; [TODO] Loop FissionされたBlueprintにTILEを適用すると，RANGE expects IDX ... で失敗する。
-  ;; --> Fixed?
   (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
   (let* ((new-bp (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
          (innerbands (loop for node in (graph-nodes new-bp)
@@ -1388,10 +1406,11 @@ for (int i=0; i<32; i+=2)
 ;; [TODO] FuseWithParent
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
-    (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (2 . (:NoOpt :Parallel :TileGPU))
-    (3 . (:NoOpt :Tile))
-    (t . (:NoOpt)))) ;; Vectorize, SplitReduce
+    (1 . (:NoOpt :Interchange))
+    (t . (:NoOpt :Interchange)))) ;; Shuffle the memory order for finding the best candidate! ここで全部NoOptになったらFinish
+   ; (2 . (:NoOpt :Parallel :TileGPU))
+   ; (3 . (:NoOpt :Tile))
+   ; (t . (:NoOpt)))) ;; Vectorize, SplitReduce 
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
   (let ((n-generation (length (poly-cmd-history polyhedral)))
