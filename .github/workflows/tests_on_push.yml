@@ -142,14 +142,14 @@ jobs:
           python-version: 3.12
       - name: Installing libisl-dev
         run: |
-          brew install isl
+          sudo apt-get install -y libisl-dev
       - name: pkg-config isl --modversion
         run: |
           pkg-config isl --modversion
       - name: Update $PATH
         run: |
           echo $PATH
-          export PATH=/Users/runner/.roswell/bin:$PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Extra Dependency for testing
         run: make install_extra
