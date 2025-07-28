@@ -15,7 +15,8 @@
 (define-auto-scheduler Native-Auto-Scheduler
   :n-profile 1 :per-band-optrules 3
   :ptile-max-rank 1
-  :tile-search-space (16 32 64))
+  :tile-search-space (16 32 64)
+  :ptile-search-space (1 64 256))
 
 (defclass LispStyle-Renderer (Renderer) nil)
 (define-backend :native LispBuffer NativeRuntime LispStyle-Renderer NativeKernel Native-Auto-Scheduler t)

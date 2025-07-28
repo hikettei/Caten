@@ -78,7 +78,7 @@
             (ptile-max-rank 0) ;; 0 = No Parallelism, 1 = CPU, >= 2 is GPU, NPU, etc.
             ;; Search Space Configuration
             (tile-search-space '(2 4 8 16 32 64))
-            (ptile-search-space '(2 3 4 8 13 16 29)) ;; Only effective when ptile-max-rank >= 2.
+            (ptile-search-space '(2 3 4 8 13 16 29)) ;; Effective for CPU and GPU, for CPU, creates a tile for tile dim instead of splitting non-coincident band. For GPU, it is equivalent to thread-size.
             (vectorize-search-space '(4))
             ;; Constraints Configuration
             (global-max) (local-max) (shared-max) ;; Configurations for GPU Coincidence

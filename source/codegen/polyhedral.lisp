@@ -1337,10 +1337,8 @@ for (int i=0; i<32; i+=2)
                   for split-at = (or (position 0 coincident) (length coincident))
                   if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
                     collect
-                  ;; [TODO] <--- Make it searchable, why sometimes compilation fail?
-                  ;; [TODO] Loop Coalesce Invaild
-                  ;; [TODO] Verify Result During BEAMをやってから
-                    (loop for size in `(64)
+                    (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
+                          do (assert (and (integerp size) (>= size 1)) () "Parallel: size should be an integer which is greater than one, getting ~a" size)
                           collect
                           (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at)
                                                    :band band :axis nth :nth-kernel nth-kernel :tile-size size))))))
