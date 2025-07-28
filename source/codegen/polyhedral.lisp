@@ -1154,6 +1154,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (declare (ignore bands))
   (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
         ;; One Interchange can be attributed per one kernel
+        ;; TODO: Multiple Interchange per single kernel?
         if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'Interchange) (interchange-nth-kernel x) -1))))
           append
           (loop for band in bands for axis upfrom 0
@@ -1214,7 +1215,8 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defclass TileGPU (OptimizationRule)
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)
-   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at :initform nil)))
+   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at :initform nil)
+   (nth-kernel :initarg :nth-kernel :accessor tile-gpu-nth-kernel :initform 0)))
 
 (defun schedule-node-band-get-coincident (band)
   (loop for i upfrom 0 below (schedule-node-get-band-depth band)
@@ -1239,21 +1241,25 @@ Returns T if the current schedule does not break any dependences in dep."
     t))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :TileGPU)))
+  (declare (ignore bands))
   ;; TileGPU Can be applied at once
   (when (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2)
-    (loop with max-threads = (slot-value (poly-strategy poly) 'caten/codegen/byoc::local-max)
-          for band in bands for nth upfrom 0
-          for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
-          for coincident = (schedule-node-band-get-coincident band)
-          for split-at-base = (or (position 0 coincident) (length coincident))
-          for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
-          if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+    (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
+          if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'TileGPU) (tile-gpu-nth-kernel x) -1))))
             append
-            (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
-                  do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
-                     if (or (null max-threads) (<= (expt size split-at) max-threads))
-                       collect
-                       (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
+            (loop with max-threads = (slot-value (poly-strategy poly) 'caten/codegen/byoc::local-max)
+                  for band in bands for nth upfrom 0
+                  for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
+                  for coincident = (schedule-node-band-get-coincident band)
+                  for split-at-base = (or (position 0 coincident) (length coincident))
+                  for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
+                  if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+                    append
+                    (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
+                          do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
+                          if (or (null max-threads) (<= (expt size split-at) max-threads))
+                            collect
+                            (make-instance 'TileGPU :nth-kernel nth-kernel :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
   (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
@@ -1406,8 +1412,7 @@ for (int i=0; i<32; i+=2)
 ;; [TODO] FuseWithParent
 (defparameter *search-space* ;; (n-generation . Candidates)
   '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
-    (1 . (:NoOpt :Interchange))
-    (t . (:NoOpt :Interchange)))) ;; Shuffle the memory order for finding the best candidate! ここで全部NoOptになったらFinish
+    (t . (:NoOpt :Interchange :TileGPU)))) ;; Shuffle the memory order for finding the best candidate! ここで全部NoOptになったらFinish
    ; (2 . (:NoOpt :Parallel :TileGPU))
    ; (3 . (:NoOpt :Tile))
    ; (t . (:NoOpt)))) ;; Vectorize, SplitReduce 
