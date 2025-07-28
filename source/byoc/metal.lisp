@@ -7,14 +7,15 @@
 (in-package :caten/byoc/metal)
 ;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defconstant +request-type-compile+ 13)
-
+(defparameter *libobjc-ready-p* nil)
 (defun ensure-foreign-library ()
-  (load-foreign-library "/usr/lib/libobjc.dylib")
-  (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
-  (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
-  (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
-  (load-foreign-library "/usr/lib/libSystem.dylib"))
-(ensure-foreign-library)
+  (when (null *libobjc-ready-p*)
+    (setf *libobjc-ready-p* t)
+    (load-foreign-library "/usr/lib/libobjc.dylib")
+    (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
+    (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
+    (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+    (load-foreign-library "/usr/lib/libSystem.dylib")))
 
 (defcfun "MTLCreateSystemDefaultDevice" :pointer)
 (defcfun "sel_registerName" :pointer (name :pointer))
@@ -334,6 +335,7 @@ using namespace metal;
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   ;; (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
+  (ensure-foreign-library)
   (float-features:with-float-traps-masked t
     (let* ((code (apply #'concatenate 'string (append (list (header)) (map 'list #'metal-program items)))))
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
