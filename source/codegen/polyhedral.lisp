@@ -1441,7 +1441,7 @@ for (int i=0; i<32; i+=2)
   `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))    ;; ScheduleTree Generation Strategy (They will never evaluated w/o mutated w/ :Parallel :TileGPU)
     (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; Combile Reschedule x Parallel/TileGPU{local_size1, ...}
     (2 . ,(SearchUntilSaturated :Interchange)) ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
-    (t . ,(SelectOneFromOpts)) ;; Finished
+    (t . ,(SelectOneFromOpts :NoOpt :Tile)) ;; [TODO] ここでのTileはNoSegv, 
     ))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
@@ -1550,7 +1550,7 @@ for (int i=0; i<32; i+=2)
                                        (base-args (kernel-args (getattr node :kernel-info)))
                                        (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 1e-10)
+                                       (threshold 1e-6)
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
                                        (strategy (auto-scheduler-strategy auto-scheduler))
                                        (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
@@ -1570,14 +1570,18 @@ for (int i=0; i<32; i+=2)
           (when (>= (ctx:getenv :JIT_DEBUG) 2)
             (lformat "Strategy: max_iters=~a, band_count=~a, threshold=~a~%" max-iters band-count threshold))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
-            (when (>= (ctx:getenv :JIT_DEBUG) 2) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
+            (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
             (loop for (kernel . score) in beam do
               (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
                 (push (make-candidate new-kernel) candidates)))
             (when (null candidates) (return-from beam)) ;; no new candidates -> exit
             (setf candidates (sort candidates #'< :key #'cdr))
             (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
-              (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
+              (when (and
+                     (every
+                      #'(lambda (x)(not (typep (car (poly-cmd-history (car x))) 'NoOpt)))
+                      new-beam)
+                     (< (abs (- (cdar beam) (cdar new-beam))) threshold))
                 (setf beam new-beam)
                 (return-from beam))
               (setf beam new-beam)))
