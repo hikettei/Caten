@@ -197,6 +197,10 @@ Usage:
     (:BEAM_THRESHOLD
      1.0 :float identity
      "A threshold for stopping BEAM Search if improvement is below this percentage. (i.e.: Ignore improvements below this parameter)")
+    ;; BEAM_SAFETY=2 && BEAM >= 30000 to unittest all optimization space by BEAM in CI
+    (:BEAM_SAFETY
+     0 :int #.(oneof "BEAM_SAFETY" 0 `(0 1 2))
+     "A parameter for testing all OptimizationRule in CI. Compares results before and after each loop transformation, and raise an error if the difference is below the threshold. (0=Ignore, 1=Warning, 2=Error)")
     ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     (:SERIALIZE
      0 :int #.(oneof "SERIALIZE" 0 `(0 1))
