@@ -1218,7 +1218,7 @@ Returns T if the current schedule does not break any dependences in dep."
    (poly-schedule poly)
    (schedule-node-get-schedule
     (funcall
-     (if (tile-sink poly) #'isl::schedule-node-band-sink #'identity)
+     (if (tile-sink opt) #'isl::schedule-node-band-sink #'identity)
      (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt)))))))
 
 (defclass TileGPU (OptimizationRule)
