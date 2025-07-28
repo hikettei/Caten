@@ -160,25 +160,25 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-           BEAM=100 JIT_DEBUG=3 BACKEND=NATIVE ros run --load ./examples/matmul.lisp
+           BEAM=100 JIT_DEBUG=3 BACKEND=NATIVE ros run --load ./examples/matmul.lisp --eval "(quit)"
       - name: (CLANG) BEAM=100 Fuzz Matmul
         if: ${{ matrix.backend == 'clang' }}
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-           BEAM=10 JIT_DEBUG=3 BACKEND=CLANG ros run --load ./examples/matmul.lisp
+           BEAM=10 JIT_DEBUG=3 BACKEND=CLANG ros run --load ./examples/matmul.lisp --eval "(quit)"
       - name: (NATIVE) BEAM=100 Fuzz FlashAttention
         if: ${{ matrix.backend == 'native' }}
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          BEAM=100 JIT_DEBUG=3 BACKEND=NATIVE ros run --load ./examples/flash-attention.lisp
+          BEAM=100 JIT_DEBUG=3 BACKEND=NATIVE ros run --load ./examples/flash-attention.lisp --eval "(quit)"
       - name: (CLANG) BEAM=100 Fuzz FlashAttention
         if: ${{ matrix.backend == 'clang' }}
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          BEAM=100 JIT_DEBUG=3 BACKEND=CLANG ros run --load ./examples/flash-attention.lisp
+          BEAM=100 JIT_DEBUG=3 BACKEND=CLANG ros run --load ./examples/flash-attention.lisp --eval "(quit)"
   BEAM_Fuzzer_Mac:
     name: (${{ matrix.backend }}) AutoScheduler on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
@@ -225,13 +225,13 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          BEAM=100 JIT_DEBUG=3 BACKEND=METAL ros run --load ./examples/matmul.lisp
+          BEAM=100 JIT_DEBUG=3 BACKEND=METAL ros run --load ./examples/matmul.lisp --eval "(quit)"
       - name: (METAL) BEAM=100 Fuzz FlashAttention
         if: ${{ matrix.backend == 'metal' }}
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          BEAM=100 JIT_DEBUG=3 BACKEND=METAL ros run --load ./examples/flash-attention.lisp
+          BEAM=100 JIT_DEBUG=3 BACKEND=METAL ros run --load ./examples/flash-attention.lisp --eval "(quit)"
   Documentation:
     name: Test building documentations
     runs-on: ubuntu-latest

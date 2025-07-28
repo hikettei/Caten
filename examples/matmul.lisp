@@ -24,8 +24,7 @@
 ;; ~~ Settings ~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun caten-matmul (config)
   (multiple-value-bind (x y) (make-inputs-from-config config)
-    (ctx:with-contextvar (:BEAM 10)
-      (caten (!matmul x y)))))
+    (caten (!matmul x y))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun benchmark (&key (impls (list #'caten-matmul)) (n 10) &aux (results))
   (loop for impl in impls
