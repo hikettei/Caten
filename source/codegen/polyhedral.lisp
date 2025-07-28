@@ -140,7 +140,7 @@
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
    (stage :accessor poly-stage :initform 0 :initarg :stage)
-   (last-evaluation :accessor poly-last-evaluation :initform *+inf* :initarg :last-evaluation)
+   (last-evaluation :accessor poly-last-evaluation :initform nil :initarg :last-evaluation)
    (blueprint :accessor poly-blueprint :initarg :blueprint)
    (ctx :accessor poly-ctx :initarg :ctx)
    (extra-buffer-allocs :accessor poly-extra-allocs :initarg :extra-allocs :initform nil)
@@ -980,7 +980,7 @@ if (not ensure_domain_is_right)
     (dolist (slot-def (closer-mop:class-slots (class-of obj)))
       (let ((name  (closer-mop:slot-definition-name slot-def))
             (value (slot-value obj (closer-mop:slot-definition-name slot-def))))
-        (when (null (find name `(band)))
+        (when (null (find name `(band nth-kernel)))
           (format stream " :~a ~S" name value))))))
 
 (defgeneric optrule-generate-search-space (polyhedral bands optrule-trigger))
@@ -1485,11 +1485,6 @@ for (int i=0; i<32; i+=2)
   (when (and ;; No changes from previous optimization
          (typep (car (poly-cmd-history polyhedral)) 'NoOpt)
          (poly-bp-cache polyhedral))
-    ;; [TODO]
-    ;; - Log
-    ;; - Tree Mutation
-    ;; Selecting A is AAA percent beneficial log
-    (print "SKIP NOOPT")
     (return-from polyhedral-ir-evaluate (poly-last-evaluation polyhedral)))
   
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
@@ -1539,7 +1534,14 @@ for (int i=0; i<32; i+=2)
                   (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
           (when (>= (ctx:getenv :JIT_DEBUG) 1)
-            (lformat "[CostFunction]: ~a(s) ~aGFLOps~%" total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil)))
+            (let ((improvements
+                    (when (poly-last-evaluation polyhedral)
+                      (* 100 (/ total (poly-last-evaluation polyhedral))))))
+              (lformat "[Evaluation] | ~,5f seconds ~,4fGFLOps | ~a~%"
+                       total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil)
+                       (if improvements
+                           (format nil "~,3f% | opt=(~a)" improvements (car (poly-cmd-history polyhedral)))
+                           (format nil "Root=(~a)" (car (poly-cmd-history polyhedral)))))))
           (setf (poly-last-evaluation polyhedral) total)
           total)))))
 
