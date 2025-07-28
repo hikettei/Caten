@@ -47,16 +47,16 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
-(defstruct Config (batch 30) (head 4) (n 3) (d 16) (q) (k) (v))
+(defstruct Config (batch 32) (head 8) (n 64) (d 1024) (q) (k) (v))
 (defparameter *config* (make-config))
 
 (defmethod make-inputs-from-config ((config Config))
   (with-slots ((batch batch) (head head) (n n) (d d) (q q) (k k) (v v)) config
     (ctx:with-contextvar (:BEAM 0)
       (values
-       (setf q (or q (proceed (!randn `(,batch ,head ,n ,d))))) ;; Q
-       (setf k (or k (proceed (!randn `(,batch ,head ,n ,d))))) ;; K
-       (setf v (or v (proceed (!randn `(,batch ,head ,n ,d))))) ;; V
+       (setf q (or q (proceed (!rand `(,batch ,head ,n ,d))))) ;; Q
+       (setf k (or k (proceed (!rand `(,batch ,head ,n ,d))))) ;; K
+       (setf v (or v (proceed (!rand `(,batch ,head ,n ,d))))) ;; V
        (make-tensor `(,batch ,head ,n ,d))
        (make-tensor (list batch head n))
        (make-tensor (list batch head n))))))
