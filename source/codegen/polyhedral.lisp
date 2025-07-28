@@ -140,11 +140,12 @@
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
    (stage :accessor poly-stage :initform 0 :initarg :stage)
+   (last-evaluation :accessor poly-last-evaluation :initform *+inf* :initarg :last-evaluation)
    (blueprint :accessor poly-blueprint :initarg :blueprint)
    (ctx :accessor poly-ctx :initarg :ctx)
-   (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)
+   (extra-buffer-allocs :accessor poly-extra-allocs :initarg :extra-allocs :initform nil)
    (strategy :accessor poly-strategy :initarg :strategy)
-   (bp-cache :accessor poly-bp-cache)))
+   (bp-cache :accessor poly-bp-cache :initarg :bp-cache :initform nil)))
 
 (defun make-polyhedral-ir (blueprint domain read write schedule ctx strategy)
   (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint :strategy strategy)))
@@ -165,7 +166,7 @@
       pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
-  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :strategy (poly-strategy pg) :stage (poly-stage pg)))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :last-evaluation (poly-last-evaluation pg) :strategy (poly-strategy pg) :stage (poly-stage pg) :bp-cache (poly-bp-cache pg) :extra-allocs (poly-extra-allocs pg)))
 
 (defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
   (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
@@ -1437,10 +1438,10 @@ for (int i=0; i<32; i+=2)
          (or candidates noopt)))))
 ;; [TODO] :NoOpt ==> 実行時間は前回のCacheだけにする?
 (defparameter *search-space* ;; (n-generation . Candidates)
-  `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))
-    (1 . ,(SearchUntilSaturated :Parallel :TileGPU))
+  `((0 . ,(SelectOneFromOpts :NoOpt :Reschedule))    ;; } TODO: Reschedule x Parallel/TileGPUの組み合わせを生成して，ここでEvaluateすべき
+    (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; } Reschedule LEvelで実行は無駄
     (2 . ,(SearchUntilSaturated :Interchange)) ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
-    (t . ,(SelectOneFromOpts :NoOpt))
+    (t . ,(SelectOneFromOpts)) ;; Finished
     ))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
@@ -1481,6 +1482,15 @@ for (int i=0; i<32; i+=2)
               :out (car (node-writes base-node)))))
 
 (defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
+  (when (and ;; No changes from previous optimization
+         (typep (car (poly-cmd-history polyhedral)) 'NoOpt)
+         (poly-bp-cache polyhedral))
+    ;; [TODO]
+    ;; - Log
+    ;; Selecting A is AAA percent beneficial log
+    (print "SKIP NOOPT")
+    (return-from polyhedral-ir-evaluate (poly-last-evaluation polyhedral)))
+  
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
     (multiple-value-bind (generated-kernels extra-allocs) (get-blueprint-from-polyhedral polyhedral)
       (let ((kernels
@@ -1526,10 +1536,10 @@ for (int i=0; i<32; i+=2)
               (dolist (node kernels)
                 (let ((arg-symbols (subseq (node-reads node) (getattr node :n-kernel-args))))
                   (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
-          ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
           (when (>= (ctx:getenv :JIT_DEBUG) 1)
             (lformat "[CostFunction]: ~a(s) ~aGFLOps~%" total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil)))
+          (setf (poly-last-evaluation polyhedral) total)
           total)))))
 
 (defun realize-node-with-autotuning (runtime node args
