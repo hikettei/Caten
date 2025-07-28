@@ -1101,7 +1101,7 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
      (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
-     ;(make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+     (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
      (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0))))
@@ -1182,7 +1182,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (loop for band in bands for nth upfrom 0
         append
         (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::tile-search-space)
-              do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero!")
+              do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero! getting ~a" size)
               collect
               (make-instance 'Tile :size size :band band :axis nth))))
 

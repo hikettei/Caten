@@ -83,3 +83,5 @@
           (forward kernel)
           (push (list impl (forward kernel) (caten/runtime/profile:with-real-time (dotimes (i n) (forward kernel)))) results))
   results)
+
+(benchmark)
