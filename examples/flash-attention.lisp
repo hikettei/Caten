@@ -47,7 +47,7 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
-(defstruct Config (batch 32) (head 8) (n 64) (d 1024) (q) (k) (v))
+(defstruct Config (batch 1) (head 8) (n 64) (d 256) (q) (k) (v))
 (defparameter *config* (make-config))
 
 (defmethod make-inputs-from-config ((config Config))
