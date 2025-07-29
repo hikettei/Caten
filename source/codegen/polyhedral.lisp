@@ -296,41 +296,49 @@
   (format nil "{ ~{~a~^; ~} }" (reverse (map 'list #'(lambda (x) (render-domain-for-node blueprint x (ctx-node-to-loops ctx))) (ctx-exprs ctx)))))
 
 (defun extract-buffer-access-info (id blueprint &aux (visited (make-hash-table)) (found))
+  ;; Return: a list of (cons (cons visible_name graph_id) access_id)
   (labels ((explore (id &aux (node (id->value blueprint id)))
              (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
              (when (eql (node-type node) :BIND)
-               (push (cons (getattr node :value) nil) found)
+               (push (cons (cons (getattr node :value) (car (node-reads node))) nil) found)
                (return-from explore))
              (when (eql (node-type node) :EXPR)
-               (push (cons (car (node-writes node)) nil) found)
+               (push (cons (cons (car (node-writes node)) (car (node-writes node))) nil) found)
                (return-from explore))
              (setf (gethash (node-id node) visited) t)
              (when (eql (node-type node) :AREF)
                (let* ((p (id->value blueprint (car (node-reads node))))
+                      (v (if (and p (eql (node-type p) :BIND)) (car (node-reads p)) (car (node-reads node))))
                       (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
-                 (push (cons p (second (node-reads node))) found)
+                 (push (cons (cons p v) (second (node-reads node))) found)
                  (return-from explore)))
              (mapc #'explore (node-reads node))))
     (explore id)
     found))
 
-(defun render-default-isl-access (ctx bp idx loops)
-  ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
-  ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
-  (when (gethash idx (ctx-scal->access ctx))
-    (return-from render-default-isl-access (getf (gethash idx (ctx-scal->access ctx)) :access)))
-  (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
-                      ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
-                      collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
-         (strides (caten/codegen/helpers:row-major-calc-strides shape))
-         (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
-    (setf (gethash idx (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
-    access))
+(defun render-default-isl-access (ctx bp idxs loops)
+  (declare (type cons idxs))
+  (multiple-value-bind (visible-name graph-id) (values (car idxs) (cdr idxs))
+    (declare (ignore graph-id))
+    ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
+    ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
+    (when (gethash visible-name (ctx-scal->access ctx))
+      (return-from render-default-isl-access (getf (gethash visible-name (ctx-scal->access ctx)) :access)))
+    (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
+                        ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
+                        collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
+           (strides (caten/codegen/helpers:row-major-calc-strides shape))
+           (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
+      (setf (gethash visible-name (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
+      access)))
 
-(defun render-access-for-node (ctx node loops buffer index blueprint)
+(defun render-access-for-node (ctx node loops buffers index blueprint)
   "Render access relation for a single node"
-  (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
-    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffer (reverse loops))))))
+  (multiple-value-bind (visible-id graph-id) (values (car buffers) (cdr buffers))
+    (declare (ignore visible-id))
+    (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
+      (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id
+              (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops)))))))
 
 (defun extract-accesses (ctx blueprint &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
@@ -345,13 +353,19 @@
                ;;       ^W    ^R
                (let ((write-region (extract-buffer-access-info (car (node-reads expr-entry-point)) blueprint))
                      (read-region  (extract-buffer-access-info (second (node-reads expr-entry-point)) blueprint)))
+                 (assert (= 1 (length write-region)))
                  (dolist (w write-region)
-                   (push (render-access-for-node ctx expr expr-domain (car w) (cdr w) blueprint) writes))
+                   (let ((macc (cons (caar w) (car (node-writes expr))))) ;; visible as (caar w) but internally expr.writes[0]
+                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint) writes)))
                  (dolist (r read-region)
                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))
                (otherwise ;; // EXPR
                 (let ((read-region (extract-buffer-access-info (car (node-reads expr)) blueprint)))
-                  (push (render-access-for-node ctx expr expr-domain (car (node-writes expr)) nil blueprint) writes)
+                  (push
+                   (render-access-for-node
+                    ctx expr expr-domain
+                    (cons (car (node-writes expr)) (car (node-writes expr))) nil blueprint)
+                   writes)
                   (dolist (r read-region)
                     (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))))
     (cons
