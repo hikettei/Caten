@@ -197,6 +197,12 @@
         (format nil "~(~a~)[~(~a~)]" (getattr p :value) (render-node renderer (second (node-reads node))))
         (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))))
 
+(defmethod %render-node ((renderer default-renderer) (id (eql :Swizzle)) node)
+  (with-output-to-string (out)
+    (format out "~a" (render-node renderer (car (node-reads node))))
+    (dolist (r (cdr (node-reads node)))
+      (format out "[~a]" (render-node renderer r)))))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
 
@@ -224,6 +230,9 @@
           (render-node renderer (third (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :EXPR)) node)
+  (%render-const renderer (car (node-writes node))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :DEFINE-LOCAL)) node)
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer Default-Renderer) id node)
@@ -349,6 +358,9 @@
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (car (node-writes node))))
+
+(defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-LOCAL)) node)
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer Renderer) (id (eql :RANGE)) node)

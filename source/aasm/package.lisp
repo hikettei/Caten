@@ -85,7 +85,7 @@
   ;; TensorRelay
   (:export
    #:TensorRelay #:tensor-relay-shape #:tensor-relay-stride #:tensor-relay-dtype #:tensor-relay-views #:tensor-relay-nrank
-   #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list #:tensor-relay-iterspace
+   #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list #:tensor-relay-iterspace #:tensor-relay-vectorize
    #:copy-tensor-relay #:make-tensor-relay)
   ;; AST
   (:export #:with-blueprint #:simplify-ast)
@@ -94,4 +94,4 @@
   ;; RuntimeOps
   (:export #:$sink #:$kernel #:$sync)
   ;; ScheduleOps
-  (:export #:%ast-band-tile #:ast-band-tile-gpu))
+  (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse))

@@ -12,11 +12,6 @@
 (in-package :caten-flash-attention)
 
 (in-caten-toplevel)
-;; [TODO]
-;; - [ ] CUDA Runtime
-;; - [ ] Index途中式，共通項簡略化最適化, ポインタ途中でIncfする
-;; - [ ] FlashAttention Benchmark (in CI?)
-;;  - [ ] More Optimization Space
 
 (progn
   @caten.jit () {
@@ -52,7 +47,7 @@
                           (aref M (+ i (* n (+ (* b head) h)))) row_m
                           (aref L (+ i (* n (+ (* b head) h)))) row_l))))))))})
 
-(defstruct Config (batch 30) (head 4) (n 3) (d 16) (q) (k) (v))
+(defstruct Config (batch 1) (head 8) (n 64) (d 256) (q) (k) (v))
 (defparameter *config* (make-config))
 
 (defmethod make-inputs-from-config ((config Config))
@@ -78,14 +73,14 @@
 (defun flash-attention (config)
   (multiple-value-bind (q k v o l m) (make-inputs-from-config config)
     (multiple-value-bind (q k v o l m) (flash_attention q k v o l m)
-      (ctx:with-contextvar (:BEAM 10)
-        (caten o)))))
-
+      (caten o))))
 ;; [TODO] FlashAttention Metal/CUDA
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun benchmark (&key (impls (list #'naive-attention #'flash-attention)) (n 10) &aux (results))
   (loop for impl in impls
         for kernel = (funcall impl *config*) do
           (forward kernel)
           (push (list impl (forward kernel) (caten/runtime/profile:with-real-time (dotimes (i n) (forward kernel)))) results))
   results)
+
+(print (benchmark))

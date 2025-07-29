@@ -7,14 +7,15 @@
 (in-package :caten/byoc/metal)
 ;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defconstant +request-type-compile+ 13)
-
+(defparameter *libobjc-ready-p* nil)
 (defun ensure-foreign-library ()
-  (load-foreign-library "/usr/lib/libobjc.dylib")
-  (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
-  (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
-  (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
-  (load-foreign-library "/usr/lib/libSystem.dylib"))
-(ensure-foreign-library)
+  (when (null *libobjc-ready-p*)
+    (setf *libobjc-ready-p* t)
+    (load-foreign-library "/usr/lib/libobjc.dylib")
+    (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
+    (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
+    (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+    (load-foreign-library "/usr/lib/libSystem.dylib")))
 
 (defcfun "MTLCreateSystemDefaultDevice" :pointer)
 (defcfun "sel_registerName" :pointer (name :pointer))
@@ -179,6 +180,9 @@
         (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
     (format nil "~a.~a" lv dim)))
 
+(defmethod %render-node ((renderer Metal-Renderer) (id (eql :CAST)) node)
+  (format nil "(~(~a~))~a" (dtype->mtype (getattr node :dtype)) (render-node renderer (second (node-reads node)))))
+
 (defmethod %render-kernel ((renderer Metal-Renderer) kernel)
   (let ((args (kernel-args kernel)))
     (setf (metal-program kernel)
@@ -212,7 +216,7 @@
                     (fmt "~a;" (e (car (node-reads node))))
                     (let ((type (car (relay-writes (read-type-relay node)))))
                       (assert type () "The node ~a must be shape inferred." node)
-                      (fmt "~a ~(~a~) = ~a;" (->cdtype (tensor-relay-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
+                      (fmt "~(~a~) ~(~a~) = ~a;" (dtype->mtype (tensor-relay-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
                (:DEFINE-GLOBAL) (:RANGE) (:ALLOCATE) ;; [TODO] Add a simplifier which removes :DEFINE-GLOBAL, RANGE, ALLOCATE from :PROGN.reads
                (:FOR
                 (multiple-value-bind (range body) (apply #'values (node-reads node))
@@ -334,6 +338,7 @@ using namespace metal;
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   ;; (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
+  (ensure-foreign-library)
   (float-features:with-float-traps-masked t
     (let* ((code (apply #'concatenate 'string (append (list (header)) (map 'list #'metal-program items)))))
       (when (>= (ctx:getenv :JIT_DEBUG) 3)

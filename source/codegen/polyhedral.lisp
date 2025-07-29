@@ -1,12 +1,22 @@
 (defpackage :caten/codegen/polyhedral
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc)
+  (:use :cl :caten/air :caten/aasm :caten/isl :caten/codegen/byoc :caten/common.logger :caten/codegen/pprinter)
   (:import-from :caten/codegen/renderer #:render-node #:Default-Renderer)
   (:export
    #:realize-node-with-autotuning
    #:make-polyhedral-from-blueprint
    #:get-blueprint-from-polyhedral)
+  (:export
+   #:apply-optimization
+   #:NoOpt
+   #:Reschedule
+   #:Interchange
+   #:Tile
+   #:TileGPU
+   #:Parallel
+   #:SplitReduce
+   #:Vectorize)
   ;; GFlops Mesaurer
   (:export
    #:GFlops-Measurer
@@ -17,16 +27,16 @@
 
 (in-package :caten/codegen/polyhedral)
 
-(defparameter *allow-compilation-error-during-beam* nil)
+(defparameter *allow-compilation-error-during-beam* t)
 (defparameter *+inf* (expt 2 32))
-;; BEAM Search Utils
+
 (define-condition beam-post-rejection (error)
   ((reason :initarg :reason))
   (:documentation
    "Raised when the conversion from Polyhedral IR to Blueprint
     after beam search is determined to be invalid, causing result rejection.")
   (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason)))))
-;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
   (ops (error "flops must occur") :type (or null caten/aasm/expr:Expr))
@@ -129,11 +139,13 @@
    (domain   :accessor poly-domain :initarg :domain)
    (dependencies :accessor poly-dependencies :initarg :dependencies)
    (cmd-history :accessor poly-cmd-history :initform nil :initarg :history)
+   (stage :accessor poly-stage :initform 0 :initarg :stage)
+   (last-evaluation :accessor poly-last-evaluation :initform nil :initarg :last-evaluation)
    (blueprint :accessor poly-blueprint :initarg :blueprint)
    (ctx :accessor poly-ctx :initarg :ctx)
-   (extra-buffer-allocs :accessor poly-extra-allocs :initform nil)
+   (extra-buffer-allocs :accessor poly-extra-allocs :initarg :extra-allocs :initform nil)
    (strategy :accessor poly-strategy :initarg :strategy)
-   (bp-cache :accessor poly-bp-cache)))
+   (bp-cache :accessor poly-bp-cache :initarg :bp-cache :initform nil)))
 
 (defun make-polyhedral-ir (blueprint domain read write schedule ctx strategy)
   (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint :strategy strategy)))
@@ -154,7 +166,7 @@
       pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
-  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :strategy (poly-strategy pg)))
+  (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :last-evaluation (poly-last-evaluation pg) :strategy (poly-strategy pg) :stage (poly-stage pg) :bp-cache (poly-bp-cache pg) :extra-allocs (poly-extra-allocs pg)))
 
 (defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
   (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
@@ -198,7 +210,6 @@
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-;;         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
@@ -222,7 +233,7 @@
   (exprs nil :type list)
   (scal->access (make-hash-table) :type hash-table))
 
-(defun make-scop-ctx-from-blueprint (graph)
+(defun make-scop-ctx-from-blueprint (graph &key (allow-if nil))
   "Traverse the blueprint graph to extract loop structure"
   (let ((ctx (make-ctx)) (visited (make-hash-table)))
     (labels ((traverse (node)
@@ -238,7 +249,7 @@
                          (step (when range-node (cadr (node-reads range-node))))
                          (mark (getattr node :mark :allow-undefined t)))
                     (when idx
-                      (let ((loop-info (list :idx idx :size size :step step :mark (or mark :noopt) :for-node node :range-node range-node)))
+                      (let ((loop-info (list :type :loop :idx idx :size size :step step :mark (or mark :noopt) :for-node node :range-node range-node)))
                         (push loop-info (ctx-all-loops ctx))
                         (push loop-info (ctx-stack ctx))))
                     ;; Traverse body
@@ -246,7 +257,11 @@
                     ;; Pop loop from stack after processing body
                     (when idx (pop (ctx-stack ctx)))))
                  (:PROGN (dolist (child-id (node-reads node)) (traverse (id->value graph child-id))))
-                 (:IF (when (>= (length (node-reads node)) 2) (traverse (id->value graph (second (node-reads node))))))
+                 (:DEFINE-LOCAL)
+                 (:IF
+                  (when allow-if (push (list :type :if :if-node node) (ctx-stack ctx)))
+                  (traverse (id->value graph (second (node-reads node))))
+                  (when allow-if (pop (ctx-stack ctx))))
                  (:EXPR (push node (ctx-exprs ctx)) (setf (gethash (node-id node) (ctx-node-to-loops ctx)) (copy-list (ctx-stack ctx)))))))
       ;; Start traversal from output nodes or all nodes
       (assert (= 1 (length (graph-outputs graph))))
@@ -281,41 +296,49 @@
   (format nil "{ ~{~a~^; ~} }" (reverse (map 'list #'(lambda (x) (render-domain-for-node blueprint x (ctx-node-to-loops ctx))) (ctx-exprs ctx)))))
 
 (defun extract-buffer-access-info (id blueprint &aux (visited (make-hash-table)) (found))
+  ;; Return: a list of (cons (cons visible_name graph_id) access_id)
   (labels ((explore (id &aux (node (id->value blueprint id)))
              (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
              (when (eql (node-type node) :BIND)
-               (push (cons (getattr node :value) nil) found)
+               (push (cons (cons (getattr node :value) (car (node-reads node))) nil) found)
                (return-from explore))
              (when (eql (node-type node) :EXPR)
-               (push (cons (car (node-writes node)) nil) found)
+               (push (cons (cons (car (node-writes node)) (car (node-writes node))) nil) found)
                (return-from explore))
              (setf (gethash (node-id node) visited) t)
              (when (eql (node-type node) :AREF)
                (let* ((p (id->value blueprint (car (node-reads node))))
+                      (v (if (and p (eql (node-type p) :BIND)) (car (node-reads p)) (car (node-reads node))))
                       (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
-                 (push (cons p (second (node-reads node))) found)
+                 (push (cons (cons p v) (second (node-reads node))) found)
                  (return-from explore)))
              (mapc #'explore (node-reads node))))
     (explore id)
     found))
 
-(defun render-default-isl-access (ctx bp idx loops)
-  ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
-  ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
-  (when (gethash idx (ctx-scal->access ctx))
-    (return-from render-default-isl-access (getf (gethash idx (ctx-scal->access ctx)) :access)))
-  (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
-                      ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
-                      collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
-         (strides (caten/codegen/helpers:row-major-calc-strides shape))
-         (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
-    (setf (gethash idx (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
-    access))
+(defun render-default-isl-access (ctx bp idxs loops)
+  (declare (type cons idxs))
+  (multiple-value-bind (visible-name graph-id) (values (car idxs) (cdr idxs))
+    (declare (ignore graph-id))
+    ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
+    ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
+    (when (gethash visible-name (ctx-scal->access ctx))
+      (return-from render-default-isl-access (getf (gethash visible-name (ctx-scal->access ctx)) :access)))
+    (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
+                        ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
+                        collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
+           (strides (caten/codegen/helpers:row-major-calc-strides shape))
+           (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
+      (setf (gethash visible-name (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
+      access)))
 
-(defun render-access-for-node (ctx node loops buffer index blueprint)
+(defun render-access-for-node (ctx node loops buffers index blueprint)
   "Render access relation for a single node"
-  (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
-    (format nil "~a[~a] -> ~a[~a]" (node-id node) domain buffer (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffer (reverse loops))))))
+  (multiple-value-bind (visible-id graph-id) (values (car buffers) (cdr buffers))
+    (declare (ignore visible-id))
+    (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
+      (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id
+              (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops)))))))
 
 (defun extract-accesses (ctx blueprint &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
@@ -330,13 +353,19 @@
                ;;       ^W    ^R
                (let ((write-region (extract-buffer-access-info (car (node-reads expr-entry-point)) blueprint))
                      (read-region  (extract-buffer-access-info (second (node-reads expr-entry-point)) blueprint)))
+                 (assert (= 1 (length write-region)))
                  (dolist (w write-region)
-                   (push (render-access-for-node ctx expr expr-domain (car w) (cdr w) blueprint) writes))
+                   (let ((macc (cons (caar w) (car (node-writes expr))))) ;; visible as (caar w) but internally expr.writes[0]
+                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint) writes)))
                  (dolist (r read-region)
                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))
                (otherwise ;; // EXPR
                 (let ((read-region (extract-buffer-access-info (car (node-reads expr)) blueprint)))
-                  (push (render-access-for-node ctx expr expr-domain (car (node-writes expr)) nil blueprint) writes)
+                  (push
+                   (render-access-for-node
+                    ctx expr expr-domain
+                    (cons (car (node-writes expr)) (car (node-writes expr))) nil blueprint)
+                   writes)
                   (dolist (r read-region)
                     (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))))
     (cons
@@ -420,7 +449,7 @@
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-polyhedral-ir blueprint domain reads writes schedule ctx strategy)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
             (:constructor make-parse-ctx (blueprint))
@@ -431,7 +460,13 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
   (variable-table (make-hash-table) :type hash-table)
   (scop-ctx (make-scop-ctx-from-blueprint blueprint) :type ctx)
   (expr2args (make-hash-table) :type hash-table)
-  (band-cnt 0 :type fixnum))
+  (band-cnt 0 :type fixnum)
+  (gensym-counter 0 :type fixnum))
+
+(defun pctx-gensym (pctx)
+  (declare (ignore pctx))
+  ;; (incf (pctx-gensym-counter pctx)) [TODO] Use same pctx counter across different kernels
+  (intern (format nil "var_~a" (gensym))))
 
 (defun pctx-register-gid (pctx id range offset)
   (declare (type parse-ctx pctx) (type symbol id))
@@ -466,7 +501,10 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
          (band-id (intern (format nil "B~a" (1- (pctx-band-cnt ctx))))))
     (labels ((rec (node count)
                (declare (type node node node) (type fixnum count))
-               (assert (eql (node-type node) :FOR))
+               ;; (assert (eql (node-type node) :FOR))
+               (when (not (eql (node-type node) :FOR))
+                 (warn "Skiped applying mark because the child is not :FOR")
+                 (return-from parse-isl-ast-mark user))
                (setf (getattr node :band) band-id
                      (getattr node :directive) directive) ;; multiple directives can be applied
                (when (< count depth) (rec (id->value *ctx* (second (node-reads node))) (1+ count)))))
@@ -597,47 +635,57 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
 	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i) :toplevel-p nil)))
            (node (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp))
            (node-to-loops (reverse (gethash (node-id node) (ctx-node-to-loops (pctx-scop-ctx ctx)))))
-           (rewrite-map (make-hash-table)))
+           (rewrite-map (make-hash-table))
+           (new-idx-map (make-hash-table)))
       (assert node () "The node ~a is not found from original blueprint." name)
       (assert (= (length args) (length node-to-loops)) () "Inconsistent domain loop args size")
       (loop for base-domain in node-to-loops
             for new-args in args
             do (setf (gethash (getf base-domain :idx) rewrite-map) new-args))
-      ;; need a base args
+      ;; Creating a clone of subgraph
       (labels ((e (id &aux (node (id->value (pctx-blueprint ctx) id)))
-                 (when (or (null node) (gethash (node-id node) visited)) (return-from e id))
-                 (when (eql (node-type node) :EXPR) (return-from e id))
-                 ;; 3 case using gid:
+                 (when (or (null node) (gethash (node-id node) visited)) (return-from e (gethash id new-idx-map id)))
+                 (when (eql (node-type node) :EXPR) (return-from e (gethash id new-idx-map id)))
+                 (when (eql (node-type node) :DEFINE-GLOBAL) (emit node) (return-from e id))
+                 ;; 2 case using gid:
                  ;; - Reference to RANGE
                  ;; - LOAD(value)
-                 ;; - MUL(GID0, ...) (<- this should be deprecated)
                  (when (eql (node-type node) :RANGE)
                    (let ((new-space (gethash (getattr node :idx) rewrite-map)))
                      (assert new-space)
-                     (let ((n (copy-node new-space)))
+                     (let ((n (copy-node new-space))
+                           (new-id (pctx-gensym ctx)))
                        (assert (= 1 (length (node-writes n))))
-                       (setf (node-writes n) (list id)
+                       (setf (gethash (car (node-writes n)) new-idx-map) new-id
+                             (node-writes n) (list new-id)
                              (node-id n) (gensym "NID"))
-                       (emit n))
-                     (return-from e id)))
+                       (emit n)
+                       (return-from e new-id))))
                  (when (and (eql (node-type node) :LOAD) (gethash (getattr node :value) rewrite-map))
                    (let ((new-space (gethash (getattr node :value) rewrite-map)))
-                     (let ((n (copy-node new-space)))
+                     (let ((n (copy-node new-space)) (new-id (pctx-gensym ctx)))
                        (assert (= 1 (length (node-writes n))))
-                       (setf (node-writes n) (list id)
+                       (setf (gethash (car (node-writes n)) new-idx-map) new-id
+                             (node-writes n) (list new-id)
                              (node-id n) (gensym "NID"))
-                       (emit n))
-                     (return-from e id)))
+                       (emit n)
+                       (return-from e new-id))))
                  ;; [TODO] Replace %RANGE here if exists
                  (setf (gethash (node-id node) visited) t)
-                 (emit node)
-                 (setf (node-reads node) (map 'list #'e (node-reads node)))
-                 (car (node-writes node))))
-        (setf (node-reads node) (map 'list #'e (node-reads node)))
-        (emit node)
-        (setf (gethash (node-id node) (pctx-expr2args ctx))
-              (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
-        node))))
+                 (let ((node (copy-node node)) (new-id (pctx-gensym ctx)))
+                   (setf (gethash (car (node-writes node)) new-idx-map) new-id
+                         (node-id node) (gensym "NID")
+                         (node-reads node) (map 'list #'e (node-reads node))
+                         (node-writes node) (list new-id))
+                   (emit node)
+                   new-id)))
+        (let ((node (copy-node node)))
+          (setf (node-id node) (gensym "NID"))
+          (setf (node-reads node) (map 'list #'e (node-reads node)))
+          (emit node)
+          (setf (gethash (node-id node) (pctx-expr2args ctx))
+                (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
+          node)))))
 
 (defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
@@ -652,12 +700,18 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                  (nconc
                   (id->users blueprint id)
                   (loop for node in (graph-nodes blueprint) if (and (eql (node-type node) :BIND) (eql id (getattr node :value))) collect node)))
+               (is-vectorize-p (loop-obj)
+                 (let ((d (getattr (getf loop-obj :for-node) :directive)))
+                   (and d (equalp (directive-type d) "VECTORIZE"))))
                (invalid-scope-p (acc-scope expr-scope)
                  (when (> (length acc-scope) (length expr-scope)) (return-from invalid-scope-p t))
-                 ;; grid id is unique in the blueprint, we can use it.
-                 (loop for acc in acc-scope for expr in expr-scope
-                       ;; [TODO] make it idx
-                       when (not (eql (node-id (getf acc :range-node)) (node-id (getf expr :range-node)))) do (return-from invalid-scope-p t))
+                 ;; grid id is unique in the blueprint, we can utilize it.
+                 ;; Note: @VECTORIZE is regarded as not creating a new scope, because it is later rewritten as EXPR.
+                 (let ((acc-scope (loop for acc in acc-scope if (null (is-vectorize-p acc)) collect acc))
+                       (expr-scope (loop for expr in expr-scope if (null (is-vectorize-p expr)) collect expr)))
+                   (loop for acc in acc-scope for expr in expr-scope
+                         when (not (eql (node-id (getf acc :range-node)) (node-id (getf expr :range-node))))
+                           do (return-from invalid-scope-p t)))
                  nil)
                (mutate-to-tensor-p (id &aux (acc (id->value blueprint id)) (users (get-users id)) (visited (make-hash-table)))
                  ;; All users must be placed in the possible scope where acc is firstly defined.
@@ -714,11 +768,6 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
               (children (reverse (loop for i upfrom 0 below n collect (isl::%isl-ast-node-list-get-at children i))))
               (n-kernels 0)
               (kernels (make-hash-table)))
-         ;; [TODO] Filter, Filter, TILEGPUはOKのはず。
-         ;; [TODO] MultiKernelで動いてるかテストする！
-         ;; TileGPU is the only trigger to generate multiple kernels
-         ;; まず_gid_p0のコメントアウトしてる部分が悪い
-         ;; BufferRizeの修正も合わせて考えるべき。
          (flet ((mark-is-tilegpu-p (mark)
                   (and (eql (isl::%isl-ast-node-get-type mark) :ast-node-mark)
                        (let ((d (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id mark))))))
@@ -738,6 +787,52 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                   collect
                   (with-blueprint (:noopt t) (apply #'%progn (map 'list #'(lambda (x) (parse-isl-ast pctx x)) kernel-items)))))))))))
 
+(defun apply-late-vectorize (blueprint)
+  "
+Caten recognises the following patterns as vectorizable: (i.e.: CSE should not applied until apply-late-vectorize is called)
+```
+@VECTORIZE for (...) <--- Trigger for vectorize
+  @VECTORIZE for (...)
+    @VECTORIZE for (...)
+      PROGN(EXPR(...))
+```
+===>
+EXPR(DEFINE_SIMDGROUP)
+if (ensure_domain_is_right)
+  for (... < 4);
+    for (... < 4);
+      for (... < 4);
+        val = ...;
+if (not ensure_domain_is_right)
+  val_reminder = ... // Isolated Area (Unrolled)
+"
+  (declare (type FastGraph blueprint))
+  (labels ((vectorize-is-toplevel-p (band)
+             (when (and (eql (node-type band) :FOR) (getattr band :directive)
+                        (equalp "VECTORIZE" (directive-type (getattr band :directive))))
+               (let ((users (id->users blueprint (car (node-writes band)))))
+                 (loop for user in users
+                       if (and (eql (node-type user) :FOR)
+                               (getattr user :directive)
+                               (equalp "VECTORIZE" (directive-type (getattr user :directive)))) ;; The parent is vectorize
+                         do (return-from vectorize-is-toplevel-p nil))
+                 t)))
+           (vectorize-is-innermost-p (band)
+             (when (and (eql (node-type band) :FOR) (getattr band :directive)
+                        (equalp "VECTORIZE" (directive-type (getattr band :directive))))
+               (let ((body (id->value blueprint (second (node-reads band)))))
+                 (and body (find (node-type body) '(:PROGN :EXPR)))))))
+    (let ((triggers (loop for node in (graph-nodes blueprint)
+                          if (vectorize-is-toplevel-p node) collect node))
+          (filters (loop for node in (graph-nodes blueprint)
+                         if (vectorize-is-innermost-p node) collect node))
+          (ctx (make-hash-table)))
+      (caten/aasm::ast-preprocess-for-vectorize blueprint filters)
+      (dolist (trigger triggers)
+        (setf blueprint (caten/aasm::ast-band-vectorize blueprint trigger :vectorize-context ctx)))
+      (simplify-ast blueprint)
+      blueprint)))
+
 (defun %finalize-blueprint-from-polyhedral (polyhedral pctx kernel)
   "Convert ISL polyhedral representation back to blueprint graph"
   (declare (type Polyhedral-IR polyhedral) (type Graph kernel))
@@ -745,7 +840,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        pctx (poly-ctx polyhedral)
        (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast kernel)))
-    (values (apply-directives new-bp) extra-allocs)))
+    (values (ast-apply-cse (apply-late-vectorize (apply-directives new-bp))) extra-allocs)))
 
 (defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))
@@ -788,9 +883,11 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                     #'%add
                     (loop for arg in args for s in stride collect (%mul (%load (%salloc :dtype :int64) s) (car arg))))))
                (swpid (id suffix) (intern (format nil "~a_~a" id suffix)))
-               (make-new-aref (id read-from acc stride load-node)
+               (make-new-aref (id scal-id read-from acc stride load-node)
                  (with-context-nodes
-                     (out (%aref read-from (compute-idx acc stride load-node) :out id))))
+                     (out (%aref
+                           (emit (make-node :JIT :BIND (list (gensym)) (list scal-id) :value read-from))
+                           (compute-idx acc stride load-node) :out id))))
                (make-new-aref-bind (id bind-as base-read acc stride load-node)
                  (with-context-nodes
                      (out (%aref (emit (make-node :JIT :BIND (list (gensym)) (list base-read) :value bind-as)) (compute-idx acc stride load-node) :out id))))
@@ -817,7 +914,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                          (if (eql x scal-id)
                              (let ((id (swpid scal-id count)))
                                (incf count)
-                               (insert-nodes blueprint (make-new-aref id argname acc stride node))
+                               (insert-nodes blueprint (make-new-aref id scal-id argname acc stride node))
                                id)
                              x)))
                 (loop for node in (graph-nodes blueprint)
@@ -831,12 +928,33 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                       if (and (eql (node-type node) :BIND) (eql scal-id (getattr node :value)))
                         do (if (id->value blueprint (car (node-reads node))) ;; two case: the reductor is defined in the same group, or
                                (insert-nodes blueprint (make-new-aref-bind (car (node-writes node)) argname (car (node-reads node)) acc stride node))
-                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) argname acc stride node)))))))))))
+                               (insert-nodes blueprint (make-new-aref (car (node-writes node)) scal-id argname acc stride node)))))))))))
+  (kernel-fixup-loop-fission-args kernels)
   (remove-duplicates (reverse extra-allocs) :key (alexandria:compose #'car #'node-writes)))
 
+(defun kernel-fixup-loop-fission-args (kernels)
+  ;; Insert DEFINE-GLOBAL if the definition was separated by Loop Fission
+  (labels ((id->value-from-kernels (id)
+             (loop for k in kernels
+                   for v = (id->value k id)
+                   if v do (return-from id->value-from-kernels v)))
+           (id->tensor-info (id &aux (acc (id->value-from-kernels id)) (node (id->value-from-kernels (car (node-reads acc)))))
+             (ecase (node-type acc)
+               (:DEFINE-GLOBAL
+                (values (getattr acc :dtype) (getattr acc :pointer-p)))
+               (:EXPR
+                (let ((rel (car (relay-writes (read-type-relay node)))))
+                  (values (tensor-relay-dtype rel) (> (tensor-relay-nrank rel) 0)))))))
+    (dolist (kernel kernels)
+      (dolist (undef-var (graph-get-undefined-variables kernel))
+        (dolist (user (id->users kernel undef-var))
+          (when (eql (node-type user) :BIND)
+            (dolist (usr (id->users kernel (car (node-writes user))))
+              (setf (node-reads usr) (map 'list #'(lambda (x) (if (eql (car (node-writes user)) x) (getattr user :value) x)) (node-reads usr))))
+            (multiple-value-bind (dtype pointer-p) (id->tensor-info (getattr user :value))
+              (insert-nodes kernel (list (%global (getattr user :value) dtype pointer-p))))))))))
+
 (defun get-blueprint-from-polyhedral (polyhedral)
-  (print "Extracting the following Polyhedral IR")
-  (print polyhedral)
   (let* ((pctx (make-parse-ctx (poly-blueprint polyhedral))) ;; Create a parse ctx from the base blueprint
          (kernels (get-raw-bp-from-polyhedral pctx polyhedral)))
     (if (= 1 (length kernels))
@@ -852,12 +970,14 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                  (loop for c in common-buffer-among-kernels
                        for user = (find c all-nodes :test #'find :key #'node-reads)
                        do (assert user)
-                       if (eql (node-type user) :BIND) collect (getattr user :value) else collect c)))
+                       if (eql (node-type user) :BIND) collect (getattr user :value) else collect c))
+               (common-buffer-among-kernels
+                 (loop for c in common-buffer-among-kernels
+                       if (gethash c (ctx-scal->access (poly-ctx polyhedral)))
+                         collect c)))
           ;; Bufferizeは，Skipするケースへ分岐する。この分岐が正しく動けばOK
           ;; Bufferize
-          (print common-buffer-among-kernels)
           (let ((extra-allocs (bp-rewrite-scalar->buffer pctx (poly-ctx polyhedral) kernels common-buffer-among-kernels)))
-            (print extra-allocs)
             (values
              (loop for kernel in kernels
                    collect
@@ -866,7 +986,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                      k))
              ;; Loop Fissionすると，完全に無意味なMOVEが生成されたりする。これがあったら，カーネルを削除する。
              (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
-;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
    (band :initarg :band :accessor optrule-band :initform nil)))
@@ -876,7 +996,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (dolist (slot-def (closer-mop:class-slots (class-of obj)))
       (let ((name  (closer-mop:slot-definition-name slot-def))
             (value (slot-value obj (closer-mop:slot-definition-name slot-def))))
-        (when (null (find name `(band)))
+        (when (null (find name `(band nth-kernel)))
           (format stream " :~a ~S" name value))))))
 
 (defgeneric optrule-generate-search-space (polyhedral bands optrule-trigger))
@@ -967,8 +1087,16 @@ Returns T if the current schedule does not break any dependences in dep."
     retval))
 
 (defmethod verify-polyhedral-ir ((pg Polyhedral-IR)) (check-legality (poly-schedule pg) (poly-dependencies pg)))
-;; ~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Search Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: This is hackable by users (as intended)
+;; DefaultSpace
+;; - [x] Reschedule  Solves ILP and then generate multiple candidates for an entry point
+;; - [x] Interchange Change the partial schedule in the same band
+;; - [x] Tile        TileBands
+;; - [x] TileGPU     Coalesce+Tile+Mapping w/ block/threadIdx
+;; - [x] Parallel    Coalesce+Tile+Parallel
+;; - [x] Vectorize   Tile+Sink, later mapped w/ TensorCore
+;; - [x] SplitReduce Tile+Sink, this is the optimization for reduction and it has two mode: :warp and :block
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
@@ -990,10 +1118,11 @@ Returns T if the current schedule does not break any dependences in dep."
      ;; [TODO] Isn't there more to search configurations?
      ;; [TODO] proximity/validity/coincidence, what is constraints?
      ;; [TODO] More Patterns!
-     ;(make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :treat-coalescing 0 :maximize-band-depth 0 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :treat-coalescing 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :treat-coalescing 1 :maximize-band-depth 0 :schedule-whole-component 0))))
+     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
+     (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
@@ -1018,66 +1147,101 @@ Returns T if the current schedule does not break any dependences in dep."
   (if (null lst) (list nil)
       (mapcan (lambda (x) (mapcar (lambda (y) (cons x y)) (permutations (remove x lst :count 1)))) lst)))
 
-(defclass Interchange (OptimizationRule)
-  ((order :initarg :order :accessor interchange-order :type list)))
+(defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
 
-(defun reorder-mupa-string (mupa-str order)
-  (declare (type string mupa-str) (type list order))
-  (assert (and (>= (length mupa-str) 4)
-               (string= (subseq mupa-str 0 2) "[{")
-               (string= (subseq mupa-str (- (length mupa-str) 2) (length mupa-str)) "}]")))
-  (let* ((inner (subseq mupa-str 2 (1- (length mupa-str))))
-         (raw-chunks (cl-ppcre:split "\\}, *\\{" inner))
-         (parts (mapcar (lambda (s) (string-trim " {}" s)) raw-chunks)))
-    (assert (= (length parts) (length order)))
-    (with-output-to-string (out)
-      (format out "[")
-      (loop for i from 0 below (length order)
-            for idx = (nth i order)
-            do (format out "{ ~a }" (nth idx parts))
-               (when (< i (1- (length order)))
-                 (format out ", ")))
-      (format out "]"))))
+(defun schedule-get-roots (schedule)
+  (declare (type isl::schedule schedule))
+  (let ((root (schedule-node-get-child (schedule-get-root schedule) 0)))
+    (case (schedule-node-get-type root)
+      (:schedule-node-sequence
+       (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle root))))
+         (loop for i upfrom 0 below n-child
+               collect (schedule-node-get-child root i))))
+      (otherwise (list root)))))
+
+(defun schedule-get-band-and-kernel (schedule)
+  (let ((roots (schedule-get-roots schedule)))
+    (loop for ith upfrom 0 for root in roots
+          collect (cons ith (schedule-node-get-undernearth-bands root)))))
+
+(defclass Interchange (OptimizationRule)
+  ((order :initarg :order :accessor interchange-order :type list)
+   (nth-kernel :initarg :nth :accessor interchange-nth-kernel :initform 0)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Interchange)))
-  (when nil ;; unable to run
-  (loop for band in bands for nth upfrom 0
-        if (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+  (declare (ignore bands))
+  (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
+        ;; One Interchange can be attributed per one kernel
+        ;; TODO: Multiple Interchange per single kernel?
+        if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'Interchange) (interchange-nth-kernel x) -1))))
           append
-          (loop with default-perm = (caten/codegen/helpers:range 0 (schedule-node-get-band-depth band))
-                with permutations = (permutations default-perm)
-                for perm in permutations
-                when (not (equal perm default-perm))
-                  collect (make-instance 'Interchange :axis nth :band band :order perm)))))
+          (loop for band in bands for axis upfrom 0
+                if (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+                  append
+                  (loop with default-perm = (caten/codegen/helpers:range 0 (schedule-node-get-band-depth band))
+                        with permutations = (permutations default-perm)
+                        for perm in permutations
+                        collect (make-instance 'Interchange :axis axis :band band :order perm :nth nth-kernel)))))
 
-(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange)) nil) ;; [TODO]
+(defun schedule-node-band-permute (band order)
+  (declare (type isl:schedule-node-band band) (type list order))
+  (assert (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
+          ()
+          "schedule-node-band-permute: The band should have a permutable")
+  (let ((depth (schedule-node-get-band-depth band)))
+    (assert (= depth (length order)) () "schedule-node-band-permute: The size of order should be equivalent to depth ~a" depth)
+    (assert (equal (loop for i upfrom 0 below depth collect i) (sort (copy-list order) #'<))
+            ()
+            "schedule-node-band-permute: order must be 0~N list")
+    (let* ((mupa (schedule-node-band-get-partial-schedule band))
+           (coincidents (schedule-node-band-get-coincident band))
+           (upas (loop for i upfrom 0 below depth collect (multi-union-pw-aff-get-union-pw-aff mupa i)))
+           (coincidents-new (permute-list order coincidents))
+           (upas-new (permute-list order upas)))
+      (loop for i upfrom 0 below depth do
+        (setf mupa (multi-union-pw-aff-set-union-pw-aff mupa i (nth i upas-new))))
+      (setf band (schedule-node-insert-partial-schedule band mupa))
+      (loop for i upfrom 0 below depth do
+        (setf band (isl::schedule-node-band-member-set-coincident band i (nth i coincidents-new))))
+      band)))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
+  (setf (poly-schedule poly)
+        (schedule-node-get-schedule (schedule-node-band-permute (optrule-band opt) (interchange-order opt)))))
 
 (defun tiling-size (band size)
   (declare (type fixnum size))
   (let* ((band-space (schedule-node-band-get-space band))
          (dim (space-dim band-space 3)))
-    (multi-val-from-val-list
-     band-space(apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
+    (multi-val-from-val-list band-space (apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
 
-(defclass Tile (OptimizationRule) ((size :initarg :size :accessor tile-size)))
+(defclass Tile (OptimizationRule)
+  ((size :initarg :size :accessor tile-size)
+   (sink :initarg :sink :accessor tile-sink :initform nil)))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Tile)))
   (loop for band in bands for nth upfrom 0
+        if (> (schedule-node-get-band-depth band) 1)
         append
         (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::tile-search-space)
-              do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero!")
-              collect
-              (make-instance 'Tile :size size :band band :axis nth))))
-
+              do (assert (and (integerp size) (>= size 1)) () "tile-search-space must be a list of fixnum greater than zero! getting ~a" size)
+              append
+              (list
+               (make-instance 'Tile :size size :band band :axis nth)
+               (make-instance 'Tile :size size :band band :axis nth :sink t)))))
+               
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Tile))
   (setf
    (poly-schedule poly)
    (schedule-node-get-schedule
-    (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt))))))
+    (funcall
+     (if (tile-sink opt) #'isl::schedule-node-band-sink #'identity)
+     (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt)))))))
 
 (defclass TileGPU (OptimizationRule)
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)
-   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at)))
+   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at :initform nil)
+   (nth-kernel :initarg :nth-kernel :accessor tile-gpu-nth-kernel :initform 0)))
 
 (defun schedule-node-band-get-coincident (band)
   (loop for i upfrom 0 below (schedule-node-get-band-depth band)
@@ -1102,21 +1266,25 @@ Returns T if the current schedule does not break any dependences in dep."
     t))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :TileGPU)))
+  (declare (ignore bands))
   ;; TileGPU Can be applied at once
   (when (>= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 2)
-    (loop with max-threads = (slot-value (poly-strategy poly) 'caten/codegen/byoc::local-max)
-          for band in bands for nth upfrom 0
-          for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
-          for coincident = (schedule-node-band-get-coincident band)
-          for split-at-base = (or (position 0 coincident) (length coincident))
-          for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
-          if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+    (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
+          if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'TileGPU) (tile-gpu-nth-kernel x) -1))))
             append
-            (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
-                  do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
-                     if (or (null max-threads) (<= (expt size split-at) max-threads))
-                       collect
-                       (make-instance 'TileGPU :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth)))))
+            (loop with max-threads = (slot-value (poly-strategy poly) 'caten/codegen/byoc::local-max)
+                  for band in bands for nth upfrom 0
+                  for valid-p = (schedule-node-band-no-directive-p band "TILEGPU")
+                  for coincident = (schedule-node-band-get-coincident band)
+                  for split-at-base = (or (position 0 coincident) (length coincident))
+                  for split-at = (min split-at-base (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank))
+                  if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+                    append
+                    (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
+                          do (assert (and (integerp size) (>= size 1)) () "ptile-search-space must be a list of fixnum greater than zero!")
+                          if (or (null max-threads) (<= (expt size split-at) max-threads))
+                            collect
+                            (make-instance 'TileGPU :nth-kernel nth-kernel :local-size size :band-split-at (if (= (length coincident) split-at) nil split-at) :band band :axis nth))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
   (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
@@ -1146,7 +1314,6 @@ for (int i=0; i<32; i+=2)
 =>
 
 "
-  ;; [TODO] Loop FissionされたBlueprintにTILEを適用すると，RANGE expects IDX ... で失敗する。
   (assert (= (length bands) (directive-depth (getattr (car bands) :directive))))
   (let* ((new-bp (ast-band-tile-gpu blueprint (car (last bands)) (loop for b in bands collect (directive-amount (getattr (car bands) :directive)))))
          (innerbands (loop for node in (graph-nodes new-bp)
@@ -1168,21 +1335,35 @@ for (int i=0; i<32; i+=2)
          (insert-nodes new-bp (append (list thread) x y z)))))
     new-bp))
 
-(defclass Parallel (OptimizationRule) ((depth :initarg :depth :accessor parallel-depth))) ;; [TODO] CPU Parallel Using OpenMP
+(defclass Parallel (OptimizationRule)
+  ((depth :initarg :depth :accessor parallel-depth)
+   (tile-size :initarg :tile-size :accessor parallel-tile-size :initform 1)
+   (nth-kernel :initarg :nth-kernel :accessor parallel-nth-kernel)))
+
 (defmethod optrule-generate-search-space (poly bands (id (eql :Parallel)))
   (when (= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
-    (loop for band in bands for nth upfrom 0
-          for valid-p = (schedule-node-band-no-directive-p band "PARALLEL")
-          for coincident = (schedule-node-band-get-coincident band)
-          for split-at = (or (position 0 coincident) (length coincident))
-          if (and (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
-            collect (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at) :band band :axis nth))))
+    (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
+          if (null (find nth-kernel (poly-cmd-history poly) :key #'(lambda (x) (if (typep x 'Parallel) (parallel-nth-kernel x) -1))))
+            append
+            (loop for band in bands for nth upfrom 0
+                  for valid-p = (schedule-node-band-no-directive-p band "PARALLEL")
+                  for coincident = (schedule-node-band-get-coincident band)
+                  for split-at = (or (position 0 coincident) (length coincident))
+                  if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
+                    collect
+                    (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
+                          do (assert (and (integerp size) (>= size 1)) () "Parallel: size should be an integer which is greater than one, getting ~a" size)
+                          collect
+                          (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at)
+                                                   :band band :axis nth :nth-kernel nth-kernel :tile-size size))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
   (let* ((depth (or (parallel-depth opt) (schedule-node-get-band-depth (optrule-band opt))))
+         (band (optrule-band opt))
+         (band (schedule-node-band-tile band (tiling-size band (parallel-tile-size opt))))
          (band (schedule-node-insert-mark
-                (optrule-band opt)
-                (directive->id (directive "PARALLEL" 0 depth nil))))
+                band
+                (directive->id (directive "PARALLEL" 0 depth NIL))))
          (band (if (parallel-depth opt)
                    (schedule-node-band-split (schedule-node-get-child band 0) (parallel-depth opt))
                    band)))
@@ -1191,21 +1372,11 @@ for (int i=0; i<32; i+=2)
      (schedule-node-get-schedule band))))
 
 (defmethod optrule-apply-transform-on-blueprint ((id (eql :PARALLEL)) bands blueprint)
-  (caten/codegen/blueprint:print-blueprint blueprint t)
   (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands) :parallel 1))
   blueprint)
-;; [TODO] Caten Level Loop Collapse
-;; [TODO] Auto Scheduler Loop Collapse (aasm transformation rule!) これ1DになってSimplifyできたら面白そうじゃね?
-(defclass Collapse (OptimizationRule) nil)
 
-;; [TODO] FlashAttention, This will rewrite a graph
-(defclass FuseWithParent (OptimizationRule) nil)
-(defclass TensorCore (OptimizationRule) nil) ;; TODO
-(defclass SplitReduce (OptimizationRule)
-  ;; :mark :reductionを使用するようにしたい。 (TODO: It has two mode, :warp level and :block level)
-  nil)
-
-(defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width)))
+(defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width))
+  (:documentation "Vectorize = Tile+Sink"))
 (defmethod optrule-generate-search-space (poly bands (id (eql :Vectorize)))
   (loop for band in bands for nth upfrom 0
         append
@@ -1213,48 +1384,113 @@ for (int i=0; i<32; i+=2)
               do (assert (and (integerp size) (>= size 1)) () "vectorize-search-space must be a list of fixnum greater than zero!")
               collect
               (make-instance 'Vectorize :width size :band band :axis nth))))
+;; [TODO] Use cffi-grovel not to generate a dynamic FFI as cffi:defcallback is not supported on all platforms while
+;; @VECTORIZE is important feature.
+(cffi:defcallback isl-insert-mark-to-filter :pointer
+    ((schedule-node :pointer) (user :pointer))
+  (case (isl::%isl-schedule-node-get-type schedule-node)
+    (:schedule-node-leaf
+     (isl::%isl-schedule-node-insert-mark
+      (isl::%isl-schedule-node-parent schedule-node) ;; todo: assert parent is schedule_node_band
+      (isl::identifier-handle
+       (isl::copy ;; note: extra copy!
+        (directive->id
+         (str->directive (cffi:foreign-string-to-lisp user)))))))
+    (otherwise
+     schedule-node)))
 
+(defun schedule-node-insert-directive (schedule-node target-band directive &aux (changed-p nil))
+  ;; Inserts directive to the all of subtree filter nodes
+  (if (eql (schedule-node-get-type schedule-node) :schedule-node-sequence)
+      (cffi:with-foreign-strings ((directive (directive->str directive)))
+        (isl::%make-schedule-node
+         (isl::%isl-schedule-node-map-descendant-bottom-up
+          (isl::schedule-node-handle (isl::copy schedule-node))
+          (cffi:callback isl-insert-mark-to-filter)
+          directive)))
+      (schedule-node-insert-mark schedule-node (directive->id directive))))
+ 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
-  (let* ((child (schedule-node-insert-mark (optrule-band opt) (directive->id (directive "VECTORIZE" (vectorize-width opt) 1 NIL)))))
-    (setf (poly-schedule poly) (schedule-node-get-schedule child))))
+  (assert (optrule-band opt))
+  (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
+         (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
+         (vband (schedule-node-get-child band-parent 0))
+         (vectorize-inner (isl::schedule-node-band-sink vband))
+         (directive (directive "VECTORIZE" (vectorize-width opt) depth NIL)) ;; Vectorized band should not touched!
+         (final-sched (schedule-node-insert-directive vectorize-inner vband directive)))
+    (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
 
-(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint)
-  (warn "WIP: Vectorize Rewrite")
-  (let ((d (getattr (car bands) :directive)))
-    (caten/codegen/blueprint:print-blueprint blueprint t)
-    (loop for band in bands do
-      (setf
-       blueprint
-       (caten/aasm::ast-band-unroll blueprint band (list (directive-amount d)) :rewriter #'caten/aasm::ast-unroll-body)))
-    (simplify-ast blueprint) (simplify-ast blueprint)
-    (caten/codegen/blueprint:print-blueprint blueprint t)
-    blueprint))
-;; RootがReschedule->Reorderなら...的な話かも
-;; うまく言語化できないけど，最初にReorder -> Tileとかで，求めるOptimalに到達する可能性があるから，やっぱり木構造で順番に
-;; Apply Optsしていく探索空間をイメージするのでうまくいくんじゃないかな
-;; PPRINTを充実させるか，とっととParser作ってもろて
-;; - poly-ir-schedule-node: これを追加するべきか？
-;; - [TODO] Reductionのval_2 = ...のScalar, Write, これをMatrixにする
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
+
+(defclass SplitReduce (OptimizationRule)
+  ((size :initarg :size :accessor splitreduce-size)
+   (mode :initarg :mode :type (member :warp :block) :initform :warp :accessor splitreduce-mode)))
+
+(defmethod optrule-generate-search-space (poly bands (id (eql :SplitReduce)))
+
+  )
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (opt SplitReduce))
+  (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
+         (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (splitreduce-size opt))))
+         (vectorize-inner (schedule-node-get-child band-parent 0))
+         (vectorize-inner (isl::schedule-node-band-sink vectorize-inner))
+         (mode (ecase (splitreduce-mode opt) (:warp "WARPREDUCE") (:block "BLOCKREDUCE")))
+         (vectorize-inner (schedule-node-insert-mark
+                           vectorize-inner
+                           ;; Note: The vectorized loop should be freezed (= nobody can touch this!)
+                           (directive->id (directive mode (splitreduce-size opt) depth NIL)))))
+    (setf (poly-schedule poly) (schedule-node-get-schedule vectorize-inner))))
+
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :WarpReduce)) bands blueprint)
+  blueprint)
+
+(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :BlockReduce)) bands blueprint)
+  blueprint)
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] FuseWithParent
+(defun SelectOneFromOpts (&rest opts)
+  #'(lambda (polyhedral)
+      (let ((bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
+        (values
+         1
+         (loop for opt in opts
+               append (optrule-generate-search-space polyhedral bands opt))))))
+
+(defun SearchUntilSaturated (&rest opts)
+  #'(lambda (polyhedral)
+      (let* ((bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral))))
+             (candidates
+               (loop for opt in opts
+                     append (optrule-generate-search-space polyhedral bands opt)))
+             (noopt (list (optrule-generate-search-space polyhedral bands :NoOpt))))
+        (values
+         (if candidates 0 1)
+         (or candidates noopt)))))
+
 (defparameter *search-space* ;; (n-generation . Candidates)
-  '((0 . (:NoOpt :Reschedule))  ;; Solve ILP with multiple strategy (Detect Band/Coincidence, Loop Fussion at early stage)
-    ;; (1 . (:NoOpt :Interchange)) ;; Shuffle the memory order for finding the best candidate!
-    (t . (:NoOpt :Parallel :TileGPU))))  ;; Recursively optimize things ... ;; :TILE, :VECTORIZE
+  `((0 . ,(SelectOneFromOpts :Reschedule))    ;; ScheduleTree Generation Strategy (They will never evaluated w/o mutated w/ :Parallel :TileGPU)
+    (1 . ,(SearchUntilSaturated :Parallel :TileGPU)) ;; Combile Reschedule x Parallel/TileGPU{local_size1, ...}
+    (2 . ,(SearchUntilSaturated :Interchange))
+    ;; (3 . ,(SearchUntilSaturated :Vectorize :SplitReduce)) [TOOD]
+    (t . ,(SelectOneFromOpts :NoOpt :Tile)) ;; Iterate until gaining no improvements
+    ;; [TODO] Tile, Vectorize, TensorCore, SplitReduce
+    ))
 
 (defmethod get-next-optimization-rules ((polyhedral Polyhedral-IR))
-  (let ((n-generation (length (poly-cmd-history polyhedral)))
-        (bands (schedule-node-get-undernearth-bands (schedule-get-root (poly-schedule polyhedral)))))
-    (loop for space in (cdr (or (find n-generation *search-space* :key #'car) (find t *search-space* :key #'car) (error "No *search-space* configuration for t")))
-          append (optrule-generate-search-space polyhedral bands space))))
+  (let* ((stage (poly-stage polyhedral))
+         (stage-for-generator (cdr (or (find stage *search-space* :key #'car) (find t *search-space* :key #'car) (error "No *search-space* configuration for t")))))
+    (funcall stage-for-generator polyhedral)))
 
 (defmethod polyhedral-ir-mutate-for-children ((polyhedral Polyhedral-IR))
-  (let* ((space (get-next-optimization-rules polyhedral))
-         (next-generations
-           (remove-duplicates
-            (loop for opt in space collect (apply-optimization polyhedral opt)) ;; [TODO] This should be lowered first.
-            :test #'string= :key #'pg-dump-into-str)))
-    (loop for gen in next-generations
-          if (verify-polyhedral-ir gen) collect gen)))
+  (multiple-value-bind (stage-incf space) (get-next-optimization-rules polyhedral)
+    (let ((next-generations
+            (remove-duplicates
+             (loop for opt in (alexandria:flatten space) collect (apply-optimization polyhedral opt)) ;; [TODO] This should be lowered first.
+             :test #'string= :key #'pg-dump-into-str)))
+      (dolist (n next-generations) (incf (poly-stage n) stage-incf))
+      (loop for gen in next-generations
+            if (verify-polyhedral-ir gen) collect gen))))
 
 (defun make-kernel-from-blueprint (base-node kernel-cls base-kernel blueprint nth dep)
   (let* ((args
@@ -1271,14 +1507,69 @@ for (int i=0; i<32; i+=2)
     ($kernel dep read-args
              (make-instance
               kernel-cls
-              :name (intern (format nil "~a_~a" (kernel-name base-kernel) nth))
+              :name (intern (format nil "~a_~a" (gensym "BEAM") nth))
               :blueprint blueprint
               :args args
               :flops (kernel-flops base-kernel))
-             :optimized-p t
-             :out (car (node-writes base-node)))))
+              :optimized-p t
+              :out (car (node-writes base-node)))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; When BEAM_SAFETY >= 1:
+;; - Create copies of all input and output variables before optimization.
+;; - On each execution of polyhedral-ir-evaluate, compare the computation results with the replay state.
+(defstruct BEAM-Replayer
+  (state (make-hash-table)))
 
-(defmethod polyhedral-ir-evaluate ((polyhedral Polyhedral-IR) runtime node abstract-kernel args n base-name base-args)
+(defun make-replayer-from-kernel (runtime node)
+  (flet ((getvar (id)
+           (if (numberp id) id (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime id))))
+    (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
+      (caten/codegen/byoc:%compile-kernel renderer (list (getattr node :kernel-info)) nil))
+    (let ((arg-symbols (subseq (node-reads node) (getattr node :n-kernel-args)))
+          (replayer (make-beam-replayer)))
+      (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols))
+      (loop for arg in arg-symbols
+            for val = (getvar arg) do
+              (setf (gethash arg (beam-replayer-state replayer))
+                    (copy-seq
+                     (uiop:symbol-call :caten/runtime/buffer :transfer-into-array val))))
+      replayer)))
+
+(defun replay-kernel (polyhedral runtime replayer)
+  (declare (type BEAM-Replayer replayer))
+  (let ((result) (logger (ecase (ctx:getenv :BEAM_SAFETY) (0 #'print) (1 #'warn) (2 #'error))))
+    (maphash
+     #'(lambda (k v)
+         (let ((v1 (uiop:symbol-call
+                    :caten/runtime/buffer
+                    :transfer-into-array
+                    (uiop:symbol-call :caten/runtime/runtime :runtime-getvar runtime k))))
+           (assert (and (arrayp v) (arrayp v1)))
+           (let ((diff (reduce #'max (map 'list #'abs (map 'list #'- v v1)))))
+             (when (> diff 0)
+               (push (list k diff) result)))))
+     (beam-replayer-state replayer))
+    (when result
+      (funcall
+       logger
+       (with-output-to-string (out)
+         (format out "(BEAM_SAFETY>=1) Found a distinct point during search.~%")
+         (format out "OptimizationRule=~a~%" (car (poly-cmd-history polyhedral)))
+         (format out "~a~%" polyhedral)
+         (format out "(Distinct_Ids, atol) = ~a~%" result)
+         (loop for nth upfrom 0 for blueprint in (poly-bp-cache polyhedral) do
+           (format out "// ~ath kernel~%" nth)
+           (format out "~a~%" (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) nil)))
+         ;; [TODO] Compute atol/rtol, int, float, both supports
+         )))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun polyhedral-ir-evaluate (polyhedral runtime node abstract-kernel n &key (replayer nil))
+  (declare (type Polyhedral-IR polyhedral))
+  (when (and ;; No changes from previous optimization
+         (typep (car (poly-cmd-history polyhedral)) 'NoOpt)
+         (poly-bp-cache polyhedral))
+    (return-from polyhedral-ir-evaluate (poly-last-evaluation polyhedral)))
+  
   (let ((renderer (make-instance (caten/codegen/byoc:get-backend-renderer (ctx:getenv :BACKEND)))))
     (multiple-value-bind (generated-kernels extra-allocs) (get-blueprint-from-polyhedral polyhedral)
       (let ((kernels
@@ -1292,22 +1583,29 @@ for (int i=0; i<32; i+=2)
                       (setf dep (list (node->id kernel)))
                       kernel))))
         (setf (node-writes (car (last kernels))) (copy-list (node-writes node)))
-        (print kernels)
         ;; Save the result for when the polyhedral was selected as a best kernel
         (setf (poly-bp-cache polyhedral) kernels
               (poly-extra-allocs polyhedral) extra-allocs)
-        (format t "~%[Kernel]:~%==========~%")
-        (loop for nth upfrom 0 for blueprint in kernels do
-          (format t "~ath:~%~%" nth)
-          (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) t))
-        (print (reverse (poly-cmd-history polyhedral)))
-        (format t "~%===========~%")
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (lformat "== [Evaluation] ====================================~%```~%")
+          (loop for nth upfrom 0 for blueprint in kernels do
+            (lformat "// ~ath kernel~%" nth)
+            (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) nil))
+          (lformat "~%```")
+          (lformat "~%[Polyhedral]:~%~a~%" (pprint-isl-schedule (poly-schedule polyhedral)))
+          (lformat "[Schedules]:~%")
+          (dolist (s (reverse (poly-cmd-history polyhedral)))
+            (lformat "~a~%" s)))
         (loop for kernel in kernels do
           (caten/codegen/byoc:%render-kernel renderer (getattr kernel :kernel-info)))
         (handler-case
             (caten/codegen/byoc:%compile-kernel renderer (map 'list #'(lambda (x) (getattr x :kernel-info)) kernels) nil)
           (error (c)
-            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a" c)
+            (funcall (if *allow-compilation-error-during-beam* #'warn #'error) "Failed compilation due to ~a ~%when evaluating~%~a~%~a" c polyhedral
+                     (with-output-to-string (out)
+                       (loop for nth upfrom 0 for blueprint in kernels do
+                         (format out "// ~ath kernel~%" nth)
+                         (format out "~a~%" (caten/codegen/blueprint::print-blueprint (kernel-blueprint (getattr blueprint :kernel-info)) nil)))))
             (return-from polyhedral-ir-evaluate *+inf*)))
         (let* ((extra-args
                  (loop for arg in (poly-extra-allocs polyhedral)
@@ -1320,292 +1618,70 @@ for (int i=0; i<32; i+=2)
             (dotimes (i n)
               (dolist (node kernels)
                 (let ((arg-symbols (subseq (node-reads node) (getattr node :n-kernel-args))))
-                  (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))))
-          ;; 任意の条件を満たさないカーネルは実行するまでもなく+Inf時間でいいように思える
+                  (incf total (kernel-call (getattr node :kernel-info) runtime node (map 'list #'getvar arg-symbols)))))
+              (when replayer (replay-kernel polyhedral runtime replayer))))
           (map 'list #'(lambda (x) (uiop:symbol-call :caten/runtime/buffer :close-buffer runtime (cdr x))) extra-args)
-          (format t "Evaluation: ~a(s) ~aGFLOps~%" total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil))
+          (when (>= (ctx:getenv :JIT_DEBUG) 1)
+            (let ((improvements
+                    (when (poly-last-evaluation polyhedral)
+                      (* 100 (/ (poly-last-evaluation polyhedral) total)))))
+              (lformat "[Evaluation] | ~,5f seconds ~,4fGFLOps | ~a~%"
+                       total (compute-gflops (kernel-flops (getattr (car kernels) :kernel-info)) (/ total n) nil)
+                       (if improvements
+                           (format nil "~,3f% | opt=(~a)" improvements (car (poly-cmd-history polyhedral)))
+                           (format nil "Root=(~a)" (car (poly-cmd-history polyhedral)))))))
+          (setf (poly-last-evaluation polyhedral) total)
           total)))))
 
 (defun realize-node-with-autotuning (runtime node args
                                      &aux
-                                       (base-args (kernel-args (getattr node :kernel-info)))
-                                       (base-name (kernel-name (getattr node :kernel-info)))
                                        (beam-width (ctx:getenv :BEAM))
-                                       (threshold 1e-5)
+                                       (threshold (+ (ctx:getenv :BEAM_THRESHOLD) 100.0))
+                                       (replayer
+                                        (when (>= (ctx:getenv :BEAM_SAFETY) 1)
+                                          (make-replayer-from-kernel runtime node)))
                                        (auto-scheduler (make-instance (get-backend-auto-scheduler (ctx:getenv :BACKEND))))
-                                       (strategy (auto-scheduler-strategy auto-scheduler)))
-                                                         
-  ;; BEAM Search
-  ;; Parameters:
-  ;;  - n
-  ;; [TODO] Candidates生成するとき，per-band-opt-rulesにしたがって生成して枝分かれを制限する
+                                       (strategy (auto-scheduler-strategy auto-scheduler))
+                                       (spos (length (format nil "~a : [SEARCH] " (caten/common.logger::timestamp)))))
+  (declare (ignore args))
   (when (getattr node :optimized-p) (return-from realize-node-with-autotuning t))
+  (when (>= (ctx:getenv :JIT_DEBUG) 1)
+    (separate/print-info spos "[SEARCH] ┃ Autotuning the kernel ~a (~a)" (kernel-name (getattr node :kernel-info)) (ctx:getenv :BACKEND)))
   (with-slots ((n caten/codegen/byoc::n-profile) (per-band-optrules caten/codegen/byoc::per-band-optrules)) strategy
     (with-isl-context
       (labels ((make-candidate (polyhedral-ir)
                  (declare (type Polyhedral-IR polyhedral-ir))
-                 (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) args n base-name base-args))))
+                 (cons polyhedral-ir (polyhedral-ir-evaluate polyhedral-ir runtime node (caten/air:getattr node :kernel-info) n :replayer replayer))))
         (let* ((band-count (count :RANGE (graph-nodes (kernel-blueprint (getattr node :kernel-info))) :key #'node-type))
-               (max-iters (+ 2 (* band-count per-band-optrules)))
+               (max-iters (+ 5 (* band-count per-band-optrules)))
                (origin (make-polyhedral-from-blueprint (kernel-blueprint (caten/air:getattr node :kernel-info)) :strategy strategy))
-               (beam (list (cons origin *+inf*))))
+               (beam (map 'list #'(lambda (x) (cons x *+inf*)) (polyhedral-ir-mutate-for-children origin))))
+          ;; Print Info
+          (when (>= (ctx:getenv :JIT_DEBUG) 1)
+            (lformat "Strategy: max_iters=~a, band_count=~a threshold=~a replay=~a~%" max-iters band-count threshold (if replayer "enabled" "disabled")))
           (loop named beam for iter upfrom 0 below max-iters for candidates = nil do
-            (format t "= [~ath BEAM n=~a] ==~%" iter (length beam))
+            (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "[~ath BEAM n=~a]:~%" iter (length beam)))
             (loop for (kernel . score) in beam do
               (dolist (new-kernel (polyhedral-ir-mutate-for-children kernel))
                 (push (make-candidate new-kernel) candidates)))
-            (when (null candidates) (return-from beam)) ;; no new candidates -> exit
             (setf candidates (sort candidates #'< :key #'cdr))
-            (let ((new-beam (subseq candidates 0 (min (length candidates) beam-width))))
-              (when (< (abs (- (cdar beam) (cdar new-beam))) threshold)
-                (setf beam new-beam)
+            (let* ((new-beam (subseq candidates 0 (min (length candidates) beam-width)))
+                   (improvements (* 100 (/ (cdar beam) (cdar new-beam)))))
+              (when (>= (ctx:getenv :JIT_DEBUG) 1) (print-info "~,4f% Improvements in this generation." improvements))
+              (when (and
+                     (every
+                      #'(lambda (x) (>= (poly-stage (car x)) (length *search-space*)))
+                      candidates)
+                     (<= improvements threshold))
                 (return-from beam))
               (setf beam new-beam)))
           (let ((best-kernel (car beam)))
-            (print "BEST KERNEL")
-            (print best-kernel)
+            (when (>= (ctx:getenv :JIT_DEBUG) 1)
+              (lformat "[BestKernel]:~%")
+              (lformat "~a" (car best-kernel))
+              (lformat "~%Evaluation: ~a(s)" (cdr best-kernel)))
             (loop for extra-arg in (append (poly-bp-cache (car best-kernel)) (poly-extra-allocs (car best-kernel)))
                   if (eql (node-type extra-arg) :Allocate) do (setf (getattr extra-arg :pool) nil)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
-;; [TODO] 戻ったらやること
-;; - [x] RuntimeGraphのカーネル呼び出しの仕様を変える。_dstは気持ち悪い。
-;;   - [x] Kernel(Kernel(X), Kernel(Y, tensors), tensors) みたいにする。KERNEL((DEPEND_KERNELS), DEPEND_TENSORS)
-;;   - [x] RuntimeGraph作れるように。
-;; - [x] TileGPUの付与について -> ScheduleTreeをRootからTraverseして探索する方法に変える
-;;   - [x] これによって，複数のTileGPUが付与される。
-;; - [x] 探索空間下に戻す
-;; - [x] Measure the score based on GFLOPs
-;; - [ ] Parallel+TILE is not working
-;; - [ ] LoopCollapse Standalone
-;; - [ ] Implement Float4(Upcast) Workload
-;;  - [ ] val_2のIndexingで悩むが，これはUnrollする範囲にEXPR Definitionがあるかどうかで決めれば良い？(Scalar Expr == Let in Common Lisp)
-;;  - [ ] 先に!sumとかの展開でFailするのを直す (1. EXPR ... is not found?, 2. A should be EXPR but getting)
-;;    - [ ] これはLoop Fissionをサポートしていないのが悪い。(FOR(EXPR, ))を満たさないのは。
-;;    - [ ] !sigmoid -> TypeInference
-;;    - [ ] Range Repro ->
-;;    - [ ] !sum :axis t looks slow ... they canot use tilegpu? 
-;;  - [ ] TypeInference+Unrollを再利用することで実装
-;;  - [ ] Upcast*Upcast -> TensorCore Mappingを考える
-;;  - [ ] TileGPU, VISIBLE=Tに変更する (so further vectorized)
-                                        ;
-                                        ; [TODO]
-;; - [x] Bring Back Metal Renderer
-;; - [x] Bring Back Lisp Renderer (BEAM is too slow on my mac)
-;; - [x] Define AutoSchedulerConfig
-;; - [x] TileGPU -> use render-ops.lisp feature and insert mark
-;;  - [x] Provide the directive class, and parse utils
-;;  - [x] TileGPU is just splitting the band w/ coincidence parts
-;;  - [ ] Optimization on Reduction
-;;  - [ ] TensorCore, SIMD, i.e., float4
-;;  - [ ] Support Loop Fission, and post loop collapse.
-;;  - [ ] Unroll is applied automatically, there should be a threshold for applying this
-;;  - [ ] How to implement loop coalescing to the band tile?
-;;  - [ ] float4, unroll!
-;; - Then all have to do is to get optimal kernel!
-;; - カーネルの分割/融合を正しくサポートする
-;; - Loop Interchange is REQUIRED
-;; - 4. fix a bug in threefry2x32
-;; - 5. ループの途中でincf挿入するやつやりたい?
-;; - 6. BEAM Cacheを実装する
-;; - 7. Symbolic Kernelに対して，探索したSchedule Commandsを適用する？
-;; - 8. val_2がSeparateされたとき，追加も一時領域Bufferを作成する (そんな難しくないという認識)
-;;  - 1. DetectSeparateScheduledを実装
-;;  - 2. Extractするときに，ISLに登録した通りにBufferを登録する。Argsは増えることになる。
-;; - 9. Support Symbolics. I think it is doable.
-
-;; Paper: https://arxiv.org/pdf/2410.03210
-;; [TODO] Implement Polyhedral-Guided, Customizable AutoScheduler Engine
-;; https://chatgpt.com/c/6870e59d-2970-8005-abda-1b62c5808111?model=o3-pro
-;; o3-pro proposed the following:
-;; 1. reduce dependencies are not handled
-;; 2. scalar is not a scalar
-"
-| 名前                             | 意味・対象                          | 主な効果 (GPU 観点)                                     |
-| ------------------------------ | ------------------------------ | ------------------------------------------------- |
-| **reorder\_ikj**               | ループ順序交換                        | メモリアクセス連続化，依存を壊さずに L/S 帯域↑。                       |
-| **tile\_block\_ij{M×N}**       | CTA (block) タイル化               | グローバル→SMEM 転送の削減。CTA 数で並列度を制御。                    |
-| **tile\_warp\_ij{m×n}**        | Warp タイル化                      | Tensor Core／simdgroup 演算単位と一致させ，LD/ST を coalesce。 |
-| **tile\_lane\_vec{w}**         | Lane 内 SIMD (vec2/4/8)         | ld.v4/st.v4 等のベクトル命令で帯域効率↑。                       |
-| **split\_k\_reduce{p}**        | k 軸並列 + 反復還元                   | CTA/SM 並列度拡大。`p` は分割数。                            |
-| **cache\_read\_shared\_{A/B}** | 行列タイルの SMEM 読み込み               | L2⇔SMEM 帯域と再利用回数の最適化。                             |
-| **cache\_write\_shared**       | 出力タイルを SMEM 経由で書き戻し            | 書き込みコアレッシング・衝突回避。                                 |
-| **sw\_pipeline\_stage{n}**     | 二重/三重バッファリング                   | データ転送と演算をオーバラップし隠蔽。                               |
-| **tensorcore\_mma**            | 専用 FMA (16×16×16 等)            | FLOPs/clk を劇的に向上。Metal は `simdgroup_mad`.         |
-| **vector\_fma**                | 汎用 SIMD FMA                    | Tensor Core が無い GPU で使用。                          |
-| **unroll\_k{u}**               | 内部ループ展開                        | ループ制御除去と ILP 向上。                                  |
-| **async\_copy**                | 非同期 cp.async / simdgroup\_copy | 転送レイテンシ隠蔽と帯域最大化。                                  |
-| **rfactor\_axis{k}**           | 還元因子分割                         | prefix‑sum, attention‐score reduce 等で並列度↑。        |
-| **fuse\_{i,j}**                | ループ／演算子融合                      | 中間テンソル排除，DRAM 往復削減。                               |
-| **recompute\_small**           | 小演算の再計算でメモリ節約                  | O(N²)→O(N) メモリモデルで有効。                             |
-| **auto\_vector\_width**        | 動的 SIMD 幅決定                    | GPU 世代差・データ型差を隠蔽。                                 |
-
-
-def softmax(input[1280, 1280], output[1280, 1280]):
-  allocate temp[1280, 1280]
-  for n in parallel(1280):
-    val_11 = 0.0
-    val_2 = -Inf
-    for m in range(1280):
-      val_2 = max(val_2, input[1280*n+m]
-    for m in range(1280):
-      temp[_gid0*n+m] = exp2((input[1280*n+m]-val_2)*1.442695)
-      val_11 = val_11 + temp[_gid0*n+m]
-    for m in range(1280):
-      output[n*1280+m] = val_9[n*1280+m]/val_11
-//=============================================================================
-// softmax_stored_locally_multi_dim の “warpOnly” 完全インライン化版
-//=============================================================================
-def softmax_stored_locally_multi_dim(input, output, m, n):
-    num_packs = ceil((n/4) / blockDim.x)
-    parallel for block_x in range(gridDim.x):
-      parallel for thread_y in range(blockDim.y):
-        parallel for tid in range(blockDim.x):
-          for row in range(block_x*blockDim.y + thread_y, m, gridDim.x*blockDim.y):
-            row_offset = row * (n>>2)
-            row_x = input  + row_offset
-            row_y = output + row_offset
-
-            //── ローカル読み込み＋最大値
-            buf = allocate float4[num_packs]
-            local_max = -Inf
-            for pack_id in range(num_packs):
-              col_base = pack_id*blockDim.x + tid
-              vectorize(4):
-                if col_base + lane < n/4:
-                  h4 = row_x[col_base]
-                  buf[pack_id][lane] = half2float(h4.component[lane])
-                else:
-                  buf[pack_id][lane] = -Inf
-              local_max = max(local_max,
-                              max(max(buf[pack_id].x, buf[pack_id].y),
-                                  max(buf[pack_id].z, buf[pack_id].w)))
-
-            //── ワープ内最大値還元
-            for mask in [blockDim.x/2, blockDim.x/4, …, 1]:
-              local_max = max(local_max,
-                              __shfl_xor_sync(0xffffffff,
-                                              local_max,
-                                              mask,
-                                              32))
-
-            //── exp＋ワープ内和還元
-            local_sum = 0.0
-            for i in range(num_packs):
-              vectorize(4):
-                buf[i][lane] = exp(buf[i][lane] - local_max)
-                local_sum += buf[i][lane]
-            for mask in [blockDim.x/2, blockDim.x/4, …, 1]:
-              local_sum += __shfl_xor_sync(0xffffffff,
-                                           local_sum,
-                                           mask,
-                                           32)
-
-            //── 書き戻し
-            for i in range(num_packs):
-              col_base = i*blockDim.x + tid
-              vectorize(4):
-                if col_base + lane < n/4:
-                  row_y[col_base].component[lane] = buf[i][lane] / local_sum
-
-def matmul(X[128, 128], Y[128, 128], OUT[128, 128]):
-  for i in range(128):
-    for j in range(128):
-      acc = 0.0f
-      for k in range(128):
-          acc = acc + X[128*i+k] * Y[128*k + j]
-      OUT[128*i+j] = acc
-
-// CTA タイル = 64×64，Warp タイル = 16×16，lane = vec4
-for B_i in blockIdx.y parallel tile_block_ij:64  // 0..1
-  for B_j in blockIdx.x parallel tile_block_ij:64
-    // 共有メモリキャッシュ
-    shared Xs[64][64] @cache_read_shared_X
-    shared Ys[64][64] @cache_read_shared_Y
-
-    // Warp グリッド (=4×4 Warps per CTA)
-    for W_i in threadIdx.y parallel tile_warp_ij:16  // 0..3
-      for W_j in threadIdx.x/32 parallel tile_warp_ij:16  // 0..3
-        // レジスタ蓄積
-        reg_C[16][16] = 0
-
-        //--------- k 軸分割（split_k_reduce=2）-----------
-        for k_outer in range(0, 128, 64):
-          // 二重バッファで Xs, Ys を先読み (sw_pipeline_stage2 + async_copy)
-          prefetch X, Y tiles → Xs, Ys
-
-          //---------------- 主演算 ------------------------
-          for k_inner in unroll_k8 range(0, 64, 8):
-            // lane = vec4 で 4 要素ロード
-            vectorize(4):
-              reg_A = ld4(Xs, W_i*16 + lane, k_inner + s)    // s=0..7
-              reg_B = ld4(Ys, k_inner + s, W_j*16 + lane)
-            // Tensor Core (16×16×8 FMA) または simdgroup_mad
-            tensorcore_mma(reg_C, reg_A, reg_B)
-          //------------------------------------------------
-
-        //--------- 出力 (vec4 store) ---------------------
-        vectorize(4):
-          st4(OUT,
-              (B_i*64 + W_i*16 + lane),
-              (B_j*64 + W_j*16 + vec4-id),
-              reg_C[lane][:])
-
-
-"
-
-;; One week is enough to run FlashAttention for me ...
-;; [Workload]
-;; - コストモデル, 測定方法はどうでもいい。
-;; ASTに対する
-;;   - 探索方法(DFS)
-;;   - How to transform the loop?
-;; We already have a naive and fused FlashAttention Kernel.
-;; We need:
-;; - Loop Tiling               (Unroll, Vectorize, )
-;; - Evaluate the cacheability (The number of alloc reuse)
-;;  - 早い指標でTop Kを決めて, 最後にまとめてCompileしてTop1を決める，はできるかもしれない
-;; これかが決定すれば自動スケジューラーが完成する
-;; - Load from VRAM -> SRAM -> Register. Polyhedralでどう表現しますか
-;; - optimal_kernel = apply(base_kernel, [] in SUBSET)
-;;   - What is SUBSET?
-;; - Ops.TRANSFER的なのを実装する (n-layered memory caching arch)
-;;   - [ ] SIMD/Warp
-;;   - [ ]
-
-;; Optimization is applied into:
-;; - 最適なループ形状 + :AREF={CACHE, NOOPT}の空間を探索？
-;; - :FOR Level (Everything is ND TILING)
-;;   - Loop Tiling
-;;   - Loop Unrolling (i.e.: VECTORIZE, PARALLELIZE)
-;; - :AREF Level
-;;  - (ast-apply-cache的なsomethingが必要) VRAM -> DRAM -> SRAM
-;;  -
-;; The ft of Tensor Compiler is POLYHEDRAL Compiler.
-;; - Believe Polyhedral Compiler, implement something like polyhedral compiler.
-;; e.g.: Caten can create both of:
-;;   - LU Decomposing
-;;   - 
-
-;; TODO
-;; - 1. Introduce Ops.FUNCTION
-;;   - 2. Hand-writtern Kernelを記述するMacro, 構文を実装する
-;; - 2. Thinking the minimal Softmax Transformation
-;; - 3.
-
-;; [SearchSpace] => {Action} => [SearchSpace]
-
-;; (defkernel xxx (...) (:policy `(d . 128))) <- specify OptimizationPolicy
-
-;; Policy:
-;; - GraphRewriteでRuntimeGraphが常にStaticであることを保証して，進めていく
-;; - いずれにせよグラフの形状がわからないと進められない。
-;; ScheduleCommands:
-;; 1. new_graph, hi, ho = apply_tile(graph, ...)
-;;
-;; Workload
-;; LoopInterchange is actually what we need:
-;; - Implement Polyhedral
-;; Schedule + RaW Accessing, 同じフォーマットである必要？
-;; - なぜループが0から始まらないのか？

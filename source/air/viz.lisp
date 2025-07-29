@@ -159,7 +159,7 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
     count))
 ;; [TODO] optimize screen-width automatically
 (defparameter *indent* 0)
-(defun pprint-graph (graph &key (screen-width 140) (stream t)
+(defun pprint-graph (graph &key (screen-width 140) (stream t) (id)
                      &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
   "
 ```
@@ -252,7 +252,7 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                             (loop for pair in (child-weights node (reverse lastp-map))
                                   for nth upfrom 0
                                   do (explore (car pair) (second pair))))))))))
-       (setf stashed (copy-list (graph-outputs graph)))
+       (setf stashed (if id (list id) (copy-list (graph-outputs graph))))
        (dotimes (i screen-width) (princ "=" out))
        (format out "~%")
        (loop while stashed

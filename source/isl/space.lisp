@@ -17,6 +17,12 @@
   (:take space)
   (:take identifier))
 
+(defun space-get-dim-id (space type pos)
+  (%make-identifier (%isl-space-get-dim-id (space-handle space) type pos)))
+
+(defun space-find-dim-by-id (space type id)
+  (%isl-space-find-dim-by-id (space-handle space) type (identifier-handle id)))
+
 (define-isl-function create-space-params %isl-space-params-alloc
   (:give space)
   (:parm context *context*)

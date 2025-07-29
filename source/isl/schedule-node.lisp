@@ -140,6 +140,9 @@
 (defun schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-band pos type)
   (%make-schedule-node (%isl-schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
 
+(defun schedule-node-band-member-set-ast-loop-type (schedule-node-band pos type)
+  (%make-schedule-node (%isl-schedule-node-band-member-set-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
+
 (define-isl-function schedule-node-mark-get-id %isl-schedule-node-mark-get-id
   (:give identifier)
   (:keep schedule-node))
@@ -155,3 +158,17 @@
 (define-isl-function schedule-node-parent %isl-schedule-node-parent
   (:give schedule-node)
   (:take schedule-node))
+
+(defun schedule-node-band-member-set-coincident (band pos val)
+  (%make-schedule-node (%isl-schedule-node-band-member-set-coincident (schedule-node-handle (copy band)) pos val)))
+
+(defun schedule-node-band-set-permutable (band val)
+  (%make-schedule-node (%isl-schedule-node-band-set-permutable (schedule-node-handle (copy band)) val)))
+
+(define-isl-function schedule-node-band-sink %isl-schedule-node-band-sink
+  (:give schedule-node)
+  (:take schedule-node))
+
+(defun schedule-node-is-equal (band1 band2)
+  (declare (type schedule-node band1 band2))
+  (%isl-schedule-node-is-equal (schedule-node-handle band1) (schedule-node-handle band2)))

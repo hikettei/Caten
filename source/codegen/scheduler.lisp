@@ -809,7 +809,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
     (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
-    (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
+    (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 4)
       (format t "[graph-schedule] scheduled graph:~%")
       (pprint-graph schedule-graph))
     (when (= 2 (the fixnum (ctx:getenv :DOT)))
