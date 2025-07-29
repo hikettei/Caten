@@ -634,8 +634,8 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                     (fmt "}"))
                   (:EXPR
                    (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
-                       (fmt "~a; // EXPR(STORE)" (e (car (node-reads node))))
-                       (fmt "~(~a~) = ~a; // expr" (car (node-writes node)) (e (car (node-reads node))))))
+                       (fmt "~a; // EXPR(STORE) {ID: ~a}" (e (car (node-reads node))) (node-id node))
+                       (fmt "~(~a~) = ~a; // expr {ID: ~a}" (car (node-writes node)) (e (car (node-reads node))) (node-id node))))
                   (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
                   (:DEFINE-LOCAL (fmt "~(~a~)x~{~a~^x~} ~(~a~);"
                                       (getattr node :dtype) (node-reads node) (car (node-writes node))))
