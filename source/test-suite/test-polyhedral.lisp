@@ -432,22 +432,19 @@
         (assert (= 1 (length softmax-kernels)))
         (let ((sftmx (car softmax-kernels)))
           (print-blueprint sftmx t))))))
-;; - 1. Interchangeをすべて探索OKにする (OK)
-;; - 2. ParallelをCPUで実行可能にする   (x) CLANG Segv?
-;; - 3. TileGPUをすべて探索OKにする
-;;     - 次元数で分割をやめてすべてCoalesceにする No Need To Split Band (?)
-;;     - Metal TileGPU Segv
-;; - 4. FUZZ_BEAM Context, 探索中常にMSE Errorを確認
-;; - Loop Fissionが不安定？
-;; - ある程度Beneficialな最適化というのは決まってる(特に並列化)
-;; - STEP=1では，CPUならParallelは各カーネルの最もOutermostなBand, GPUならサイズ固定せずにParallelを並列化する。w/o Execution
-;; 目下のやること
-;; - Run BEAM=1 JIT_DEBUG=3 NATIVE=1 qlot exec ros run --load ./examples/flash-attention.lisp in CI
+;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
+;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
+;;   - [ ] CPU Parallelと同じことをやる
+;; - [ ] Metal driver memory leak?
+;; - [x] CPU Gemm 300 GFLOPs
+;; - [ ] 
 ;; - [ ] Softmax -> Vectorize, DEFINE-LOCALの場所
 ;; - [ ] Run BEAM Search in CI, Fix Segv
 ;; - [ ] Gemm >= 1000 GFLOPs
 ;; - [ ] TileGPUを実装し直す。バンドの深さに制約をかけない (全部band-coalsceしてから置き換えるだけ)
 ;; - [ ] Finish Poster
+;; - [ ] ASTForの解析中に，STEP=0じゃなかったら，Errorを発生させて棄却する
+
 ;; [TODO] Polyhedral TODO
 ;; - [ ] Parallel+TILE is breaked
 ;; - [x] Finalize CSE
