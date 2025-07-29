@@ -1290,7 +1290,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (let* ((depth (or (tile-gpu-band-split-at opt) (schedule-node-get-band-depth (optrule-band opt))))
          (band (schedule-node-insert-mark
                 (optrule-band opt)
-                (directive->id (directive "TILEGPU" (tile-gpu-local-size opt) depth t))))
+                (directive->id (directive "TILEGPU" (tile-gpu-local-size opt) depth nil))))
          (band (if (tile-gpu-band-split-at opt)
                    (schedule-node-band-split (schedule-node-get-child band 0) (tile-gpu-band-split-at opt))
                    band)))
