@@ -13,8 +13,8 @@
   ((program :accessor clang-program :type string)
    (caller :accessor clang-caller :type function)))
 (define-auto-scheduler Clang-Auto-Scheduler
-  :n-profile 3 :per-band-optrules 2
-  :tile-search-space (32 64 128 256)
+  :n-profile 5 :per-band-optrules 2
+  :tile-search-space (4 8 16 32 64 128 256)
   :ptile-search-space (1 64 256)
   :ptile-max-rank 1)
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
