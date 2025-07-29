@@ -1,47 +1,7 @@
 (defpackage :caten/codegen/rewriting-rules
-  (:use :cl :caten/runtime)
-  (:import-from
-   :caten/codegen/renderer
-   #:make-define-global)
-  (:import-from
-   :caten/air
-   #:Graph
-   #:Node
-   #:id->value
-   #:id->users
-   #:getattr
-   #:getattrs
-   #:make-graph
-   #:node-writes
-   #:node-reads
-   #:node-type
-   #:make-node
-   #:get-output-to
-   #:graph-nodes
-   #:graph-outputs
-   #:Attr
-   #:defsimplifier
-   #:->fast-graph
-   #:->graph)
-  (:import-from
-   :caten/codegen/shape-inference
-   #:reveal-buffer
-   #:make-inferred-type
-   #:read-type-relay
-   #:relay-reads
-   #:relay-writes
-   #:relay-read-iters
-   #:relay-write-iters
-   #:buffer-orig-buffer-shape)
-  (:import-from
-   :caten/codegen/helpers
-   #:nodes-depends-on
-   #:ensure-string-as-compilable)
-  (:export
-   #:schedule-item-write-define-global
-   #:apply-rewriting-rules
-   #:nodes-apply-static-gensym
-   #:apply-static-gensym))
+  (:use :cl :caten/runtime :caten/air :caten/codegen/iteration :caten/aasm)
+  (:import-from :caten/codegen/helpers #:nodes-depends-on #:ensure-string-as-compilable)
+  (:export #:apply-rewriting-rules #:nodes-apply-static-gensym #:apply-static-gensym))
 
 (in-package :caten/codegen/rewriting-rules)
 
@@ -67,8 +27,9 @@
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn
-                      (setf (getattr n :_read_views) (map 'list #'v (node-reads n))
-                            (node-reads n) (map 'list #'r (node-reads n))
+                      (when (typep (node-attr n) 'JITAble)
+                        (setf (getattr n :_read_views) (map 'list #'v (node-reads n))))
+                      (setf (node-reads n) (map 'list #'r (node-reads n))
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
       ;; Gather views for runtime-fw-outputs and runtime-bw-outputs, storing them in the :_output_type
@@ -80,8 +41,7 @@
               for view in views
               for node = (id->value (runtime-graph runtime) id) do
                 (when (null node) (warn "The output ~a is not found in the graph." id))
-                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))
-                (when node (setf (getattr node :_output_type) (car view)))))
+                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))))
       (macrolet ((renew (accessor)
 		   `(let ((new-table (make-hash-table)))
 		      (maphash
@@ -93,24 +53,17 @@
 	(renew (runtime-variables runtime)))
       id2view)))
 
-(defun wmma-relay-from (t1 tc nth)
-  (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
-;; WMMA (c a b) <=> c = c + a * b (:reduction)
-(defsimplifier
-    (wmma-rewriter :speed 0)
-    ((:Add ((:Mul (a b) :_type_relay t1) c) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 1)))
-    ((:Add (c (:Mul (a b) :_type_relay t1)) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 0))))
-
 (defun sync-buffer (buffer f)
-  (macrolet ((sync (name)
-               `(setf (,name buffer) (map 'list (alexandria:compose f #'reveal-buffer) (,name buffer)))))
-    (sync buffer-shape)
-    (sync buffer-stride)
-    (sync buffer-orig-buffer-shape)
-    (flet ((sync-view (v)
-             (if (null v) v
-                 (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
-      (setf (buffer-views buffer) (map 'list #'sync-view (buffer-views buffer))))))
+  (when (typep buffer 'TensorRelay)
+    (macrolet ((sync (name)
+                 `(setf (,name buffer) (map 'list (alexandria:compose f #'reveal-buffer) (,name buffer)))))
+      (sync tensor-relay-shape)
+      (sync tensor-relay-stride)
+      (sync tensor-relay-orig-buffer-shape)
+      (flet ((sync-view (v)
+               (if (null v) v
+                   (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
+        (setf (tensor-relay-views buffer) (map 'list #'sync-view (tensor-relay-views buffer)))))))
 ;; TODO(hikettei): apply-static-gensym == nodes-apply-static-gensym. Remove one of them.
 (defun apply-static-gensym (runtime &optional (id2view))
   "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
@@ -121,10 +74,13 @@
       (when (eql (node-type node) :Load)
         (when (symbolp (getattr node :value))
           (setf (gethash (getattr node :value) alias-table) (getattr node :value)))))
-    (labels ((val-gensym (id)
+    (labels ((str-begin-with (str case)
+               (and (>= (length str) (length case)) (equalp case (subseq str 0 (length case)))))
+             (val-gensym (id)
 	       (if (symbolp id)
 		   (or
 		    (gethash id alias-table)
+                    (when (str-begin-with (symbol-name id) "special_") id)
 		    (let ((new-id (intern (format nil "val_~a" val-count))))
 		      (setf (gethash id alias-table) new-id)
 		      (incf val-count)
@@ -133,7 +89,7 @@
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
                (or
-                (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))
+                (str-begin-with str "TID") (str-begin-with str "SID")
                 ;; Setting AUTO_SCHEDULER=1 also requires variable names to be in camel_snake format. (due to ISL format)
                 ;; If a variable is in kebab_snake format, you must rename it to a unique name.
                 (when (and (= (ctx:getenv :AUTO_SCHEDULER) 1) (not (string= str (ensure-string-as-compilable str))))
@@ -199,33 +155,6 @@
 (defun apply-rewriting-rules (runtime)
   (declare (type GraphRuntime runtime))
   (let ((id2view (rewrite-views-as-buffer runtime)))
-    ;; (wmma-rewriter (runtime-graph runtime) :no-verify t)
     (apply-static-gensym runtime id2view))
   (setf (runtime-graph runtime) (->graph (runtime-graph runtime)))
   runtime)
-
-(defmethod schedule-item-write-define-global ((schedule-item Node))
-  "Inserts DEFINE_GLOBAL to the top of graph"
-  (declare (type node schedule-item))
-  (assert (eql (node-type schedule-item) :Schedule-Item))
-  (assert (= (length (getattr schedule-item :storage-id-src)) (length (getattr schedule-item :read-types))))
-  (assert (= (length (getattr schedule-item :storage-id-dst)) (length (getattr schedule-item :write-types))))
-  (setf (getattr schedule-item :blueprint)
-        (append
-         ;; writes
-         (loop for write in (getattr schedule-item :storage-id-dst)
-               for wt in (getattr schedule-item :write-types)
-               for nth upfrom 0
-               collect
-               (progn
-                 (setf (nth nth (getattr schedule-item :write-types)) wt)
-                 (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt))))
-         ;; dynamic shapes
-         (loop for item in (getattr schedule-item :dynamic-shapes)
-               collect
-               (make-define-global (car item) (cdr item) nil :shape 0))
-         (loop for read in (getattr schedule-item :storage-id-src)
-               for rt in (getattr schedule-item :read-types)
-               collect
-               (make-define-global read (buffer-dtype rt) (> (buffer-nrank rt) 0) :input (buffer-nrank rt)))
-         (getattr schedule-item :blueprint))))

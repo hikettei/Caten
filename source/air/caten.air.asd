@@ -10,5 +10,6 @@
    (:file "node")
    (:file "graph")
    (:file "pattern-matcher")
+   (:file "type-relay")
    (:file "viz")
    (:file "documentation")))

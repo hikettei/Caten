@@ -51,7 +51,7 @@
    #:%and
    #:%or
    #:%xor
-   #:%max
+   #:%max #:%min
    #:%gcd
 
    ;; Unary
@@ -82,4 +82,16 @@
    #:%where)
   ;; from optimizers.lisp
   (:export #:optimize-aasm #:minimize-duplicated-symbolic-path)
-  )
+  ;; TensorRelay
+  (:export
+   #:TensorRelay #:tensor-relay-shape #:tensor-relay-stride #:tensor-relay-dtype #:tensor-relay-views #:tensor-relay-nrank
+   #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list #:tensor-relay-iterspace #:tensor-relay-vectorize
+   #:copy-tensor-relay #:make-tensor-relay)
+  ;; AST
+  (:export #:with-blueprint #:simplify-ast)
+  ;; ASTOps
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%function #:%lid)
+  ;; RuntimeOps
+  (:export #:$sink #:$kernel #:$sync)
+  ;; ScheduleOps
+  (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse))

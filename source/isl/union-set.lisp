@@ -73,3 +73,7 @@
 (define-isl-function set-from-union-set %isl-set-from-union-set
   (:give set)
   (:take union-set))
+
+(define-isl-function union-set-get-space %isl-union-set-get-space
+  (:give space)
+  (:keep union-set))

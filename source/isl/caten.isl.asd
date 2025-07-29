@@ -33,6 +33,6 @@
    (:file "ast-expr")
    (:file "ast-node")
    (:file "ast-build")
+   (:file "schedule-node")
    (:file "ast")
-   (:file "printer")
-   (:file "schedule-node")))
+   (:file "printer")))

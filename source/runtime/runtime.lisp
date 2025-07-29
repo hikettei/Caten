@@ -108,10 +108,10 @@ disassemble:
     (declare (type Node node))
     (flet ((preprocess-argument (x)
              (if (numberp x) x (runtime-getvar runtime x))))
-      (when (eql (node-type node) :Pause/Backward) ;; A special node to stop the execution
-        (loop for read in (node-reads node) for write in (node-writes node)
-              do (runtime-setvar runtime write (runtime-getvar runtime read)))
-        (return-from runtime-step))
+;;      (when (eql (node-type node) :Pause/Backward) ;; A special node to stop the execution
+;;        (loop for read in (node-reads node) for write in (node-writes node)
+;;              do (runtime-setvar runtime write (runtime-getvar runtime read)))
+;;        (return-from runtime-step))
       (let ((t1 (get-internal-real-time))
             (out (multiple-value-list
                   (handler-bind ((error #'(lambda (c) (error 'runtime-error :runtime runtime :cond c))))
@@ -163,7 +163,7 @@ disassemble:
 (defun render-comment (node)
   (case (node-type node)
     (:LOAD (format nil " // :value = ~a" (getattr node :value)))
-    (:JIT_KERNEL (format nil " // JIT: ~a" (getattr node :kernel-info)))
+    (:KERNEL (format nil " // optimized-p=~a" (getattr node :optimized-p)))
     (otherwise "")))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
   (print-unreadable-object (runtime stream :type t)
@@ -198,8 +198,8 @@ disassemble:
 			      ""))))
 	    else
 	      do (format stream "~a~(~a~)~a~(~a~)(~(~a~));~a~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "")
-                         (if (eql (node-type node) :JIT_KERNEL)
-                             (uiop:symbol-call :caten/codegen/jit :compiled-kernel-name (getattr node :kernel-info))
+                         (if (eql (node-type node) :KERNEL)
+                             (format nil "jit.~a" (uiop:symbol-call :caten/codegen/byoc :kernel-name (getattr node :kernel-info)))
                              (node-type node))
                          (render-list (node-reads node))
                          (render-comment node))))))
@@ -248,8 +248,8 @@ disassemble:
       (let ((memory-pool (getattr node :pool))) ;; the second run of :Allocation?
         (when (and (buffer-p memory-pool) shape)
           (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
-             (report-allocation runtime t (buffer-dtype memory-pool) (buffer-shape memory-pool))
-             (return-from realize-node memory-pool))
+            (report-allocation runtime t (buffer-dtype memory-pool) (buffer-shape memory-pool))
+            (return-from realize-node memory-pool))
           ;; Overwritting the old memory pool
           (when (buffer-p memory-pool) (close-buffer runtime memory-pool))))
       (let ((buffer (make-buffer (map 'list #'->number shape) (map 'list #'->number stride) (getattr node :dtype) nil :device (runtime-buffer-type runtime))))
@@ -450,3 +450,10 @@ disassemble:
 
 (defmethod realize-node ((node-id (eql :Where)) (runtime GraphRuntime) node args)
   (map-view runtime (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
+
+(defmethod realize-node ((node-id (eql :SYNCHRONIZE)) (runtime GraphRuntime) node args)
+  (let ((ids (subseq (node-reads node) (getattr node :n-kernel-args))))
+    (apply #'values (map 'list #'(lambda (x) (runtime-getvar runtime x)) ids))))
+
+(defmethod realize-node ((node-id (eql :PAUSE/BACKWARD)) (runtime GraphRuntime) node args)
+  (apply #'values (map 'list #'(lambda (x) (runtime-getvar runtime x)) (node-reads node))))

@@ -750,7 +750,7 @@ Returns the index components of the tensor. object can be either of tensor or li
 (defmethod !index-components ((tensor Tensor))
   (forward (make-instance 'IndexComponents) tensor))
 (defmethod !index-components ((shape list))
-  (forward (make-instance 'IndexComponents) (make-tensor shape)))
+  (forward (make-instance 'IndexComponents) (make-tensor shape :dtype :int64)))
 
 ;; ~~~ Bitwise ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name op lisp doc)
@@ -818,3 +818,59 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
 "
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
+;; ~~ CapturedKernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Synchronize (Func)
+  ((time :initarg :time :accessor synchronize-time-at)
+   (out :initarg :out :accessor synchronize-out-at :initform nil)))
+(defmethod forward ((op Synchronize) &rest inputs)
+  (ecase (length inputs)
+    (1 (st "A[~] -> A[~]" (inputs)))
+    (2 (st "A[~] B[~] -> A[~]" (inputs)))))
+(defmethod backward ((op Synchronize) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
+(defmethod lower ((op Synchronize) &rest nodes)
+  (ecase (length nodes)
+    (1 (with-context (out ($sync nil (node-writes (car nodes)) :out (or (synchronize-out-at op) (gensym))))))
+    (2 (with-context (out ($sync (list (synchronize-time-at op)) (node-writes (second nodes))))))))
+
+(defclass CapturedKernel (Func)
+  ((time :initarg :time) (name :initarg :name)
+   (blueprint :initarg :blueprint :accessor captured-kernel-blueprint :type Graph)
+   (nametable :initarg :nametable) (name-order :initarg :name-order)
+   (kernel :initarg :kernel :accessor captured-kernel-kernel)))
+
+(defun %forward-with-captured-graph (name captured-graph nametable order &rest inputs)
+  (dotimes (i 2) (caten/aasm:simplify-ast captured-graph))
+  (let ((kernel (caten/codegen/byoc:get-backend-kernel (ctx:getenv :BACKEND)))
+        (time (gensym "CT")))
+    (assert kernel () "CapturedKernel: Current backend ~a does not support code generation!" (ctx:getenv :BACKEND))
+    (let* ((inputs ;; rename input ids
+             (loop for input in inputs for name in order
+                   for valid-name = (or (gethash name nametable) (error ""))
+                   collect (forward (make-instance 'Synchronize :out valid-name) input)))
+           (inputs-after-ops
+             (multiple-value-list
+              (apply #'forward (make-instance 'CapturedKernel :name name :blueprint captured-graph :nametable nametable :name-order order :kernel kernel :time time) inputs))))
+      (apply #'values (map 'list #'(lambda (x y) (forward (make-instance 'Synchronize :time time) x y)) inputs-after-ops inputs)))))
+
+(defmethod forward ((op CapturedKernel) &rest inputs)
+  (apply #'values (loop for out in inputs collect (st "A[~] -> A[~]" (out)))))
+(defmethod backward ((op CapturedKernel) &optional dout) (declare (ignore dout))) ;; TODO: Support Backward
+(defmethod lower ((op CapturedKernel) &rest nodes)
+  (with-slots ((blueprint blueprint) (name name) (kernel kernel) (nametable nametable) (name-order name-order) (time time)) op
+    (let ((args (loop for node in (graph-nodes blueprint)
+                      if (eql (node-type node) :DEFINE-GLOBAL)
+                        collect node))
+          (id->node (make-hash-table)))
+      (loop for name in name-order for node in nodes do
+        (setf (gethash (gethash name nametable) id->node) node))
+      (with-context
+          (kernel
+           ($kernel
+            (map 'list #'(lambda (x) (or (gethash (car (node-writes x)) id->node) (error ""))) args)
+            (map 'list #'(lambda (x) (or (gethash (car (node-writes x)) id->node) (error ""))) args)
+            (make-instance kernel
+                           :name (gensym (format nil "captured_~a" name))
+                           :args args
+                           :flops (caten/codegen/polyhedral:schedule-item-gflops blueprint)
+                           :blueprint blueprint)
+            :optimized-p nil :out time))))))

@@ -31,3 +31,6 @@
 (define-isl-function set-from-multi-aff %isl-set-from-multi-aff
   (:give set)
   (:take multi-aff))
+
+(defun set-dim-max (set dim)
+  (%make-set (%isl-set-dim-max (set-handle (copy set)) dim)))

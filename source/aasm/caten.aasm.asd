@@ -1,5 +1,5 @@
 (asdf:defsystem "caten.aasm"
-  :description "aasm = Abstract + (internal) assembly"
+  :description "aasm = Abstract + ASseMbly."
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :depends-on ("alexandria" "caten.common" "caten.air")
@@ -7,12 +7,12 @@
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "attrs")
-   (:file "ctx")
-   (:file "tensor-ir")
-   (:file "ops")
-   (:file "constant-folding")
-   (:file "optimizers")
-   (:file "view")
-   (:file "logical")
+   (:file "specs/tensor-ops")
+   (:file "specs/render-ops")
+   (:file "specs/runtime-ops")
+   (:file "tensor-ops")
+   (:file "runtime-ops")
+   (:file "simplifiers")
+   (:file "expr")
+   (:file "render-ops")
    (:file "documentation")))
