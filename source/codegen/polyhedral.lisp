@@ -1351,7 +1351,9 @@ for (int i=0; i<32; i+=2)
                   for split-at = (or (position 0 coincident) (length coincident))
                   if (and valid-p (> split-at 0) (every #'(lambda (x) (= x 1)) (subseq coincident 0 split-at)))
                     collect
-                    (loop for size in (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space)
+                    (loop for size in (if (= (length coincident) split-at)
+                                          `(1)
+                                          (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-search-space))
                           do (assert (and (integerp size) (>= size 1)) () "Parallel: size should be an integer which is greater than one, getting ~a" size)
                           collect
                           (make-instance 'Parallel :depth (if (= (length coincident) split-at) nil split-at)
@@ -1360,7 +1362,9 @@ for (int i=0; i<32; i+=2)
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
   (let* ((depth (or (parallel-depth opt) (schedule-node-get-band-depth (optrule-band opt))))
          (band (optrule-band opt))
-         (band (schedule-node-band-tile band (tiling-size band (parallel-tile-size opt))))
+         (band (if (eql 1 (parallel-tile-size opt))
+                   band
+                   (schedule-node-band-tile band (tiling-size band (parallel-tile-size opt)))))
          (band (schedule-node-insert-mark
                 band
                 (directive->id (directive "PARALLEL" 0 depth NIL))))

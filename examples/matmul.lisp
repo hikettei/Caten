@@ -13,7 +13,7 @@
   (ql:quickload :clgplot))
 
 (defpackage :caten-matmul
-  (:use :cl :caten/api :caten/lang))
+  (:use :cl :caten/api :caten/lang :caten/aasm))
 (in-package :caten-matmul)
 
 (in-caten-toplevel)
@@ -125,7 +125,83 @@
 
 (defmethod compute ((e CatenMatmul)) (forward (caten-caller e)))
 (defmethod get-result-array ((e CatenMatmul)) (change-facet (forward (caten-caller e)) :simple-array))
+;; ~~ OMP (Static) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *best-tile-size* 4)
 
+(defclass ClangOMP (Experiment)
+  ((caller :accessor clang-caller) (x :accessor clang-x) (y :accessor clang-y) (z :accessor clang-z)
+   (tile :accessor clang-tile :initarg :tile :initform *best-tile-size*)))
+
+(defmethod initialize-instance ((experiment ClangOMP) &rest initargs &key &allow-other-keys)
+  (let* ((id (format nil "kernel_~(~a~)" (gensym)))
+         (kernel (make-instance 'caten/byoc/clang::ClangKernel
+                                :name id
+                                :args (list (%global 'left :float32 t) (%global 'right :float32 t) (%global 'out :float32 t))))
+         (N (config-n *config*))
+         (tile-size (or (getf initargs :tile) *best-tile-size*)))
+    (format t "tile-size=~a name=~a~%" tile-size id)
+    (setf (experiment-name experiment) "OMP(STATIC)"
+          (caten/byoc/clang::clang-program kernel)
+          (print (format nil
+                         "
+#include <math.h>
+#include <stdint.h>
+#include <omp.h>
+#define total ~a
+#define rows ~a
+#define columns ~a
+#define inners ~a
+#define tileSize ~a
+#include <stddef.h>
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+void ~a(const float * restrict left, const float * restrict right, float * restrict result);
+void ~a(const float * restrict left, const float * restrict right, float * restrict result) {
+#pragma omp parallel for
+for (int i=0; i<total; i++) result[i] = 0.0f;
+#pragma omp parallel for shared(result, left, right) default(none) collapse(2)
+  for (int rowTile = 0; rowTile < rows; rowTile += 256) {
+    for (int columnTile = 0; columnTile < columns; columnTile += 256) {
+      for (int innerTile = 0; innerTile < inners; innerTile += tileSize) {
+        for (int row = rowTile; row < rowTile + 256; row++) {
+          int innerTileEnd = min(inners, innerTile + tileSize);
+          for (int inner = innerTile; inner < innerTileEnd; inner++) {
+            for (int col = columnTile; col < columnTile + 256; col++) {
+              result[row * columns + col] +=
+                  left[row * inners + inner] * right[inner * columns + col];
+}}}}}}}
+"
+                  (* N N) N N N tile-size id id))
+          (caten/byoc/clang::clang-caller kernel)
+          (compile
+           nil
+           (caten/byoc/clang::make-foreign-function-caller
+            (caten/codegen/byoc:kernel-name kernel)
+            (caten/codegen/byoc:kernel-args kernel)))
+          (clang-caller experiment) kernel)
+    (caten/byoc/clang::load-foreign-function
+     (caten/byoc/clang::clang-program kernel)
+     :use-omp t :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))
+    (multiple-value-bind (x y) (make-inputs-from-config *config*)
+      (setf (clang-x experiment) x
+            (clang-y experiment) y
+            (clang-z experiment) (change-facet (make-array (* N N) :element-type 'single-float :initial-element 0.0) :tensor)))))
+
+(defmethod compute ((e ClangOMP))
+  (funcall (caten/byoc/clang::clang-caller (clang-caller e)) (tensor-buffer (clang-x e)) (tensor-buffer (clang-y e)) (tensor-buffer (clang-z e))))
+
+(defmethod get-result-array ((e ClangOMP)) (change-facet (clang-z e) :simple-array))
+
+(defun omp-autotune-best-tile-size (&key (candidates `(1 2 4 8 16 32 64)))
+  (let ((results))
+    (format t "Autotuning tilesize for omp matmul. N=~A~%" (config-n *config*))
+    (loop for c in candidates
+          for mm = (make-instance 'ClangOMP :tile c) for sum = 0.0 do
+            (dotimes (i 100) (incf sum (compute mm)))
+            (push (cons c sum) results))
+    (print "best tile size is:")
+    (print results)
+    (setf *best-tile-size* (car (print (car (sort results #'< :key #'cdr)))))))
 ;; ~~ OpenBLAS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *openblas-available-p* nil)
 (when (eql :CLANG (ctx:getenv :BACKEND))
@@ -154,7 +230,7 @@ Error details: ~a" c))))
 
 (defun get-naive-array-for-size (size results)
   (some (lambda (entry)
-          (when (and (typep (first entry) 'NaiveLispMatmul)
+          (when (and (typep (first entry) 'OpenBLAS)
                      (= size (isqrt (length (second entry)))))
             (second entry)))
         results))
@@ -170,10 +246,10 @@ Error details: ~a" c))))
                (atol 0.0f0) (rtol 0.0f0))
           (multiple-value-setq (atol rtol) (compute-diffs naive arr))
           (push (list name
-                      (format nil "~,2f" gflops)
-                      (format nil "~,6f" time)
-                      (format nil "~,6f" atol)
-                      (format nil "~,6f" rtol)
+                      (format nil "~a" gflops)
+                      (format nil "~a" time)
+                      (format nil "~a" atol)
+                      (format nil "~a" rtol)
                       (princ-to-string size))
                 csv-lines))))
     (with-open-file (out "./experiment.csv"
@@ -199,12 +275,13 @@ Error details: ~a" c))))
        :output-format :png))))
 
 (defun benchmark (&key
-                  (impls (list 'NaiveLispMatmul 'CatenMatmul))
-                  (n-profile 1)
+                  (impls (list 'ClangOMP 'CatenMatmul))
+                  (n-profile 100)
                   &aux (results))
   (when *openblas-available-p* (push 'OpenBLAS impls))
-  (loop for N in `(256 512 1024 2048)
-        for *config* = (make-config :N N) 
+  (loop for N in `(256 512 1024 2048 4096)
+        for *config* = (make-config :N N)
+        for *best-tile-size* = (omp-autotune-best-tile-size)
         for settings = (map 'list #'make-instance impls) do
           (loop for setting in settings do
             (format t "N=~a, setting=~a~%" n setting)
