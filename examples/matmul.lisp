@@ -12,8 +12,11 @@
 (unless (find-package :clgplot)
   (ql:quickload :clgplot))
 
+(unless (find-package :cl-ppcre)
+  (ql:quickload :cl-ppcre))
+
 (defpackage :caten-matmul
-  (:use :cl :caten/api :caten/lang :caten/aasm))
+  (:use :cl :caten/api :caten/lang :caten/aasm :cl-ppcre))
 (in-package :caten-matmul)
 
 (in-caten-toplevel)
@@ -192,6 +195,51 @@ for (int i=0; i<total; i++) result[i] = 0.0f;
 
 (defmethod get-result-array ((e ClangOMP)) (change-facet (clang-z e) :simple-array))
 
+(defclass Tinygrad (Experiment)
+  ((caller :accessor clang-caller)
+   (x :accessor clang-x) (y :accessor clang-y) (z :accessor clang-z)
+   (is-parallel :initarg :is-parallel :accessor tinygrad-is-parallel :initform nil)))
+
+
+(defun extract-c-function-name (code)
+  (let* ((regex "(?m)^\\s*void\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+         (matches (all-matches-as-strings regex code)))
+    (assert matches)
+    (let ((match (car matches)))
+      (car (cl-ppcre:split "\\(" (second (cl-ppcre:split " " match)))))))
+
+(defmethod initialize-instance ((experiment Tinygrad) &rest initargs &key &allow-other-keys)
+  (let* ((N (config-n *config*))
+         (is-parallel (getf initargs :is-parallel))
+         (filepath (format nil "./examples/baseline/tinygrad_~a~a_3.c"
+                           (if is-parallel "omp_" "") N))
+         (code (uiop:read-file-string filepath))
+         (name (extract-c-function-name code))
+         (kernel (make-instance 'caten/byoc/clang::ClangKernel
+                                :name name
+                                :args (list (%global 'out :float32 t) (%global 'left :float32 t) (%global 'right :float32 t)))))
+    (setf (experiment-name experiment) (format nil "Tinygrad(CPU=1, BEAM=3, ~a)" (if is-parallel "single-thread" "multi-thread"))
+          (caten/byoc/clang::clang-program kernel) code
+          (caten/byoc/clang::clang-caller kernel)
+          (compile
+           nil
+           (caten/byoc/clang::make-foreign-function-caller
+            (caten/codegen/byoc:kernel-name kernel)
+            (caten/codegen/byoc:kernel-args kernel)))
+          (clang-caller experiment) kernel)
+    (caten/byoc/clang::load-foreign-function
+     (caten/byoc/clang::clang-program kernel)
+     :use-omp is-parallel :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))
+    (multiple-value-bind (x y) (make-inputs-from-config *config*)
+      (setf (clang-x experiment) x
+            (clang-y experiment) y
+            (clang-z experiment) (change-facet (make-array (* N N) :element-type 'single-float :initial-element 0.0) :tensor)))))
+
+(defmethod compute ((e Tinygrad))
+  (funcall (caten/byoc/clang::clang-caller (clang-caller e)) (tensor-buffer (clang-z e)) (tensor-buffer (clang-x e)) (tensor-buffer (clang-y e))))
+
+(defmethod get-result-array ((e Tinygrad)) (change-facet (clang-z e) :simple-array))
+
 (defun omp-autotune-best-tile-size (&key (candidates `(1 2 4 8 16 32 64)))
   (let ((results))
     (format t "Autotuning tilesize for omp matmul. N=~A~%" (config-n *config*))
@@ -275,22 +323,23 @@ Error details: ~a" c))))
        :output-format :png))))
 
 (defun benchmark (&key
-                  (impls (list 'ClangOMP 'CatenMatmul))
+                  (impls (list 'Tinygrad));;'ClangOMP 'CatenMatmul))
                   (n-profile 100)
                   &aux (results))
   (when *openblas-available-p* (push 'OpenBLAS impls))
   (loop for N in `(256 512 1024 2048 4096)
         for *config* = (make-config :N N)
-        for *best-tile-size* = (omp-autotune-best-tile-size)
+        for *best-tile-size* = 8;;(omp-autotune-best-tile-size)
         for settings = (map 'list #'make-instance impls) do
           (loop for setting in settings do
             (format t "N=~a, setting=~a~%" n setting)
             (compute setting) ;; pre allocation
+            (print "RUNNNING")
             (push
              (list setting
                    (get-result-array setting)
-                   (caten/runtime/profile:with-real-time
-                     (dotimes (i n-profile) (compute setting))))
+                   (print (caten/runtime/profile:with-real-time
+                     (dotimes (i n-profile) (compute setting)))))
              results)))
   (make-report results))
 
