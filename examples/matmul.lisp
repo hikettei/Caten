@@ -198,8 +198,7 @@ for (int i=0; i<total; i++) result[i] = 0.0f;
 (defclass Tinygrad (Experiment)
   ((caller :accessor clang-caller)
    (x :accessor clang-x) (y :accessor clang-y) (z :accessor clang-z)
-   (is-parallel :initarg :is-parallel :accessor tinygrad-is-parallel :initform nil)))
-
+   (is-parallel :initarg :is-parallel :accessor tinygrad-is-parallel :initform t)))
 
 (defun extract-c-function-name (code)
   (let* ((regex "(?m)^\\s*void\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
@@ -210,7 +209,7 @@ for (int i=0; i<total; i++) result[i] = 0.0f;
 
 (defmethod initialize-instance ((experiment Tinygrad) &rest initargs &key &allow-other-keys)
   (let* ((N (config-n *config*))
-         (is-parallel (getf initargs :is-parallel))
+         (is-parallel nil);(getf initargs :is-parallel))
          (filepath (format nil "./examples/baseline/tinygrad_~a~a_3.c"
                            (if is-parallel "omp_" "") N))
          (code (uiop:read-file-string filepath))
@@ -218,6 +217,8 @@ for (int i=0; i<total; i++) result[i] = 0.0f;
          (kernel (make-instance 'caten/byoc/clang::ClangKernel
                                 :name name
                                 :args (list (%global 'out :float32 t) (%global 'left :float32 t) (%global 'right :float32 t)))))
+    (print is-parallel)
+    (print filepath)
     (setf (experiment-name experiment) (format nil "Tinygrad(CPU=1, BEAM=3, ~a)" (if is-parallel "single-thread" "multi-thread"))
           (caten/byoc/clang::clang-program kernel) code
           (caten/byoc/clang::clang-caller kernel)
