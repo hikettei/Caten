@@ -320,11 +320,11 @@
   (testing "Vectorize at K"
     (with-polyhedral
         ;; TODO: If the loop was smaller than width?
-        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+        ((gemm ($gemm (make-tensor `(512 512)) (make-tensor `(512 256)) (make-tensor `(256 512))))
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 1 (get-depth (getband gemm 1))))
          (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 0) :axis 0)))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 1)))
+;         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 1)))
          (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)

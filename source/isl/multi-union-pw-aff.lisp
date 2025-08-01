@@ -124,6 +124,20 @@
   (:take union-pw-aff)
   (:take union-pw-aff))
 
+(define-isl-function union-pw-aff-mod-val %isl-union-pw-aff-mod-val
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take value))
+
+(define-isl-function union-pw-aff-val-on-domain %isl-union-pw-aff-val-on-domain
+  (:give union-pw-aff)
+  (:take union-set)
+  (:take value))
+
+(define-isl-function multi-union-pw-aff-get-domain-space %isl-multi-union-pw-aff-get-domain-space
+  (:give space)
+  (:keep multi-union-pw-aff))
+
 (defun multi-union-pw-aff-drop-dims (mupa dim first n)
   (%make-multi-union-pw-aff
    (%isl-multi-union-pw-aff-drop-dims (multi-union-pw-aff-handle mupa) dim first n)))
@@ -141,11 +155,6 @@
   (:give multi-union-pw-aff)
   (:take multi-union-pw-aff)
   (:take multi-union-pw-aff))
-
-(define-isl-function union-pw-aff-add %isl-union-pw-aff-add
-  (:give union-pw-aff)
-  (:take union-pw-aff)
-  (:take union-pw-aff))
 
 (define-isl-function union-map-from-union-pw-aff %isl-union-map-from-union-pw-aff
   (:give union-map)

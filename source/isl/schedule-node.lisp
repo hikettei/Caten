@@ -97,6 +97,11 @@
   (:take schedule-node)
   (:take set))
 
+(define-isl-function schedule-node-insert-context %isl-schedule-node-insert-context
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take set))
+
 (defun schedule-node-get-child (schedule-node n)
   (%make-schedule-node (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
 
