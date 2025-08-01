@@ -986,6 +986,11 @@ if (not ensure_domain_is_right)
                      k))
              ;; Loop Fissionすると，完全に無意味なMOVEが生成されたりする。これがあったら，カーネルを削除する。
              (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
+;; ~~ ISL Loop Transformation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] ↑のScope関連もSchedule/ASTTreeで表現できない？
+;; - [ ] 
+;; - [ ] @BUFFER的なDirectiveだけで処理したい
+;; - [ ] Less Bugs
 ;; ~~ OptimizeRule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptimizationRule ()
   ((axis :initarg :axis :accessor optrule-axis :initform nil)
@@ -1409,15 +1414,76 @@ for (int i=0; i<32; i+=2)
           (cffi:callback isl-insert-mark-to-filter)
           directive)))
       (schedule-node-insert-mark schedule-node (directive->id directive))))
- 
+
+(defun simplex-full-tile-isolate-option (n size)
+  "
+Tile is an integer mapping: g(f(i)) where f(i) = {i - (i) mod 4}, g(i) = i mod 4
+where `i` is a domain node.
+N 次元 full-tile を isolate するオプション文字列を作る。
+例: (make-isolate-option 2 10 100) =>
+\"{ isolate[[] -> [a0,a1]] : 0 <= 10a0,10a1 and 10a0+9+10a1+9 <= 100 }\""
+  ;;  { isolate[[] -> [a,b,c,d]] : 0 <= 4a,4b and 10a+9+10b+9 <= 100 }
+  (print
+  (with-output-to-string (out)
+    (format out "{ isolate[[] -> [~{dim~a~^, ~}]] : " (caten/codegen/helpers:range 0 N))
+    (format out "0 <= ~{dim~a~^, ~} and " (caten/codegen/helpers:range 0 N))
+    (format out "dim0 <= 25 }"))))
+
+(defun schedule-node-band-tile-with-option (band size &key (reminder-generation :padding))
+  "
+Maxmin:
+
+IF:
+
+Separete:
+"
+  (declare (type isl::schedule-node-band band)
+           (type fixnum size)
+           (type (and keyword (member :padding :maxmin)) reminder-generation))
+  (let ((tile-size (tiling-size band size)))
+    (ecase reminder-generation
+      (:maxmin (isl::schedule-node-band-tile band tile-size))
+      (:padding
+       ;; [TODO]
+       ;; Padding Domain + Add Constraints
+       
+       ))))
+
+(defun schedule-padding-domain (schedule-node size)
+  "{S1[i] : 0 <= i <= 9} ==> {S1[i] : i <= i <= 9 + (9 mod size)}"
+  ;; [TODO] DomainのShape取得できるかも？(3+1, 2, 2, ...)
+  (let ((domain (schedule-get-root (schedule-node-get-schedule schedule-node))))
+    (print domain)
+    (print (isl::schedule-node-domain-get-domain domain))
+    (print (union-set-from-str "[m] -> { A[i, j] : 0 <= i <= (m + (m mod 4)) and 0 <= j <= 10}"))
+    
+    ))
+
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
   (assert (optrule-band opt))
-  (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
-         (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
-         (vband (schedule-node-get-child band-parent 0))
-         (vectorize-inner (isl::schedule-node-band-sink vband))
-         (directive (directive "VECTORIZE" (vectorize-width opt) depth NIL)) ;; Vectorized band should not touched!
-         (final-sched (schedule-node-insert-directive vectorize-inner vband directive)))
+  (let* (;;(depth (schedule-node-get-band-depth (optrule-band opt)))
+         ;; TILE+SINK+MARK(VECTORIZE)
+         (final-sched (schedule-node-band-tile-with-option (optrule-band opt) 8 :reminder-generation :padding))
+         (final-sched (isl::schedule-node-band-sink (schedule-node-get-child final-sched 0)))
+         
+         )
+    ;; Paddingが重複しないようにどうするか？
+    ;; paddingだけでいいのでは？
+    ;; BandのChildが使われてないからおかしい。
+    (print (optrule-band opt))
+    (print final-sched)
+    (print poly)
+   ; (setf final-sched 
+;;    (print (schedule-padding-domain (optrule-band opt) 4))
+    ;; [MEMO] 一度なるべく多くのことをISLで完結させるRefactorをした方がいい。
+    ;; - Coalesce
+    ;; - Reminder Creation
+    ;; - Safe Mark Assignment (Annotation?)
+    ;; [MEMO] SCALE_STRIDES=0?
+    ;; [MEMO] ANNOTATIONを使う？
+    ;; [MEMO] gidX, gidYをGPUで使いたい
+    ;; [MEMO] each_mark
+    ;; ASTGenerationも作り直す！！今日やりたい！
     (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
@@ -1685,9 +1751,16 @@ for (int i=0; i<32; i+=2)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
-;; [TODO]
+;; = [TODO] ========================================
 ;; - [ ] VECTORIZE
 ;;   - [ ] Float4/ArmNeon
 ;;   - [ ] TensorCore
 ;; - [ ] SplitReduce
 ;; - [ ] Smolify Search Space
+;; - [ ] Reschedule ==> KernelごとにEvaluate,
+;;   - [ ] PostFusion(Construct FlashAttention From Graph)
+;;   - [ ] 一回で全てのDimにParallelを付与する
+;; - [ ] ScheduleCache on DISK
+;;   - [ ] caten/aasm level, graph-eq impl
+;;   - [ ] For Symbolic ==> Insert GUARD (e.g.: A >= 1)
+;; ================================================

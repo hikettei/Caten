@@ -44,6 +44,10 @@
   (:give schedule-node)
   (:keep schedule))
 
+(define-isl-function schedule-node-domain-get-domain %isl-schedule-node-domain-get-domain
+  (:give union-set)
+  (:keep schedule-node))
+
 (define-isl-function schedule-node-graft-after %isl-schedule-node-graft-after
   (:give schedule-node)
   (:take schedule-node)
@@ -88,6 +92,11 @@
   (:give space)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-insert-guard %isl-schedule-node-insert-guard
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take set))
+
 (defun schedule-node-get-child (schedule-node n)
   (%make-schedule-node (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
 
@@ -129,6 +138,16 @@
   (:take union-set))
 
 (define-isl-function schedule-node-band-tile %isl-schedule-node-band-tile
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-mod %isl-schedule-node-band-mod
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-scale %isl-schedule-node-band-scale
   (:give schedule-node)
   (:take schedule-node)
   (:take multi-val))
