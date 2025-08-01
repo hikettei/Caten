@@ -1685,3 +1685,33 @@ for (int i=0; i<32; i+=2)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
+
+;; = [TODO] ========================================
+;; - [ ] VECTORIZE
+;;   - [ ] Float4/ArmNeon
+;;   - [ ] TensorCore
+;; - [ ] SplitReduce
+;; - [ ] Smolify Search Space
+;; - [ ] Reschedule ==> KernelごとにEvaluate,
+;;   - [ ] PostFusion(Construct FlashAttention From Graph)
+;;   - [ ] 一回で全てのDimにParallelを付与する
+;; - [ ] ScheduleCache on DISK
+;;   - [ ] caten/aasm level, graph-eq impl
+;;   - [ ] For Symbolic ==> Insert GUARD (e.g.: A >= 1)
+;; ================================================
+#|
+### Workload
+
+- [ ] Finish VECTORIZE
+  - [ ] float4
+    - [ ] Produce a reminder as ISL lvl?
+  - [ ] simd
+  - [ ] tensorcore
+- [ ] splitreudce
+- [ ] smol search space
+- [ ] symbolic
+- [ ] cache
+- [ ] ISL AST Generation is too slow? なるべく多くのことをISL Levelで実施したい。
+  - [ ] TileGPU
+  - [ ] Coalesce
+|#
