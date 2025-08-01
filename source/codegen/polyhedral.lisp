@@ -1685,3 +1685,9 @@ for (int i=0; i<32; i+=2)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
+;; [TODO]
+;; - [ ] VECTORIZE
+;;   - [ ] Float4/ArmNeon
+;;   - [ ] TensorCore
+;; - [ ] SplitReduce
+;; - [ ] Smolify Search Space
