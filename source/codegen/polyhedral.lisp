@@ -1415,20 +1415,7 @@ for (int i=0; i<32; i+=2)
           directive)))
       (schedule-node-insert-mark schedule-node (directive->id directive))))
 
-(defun simplex-full-tile-isolate-option (n size)
-  "
-Tile is an integer mapping: g(f(i)) where f(i) = {i - (i) mod 4}, g(i) = i mod 4
-where `i` is a domain node.
-N 次元 full-tile を isolate するオプション文字列を作る。
-例: (make-isolate-option 2 10 100) =>
-\"{ isolate[[] -> [a0,a1]] : 0 <= 10a0,10a1 and 10a0+9+10a1+9 <= 100 }\""
-  ;;  { isolate[[] -> [a,b,c,d]] : 0 <= 4a,4b and 10a+9+10b+9 <= 100 }
-  (print
-  (with-output-to-string (out)
-    (format out "{ isolate[[] -> [~{dim~a~^, ~}]] : " (caten/codegen/helpers:range 0 N))
-    (format out "0 <= ~{dim~a~^, ~} and " (caten/codegen/helpers:range 0 N))
-    (format out "dim0 <= 25 }"))))
-
+;; todo; create a util function for mutation partial schedule
 (defun schedule-node-band-tile-with-option (band size &key (reminder-generation :padding))
   "
 Maxmin:
@@ -1444,35 +1431,30 @@ Separete:
     (ecase reminder-generation
       (:maxmin (isl::schedule-node-band-tile band tile-size))
       (:padding
-       ;; [TODO]
-       ;; Padding Domain + Add Constraints
-       
-       ))))
-
-(defun schedule-padding-domain (schedule-node size)
-  "{S1[i] : 0 <= i <= 9} ==> {S1[i] : i <= i <= 9 + (9 mod size)}"
-  ;; [TODO] DomainのShape取得できるかも？(3+1, 2, 2, ...)
-  (let ((domain (schedule-get-root (schedule-node-get-schedule schedule-node))))
-    (print domain)
-    (print (isl::schedule-node-domain-get-domain domain))
-    (print (union-set-from-str "[m] -> { A[i, j] : 0 <= i <= (m + (m mod 4)) and 0 <= j <= 10}"))
-    
-    ))
+       (PRINT "+++P{ADDDEER+++")
+       ;; Interchange + PAD No Bug?
+       (print (schedule-node-get-domain band))
+       (print (isl::schedule-node-band-get-space band))
+       (print (isl::schedule-node-band-get-partial-schedule-union-map band))
+       (schedule-padding-domain band size)
+       (let* ((band (schedule-node-band-tile band tile-size)))
+         (setf band (isl::schedule-node-band-member-set-ast-loop-type band 0 :ast-loop-separate))
+         (setf band (isl::schedule-node-band-member-set-ast-loop-type band 1 :ast-loop-separate))
+         band)))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
   (assert (optrule-band opt))
   (let* (;;(depth (schedule-node-get-band-depth (optrule-band opt)))
          ;; TILE+SINK+MARK(VECTORIZE)
-         (final-sched (schedule-node-band-tile-with-option (optrule-band opt) 8 :reminder-generation :padding))
-         (final-sched (isl::schedule-node-band-sink (schedule-node-get-child final-sched 0)))
-         
+         (final-sched (schedule-node-band-tile-with-option (optrule-band opt) 7 :reminder-generation :padding))
+;;         (final-sched (isl::schedule-node-band-sink (schedule-node-get-child final-sched 0)))
          )
     ;; Paddingが重複しないようにどうするか？
     ;; paddingだけでいいのでは？
     ;; BandのChildが使われてないからおかしい。
-    (print (optrule-band opt))
-    (print final-sched)
-    (print poly)
+;    (print (optrule-band opt))
+;    (print final-sched)
+;    (print poly)
    ; (setf final-sched 
 ;;    (print (schedule-padding-domain (optrule-band opt) 4))
     ;; [MEMO] 一度なるべく多くのことをISLで完結させるRefactorをした方がいい。
@@ -1484,6 +1466,11 @@ Separete:
     ;; [MEMO] gidX, gidYをGPUで使いたい
     ;; [MEMO] each_mark
     ;; ASTGenerationも作り直す！！今日やりたい！
+    ;; [MEMO] 並列化
+    ;; [MEMO] FullTileSpace
+    ;;  ^ 上を最大化するScheduleを何零か求めてからExecution BEAM
+    ;; CPU => FullTile+IsolateTile
+    ;; GPU => IF
     (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
