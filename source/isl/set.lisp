@@ -59,4 +59,8 @@
   (:give set)
   (:take set)
   (:take identifier))
+
+(define-isl-function set-get-basic-set-list %isl-set-get-basic-set-list
+  (:give basic-set-list)
+  (:keep set))
   

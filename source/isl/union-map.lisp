@@ -131,3 +131,17 @@
 (define-isl-function union-map-is-empty %isl-union-map-is-empty
   (:give boolean)
   (:take union-map))
+
+(defun union-map-dim (umap type)
+  (%isl-union-map-dim (union-map-handle (copy umap)) type))
+
+(define-isl-function union-map-get-map-list %isl-union-map-get-map-list
+  (:give map-list)
+  (:keep union-map))
+
+(defun union-map-n-map (umap)
+  (%isl-union-map-n-map (union-map-handle umap)))
+
+(define-isl-function map-from-union-map %isl-map-from-union-map
+  (:give map)
+  (:take union-map))

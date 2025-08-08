@@ -1428,10 +1428,50 @@ for (int i=0; i<32; i+=2)
           directive)))
       (schedule-node-insert-mark schedule-node (directive->id directive))))
 
-(defun schedule-node-band-tile-with-options (band size)
-  ;; [TODO] 全てこれで集約
-  (let ((new-mupa (tile-partial-schedule (schedule-node-band-get-partial-schedule band) (tiling-size band size))))
-    (schedule-node-insert-partial-schedule band new-mupa)))
+(cffi:defcfun ("isl_map_domain_tuple_dim" %isl-map-domain-tuple-dim) :int (x :pointer))
+(cffi:defcfun ("isl_set_tuple_dim" %isl-set-tuple-dim) :int (x :pointer))
+(cffi:defcfun ("isl_set_dim_max_val" %isl-set-dim-max-val) :pointer (x :pointer)  (pos :int))
+
+(defvar *domain-maxima-results*)
+(cffi:defcallback extract-domain-maxima-bset-cb :int
+    ((bset :pointer) (user :pointer))
+  (let ((set (isl::%isl-set-from-basic-set bset))) ;; todo: check memory leak
+    (dotimes (pos (cffi:mem-ref user :int))
+      (let ((cpy (isl::%isl-set-copy set))
+            (dname (isl::%isl-basic-set-get-dim-name bset :dim-set pos)))
+        (setf (gethash dname *domain-maxima-results*)
+              (isl::%make-value (%isl-set-dim-max-val cpy pos))))))
+  0)
+
+(cffi:defcallback extract-domain-maxima-map-cb :int
+    ((map :pointer) (user :pointer))
+  (declare (ignore user))
+  (cffi:with-foreign-objects ((size :int))
+    (setf (cffi:mem-aref size :int) (%isl-map-domain-tuple-dim map))
+    (isl::%isl-set-foreach-basic-set (isl::%isl-map-wrap map) (cffi:callback extract-domain-maxima-bset-cb) size))
+  0)
+
+(defun extract-domain-maxima (umap)
+  "Return an alist mapping each map index to a vector of max values per dimension."
+  (let ((*domain-maxima-results* (make-hash-table :test 'equal)))
+    (isl::%isl-union-map-foreach-map (isl::union-map-handle umap) (cffi:callback extract-domain-maxima-map-cb) (cffi:null-pointer))
+    *domain-maxima-results*))
+
+(defun schedule-node-band-tile-with-options (band size &key (strategy :isolate) (directive))
+  (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
+    (ecase strategy
+      (:isolate
+       ;; union_map -> basic_set -> constraint
+       (let* ((sched-domain-umap (isl::schedule-node-get-prefix-schedule-relation tiled))
+              (maxima-bounds (extract-domain-maxima sched-domain-umap)))
+         (print tiled)
+         (print (alexandria:hash-table-keys maxima-bounds))
+         tiled
+         ))
+      (:padding
+       )
+      (:atomic
+       ))))
 
 (defun add-extent-constraints (set width)
   (declare (type isl::set set) (type fixnum width))
@@ -1482,15 +1522,12 @@ for (int i=0; i<32; i+=2)
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
   (assert (optrule-band opt))
-  (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
-         (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
-         (band-parent (isolate-full-tile band-parent (vectorize-width opt)))
-         (vband (schedule-node-get-child band-parent 0))
-         (vband (schedule-node-band-set-ast-build-options vband (union-set-from-str "{ unroll[x] : 1 = 0 }")))
-         (vectorize-inner (isl::schedule-node-band-sink vband))
-         (directive (directive "VECTORIZE" (vectorize-width opt) depth NIL)) ;; Vectorized band should not touched!
-         (final-sched vectorize-inner));(schedule-node-insert-directive vectorize-inner vband directive)))
-    (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
+  (let* ((vectorized (schedule-node-band-tile-with-options (optrule-band opt) (vectorize-width opt)
+                                                           :strategy :isolate))
+         (sunk (isl::schedule-node-band-sink (schedule-node-get-child vectorized 0))))
+    (print sunk)
+     
+    (setf (poly-schedule poly) (schedule-node-get-schedule sunk))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
 
@@ -1794,24 +1831,99 @@ for (int i=0; i<32; i+=2)
 
 |#
 
+(defparameter *sched*
+  "
+domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
+child:
+  schedule: \"[{ NID41157[i, j, kk] -> [(i)]; NID41178[i, j] -> [(i)]; NID41137[i, j] -> [(i)] }, { NID41157[i, j, kk] -> [(j)]; NID41178[i, j] -> [(j)]; NID41137[i, j] -> [(j)] }]\"
+  permutable: 1
+  coincident: [ 1, 1 ]
+  child:
+    sequence:
+    - filter: \"{ NID41157[i, j, kk]; NID41137[i, j] }\"
+      child:
+        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
+        permutable: 1
+        options: \"{ [isolate[] -> [k,k1]] : k+k1>= 5 }\"
+        child:
+          sequence:
+          - filter: \"{ NID41137[i, j] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+          - filter: \"{ NID41157[i, j, kk] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+    - filter: \"{ NID41178[i, j] }\"
+")
 
 (defparameter *sched*
   "
-domain: \"{ NID152076[_gid0] : 0 <= _gid0 <= 9999 }\"
+domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
 child:
-  schedule: \"[{ NID152076[_gid0] -> [(_gid0 - (_gid0) mod 3)] }, { NID152076[_gid0] -> [((_gid0) mod 3)] }]] \"
-  options: \" { isolate[[] -> [a,b]] : a,b >= 0 and a<=9993 }\"
+  schedule: \"[{ NID41157[i, j, kk] -> [(i)]; NID41178[i, j] -> [(i)]; NID41137[i, j] -> [(i)] }, { NID41157[i, j, kk] -> [(j)]; NID41178[i, j] -> [(j)]; NID41137[i, j] -> [(j)] }]\"
+  permutable: 1
+  coincident: [ 1, 1 ]
+  child:
+    sequence:
+    - filter: \"{ NID41157[i, j, kk]; NID41137[i, j] }\"
+      child:
+        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
+        permutable: 1
+        options: \"{ [isolate[] -> [k]] : k>= 5 }\"
+        child:
+          sequence:
+          - filter: \"{ NID41137[i, j] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+          - filter: \"{ NID41157[i, j, kk] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+    - filter: \"{ NID41178[i, j] }\"
 ")
 
+(defparameter *sched*
+  "
+domain: \" { NID153174[_gid0] : 0 <= _gid0 <= 10000 }\"
+child:
+  schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
+  options: \" { isolate[[] -> [i]] : floord(i, 3)*3 + 3 <= 10000 }\"
+  child:
+    schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
+")
+       
 (defparameter *sched*
   "
 domain: \" [M] -> { NID153174[_gid0] : 0 <= _gid0 <= M }\"
 child:
   schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
-  options: \" [M] -> { isolate[[] -> [i]] : i <= (M - 3 * (M mod 3)) and i >= 0}\"
+  options: \" [M] -> { unroll[2] }\"
   child:
     schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
 ")
+
+(defparameter *sched* "
+domain: \"{ NID1494[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID1474[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID1515[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
+child:
+  schedule: \"[{ NID1494[i, j, kk] -> [(i)]; NID1474[i, j] -> [(i)]; NID1515[i, j] -> [(i)] }, { NID1494[i, j, kk] -> [(j)]; NID1474[i, j] -> [(j)]; NID1515[i, j] -> [(j)] }]\"
+  permutable: 1
+  coincident: [ 1, 1 ]
+  child:
+    sequence:
+    - filter: \"{ NID1494[i, j, kk]; NID1474[i, j] }\"
+      child:
+        schedule: \"[{ NID1494[i, j, kk] -> [(kk)]; NID1474[i, j] -> [(0)] }]\"
+        options: \"{ [isolate[] -> [k]] : k >= 1 }\"
+        permutable: 1
+        child:
+          sequence:
+          - filter: \"{ NID1474[i, j] }\"
+          - filter: \"{ NID1494[i, j, kk] }\"
+          - filter: \"{ NID1515[i, j] }\"
+          ")
 
 (defun ->str (sched)
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
@@ -1821,4 +1933,4 @@ child:
          (str   (isl::%isl-printer-get-str q)))
     str))
 
-(print (->str (isl::schedule-read-from-str *sched*)))
+(defun test () (->str (print (isl::schedule-read-from-str *sched*))))
