@@ -43,3 +43,11 @@
   (:keep dim-type)
   (:keep integer position)
   (:take value value))
+
+(defun set-constant-si (constraint v)
+  (%make-equality-constraint (%isl-constraint-set-constant-si (constraint-handle (copy constraint)) v)))
+
+(defun set-coefficient-si (constraint type pos v)
+  (%make-equality-constraint (%isl-constraint-set-coefficient-si (constraint-handle (copy constraint)) type pos v)))
+
+

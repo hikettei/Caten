@@ -172,3 +172,7 @@
 (defun schedule-node-is-equal (band1 band2)
   (declare (type schedule-node band1 band2))
   (%isl-schedule-node-is-equal (schedule-node-handle band1) (schedule-node-handle band2)))
+
+(define-isl-function schedule-node-get-prefix-schedule-relation %isl-schedule-node-get-prefix-schedule-relation
+  (:give union-map)
+  (:keep schedule-node))

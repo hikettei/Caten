@@ -34,3 +34,29 @@
 
 (defun set-dim-max (set dim)
   (%make-set (%isl-set-dim-max (set-handle (copy set)) dim)))
+
+(defun set-dim (set type)
+  (%isl-set-dim (set-handle set) type))
+
+(defun set-project-out (set type first n)
+  (%make-set (%isl-set-project-out (set-handle (copy set)) type first n)))
+
+(define-isl-function set-subtract %isl-set-subtract
+  (:give set)
+  (:take set)
+  (:take set))
+
+(define-isl-function set-add-constraint %isl-set-add-constraint
+  (:give set)
+  (:take set)
+  (:take constraint))
+
+(defun set-drop-constraints-involving-dims (set type first n)
+  (%make-set
+   (%isl-set-drop-constraints-involving-dims (set-handle (copy set)) type first n)))
+
+(define-isl-function set-set-tuple-id %isl-set-set-tuple-id
+  (:give set)
+  (:take set)
+  (:take identifier))
+  

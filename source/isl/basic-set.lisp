@@ -26,3 +26,7 @@
   (:give basic-set)
   (:take basic-set)
   (:take constraint))
+
+(defun basic-set-drop-constraints-involving-dims (basic-set type first n)
+  (%make-basic-set
+   (%isl-basic-set-drop-constraints-involving-dims (basic-set-handle (copy basic-set)) type first n)))

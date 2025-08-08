@@ -20,3 +20,22 @@
 (define-isl-function basic-map-map %isl-map-from-basic-map
   (:give map)
   (:take basic-map))
+
+(define-isl-function map-from-union-map %isl-map-from-union-map
+  (:give map)
+  (:take union-map))
+
+(define-isl-function map-from-domain %isl-map-from-domain
+  (:give map)
+  (:take set))
+
+(define-isl-function map-range %isl-map-range
+  (:give set)
+  (:take map))
+
+(defun map-move-dims (map dst-type dst-pos src-type src-pos n)
+  (%make-map (%isl-map-move-dims (map-handle (copy map)) dst-type dst-pos src-type src-pos n)))
+
+(define-isl-function map-wrap %isl-map-wrap
+  (:give set)
+  (:take map))

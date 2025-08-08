@@ -193,6 +193,18 @@
   (isl::%%make-schedule
    (isl::%isl-schedule-map-schedule-node-bottom-up (isl::schedule-handle schedule) (cffi:callback apply-set-separate-loop) (cffi:null-pointer))))
 
+;; before -> just used to add annotation
+;; after -> used to transform loops
+
+(cffi:defcallback isl-on-ast-build :pointer
+    ((node :pointer) (ast-build :pointer))
+  (print "++++++++++")
+  (print (isl::%%make-ast-node node))
+  (print (isl::%%make-ast-build ast-build))
+  (print (isl::%%make-space (isl::%isl-ast-build-get-schedule-space ast-build)))
+  (print (isl::%%make-union-map (isl::%isl-ast-build-get-schedule ast-build)))
+  node)
+
 (defun ->ast (schedule rank)
   (macrolet ((set-option (name level)
 	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
@@ -201,6 +213,7 @@
 				 :void)))
     (set-option "ast_build_atomic_upper_bound" 1)
     (set-option "ast_build_detect_min_max" 1)
+    (set-option "ast_build_separation_bounds" 0)
     (set-option "ast_build_exploit_nested_bounds" 1)
     (set-option "ast_build_prefer_pdiv" 0)
     (set-option "ast_build_scale_strides" 1)
@@ -210,7 +223,12 @@
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
+         ;; Added to transform partial tile
+;;         (ast-build (isl::%make-ast-build (isl::%isl-ast-build-set-after-each-for (isl::ast-build-handle ast-build) (cffi:callback isl-on-ast-build) (cffi:null-pointer))))
+         ;; Added to set annotation
+         ;; (ast-build (isl::%make-ast-build (isl::%isl-ast-build-set-before-each-for (isl::ast-build-handle ast-build) (cffi:callback some) (cffi:null-pointer))))
+         
+         (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
 (defmethod pg-dump-into-str ((pg Polyhedral-IR))
@@ -1409,15 +1427,69 @@ for (int i=0; i<32; i+=2)
           (cffi:callback isl-insert-mark-to-filter)
           directive)))
       (schedule-node-insert-mark schedule-node (directive->id directive))))
- 
+
+(defun schedule-node-band-tile-with-options (band size)
+  ;; [TODO] 全てこれで集約
+  (let ((new-mupa (tile-partial-schedule (schedule-node-band-get-partial-schedule band) (tiling-size band size))))
+    (schedule-node-insert-partial-schedule band new-mupa)))
+
+(defun add-extent-constraints (set width)
+  (declare (type isl::set set) (type fixnum width))
+  (let* ((dims (isl::set-dim set :dim-set))
+         (space (isl::set-get-space set))
+         (local-space (isl::local-space-from-space space))
+         (extconstr (make-equality-constraint local-space))
+         (extconstr (isl::set-constant-si extconstr 0))
+         (extconstr (isl::set-coefficient-si extconstr :dim-set (1- dims) 1))
+         (set (isl::set-add-constraint set extconstr))
+         (extconstr (make-equality-constraint local-space))
+         (extconstr (isl::set-constant-si extconstr (1- width)))
+         (extconstr (isl::set-coefficient-si extconstr :dim-set (1- dims) -1)))
+    (isl::set-add-constraint set extconstr)))
+
+(defun get-partial-tile-prefixes (range width)
+  (let* ((dims (isl::set-dim range :dim-set))
+         (lpref (isl::set-drop-constraints-involving-dims range :dim-set (1- dims) 1))
+         (extent-prefixes (add-extent-constraints lpref width))
+         (bad-prefixes (isl::set-subtract extent-prefixes range))
+         (bad-prefixes (isl::set-project-out bad-prefixes :dim-set (1- dims) 1))
+         (lpref (isl::set-project-out lpref :dim-set (1- dims) 1)))
+    (isl::set-subtract lpref bad-prefixes)))
+
+(defun get-dim-options (option)
+  (let ((space (set-universe (create-space-set 0 1))))
+    (union-set-from-set (isl::set-set-tuple-id space (isl::make-id-from-str option)))))
+
+(defun get-isolate-options (domain val)
+  (let* ((dims (isl::set-dim domain :dim-set))
+         (isolate-rel (isl::map-from-domain domain))
+         (isolate-rel (isl::map-move-dims isolate-rel :dim-out 0 :dim-in (- dims val) val))
+         (isolate-option (isl::map-wrap isolate-rel)))
+    (union-set-from-set (isl::set-set-tuple-id isolate-option (isl::make-id-from-str "isolate")))))
+
+(defun isolate-full-tile (band width)
+  (let* ((child (schedule-node-get-child (schedule-node-get-child band 0) 0))
+         (sched-rel-umap (isl::schedule-node-get-prefix-schedule-relation child))
+         (sched-rel (isl::map-from-union-map sched-rel-umap))
+         (range (isl::map-range sched-rel))
+         (isolate-domain (get-partial-tile-prefixes range width))
+         (isolate-option (get-isolate-options isolate-domain 1))
+         (atomic-option  (get-dim-options "separate"))
+         (node (isl::schedule-node-parent (isl::schedule-node-parent child))))
+    (setf node (isl::schedule-node-band-member-set-ast-loop-type node 0 :ast-loop-atomic))
+    (print node)
+    (print (schedule-node-band-set-ast-build-options node (print (union-set-union isolate-option atomic-option))))))
+
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
   (assert (optrule-band opt))
   (let* ((depth (schedule-node-get-band-depth (optrule-band opt)))
          (band-parent (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (vectorize-width opt))))
+         (band-parent (isolate-full-tile band-parent (vectorize-width opt)))
          (vband (schedule-node-get-child band-parent 0))
+         (vband (schedule-node-band-set-ast-build-options vband (union-set-from-str "{ unroll[x] : 1 = 0 }")))
          (vectorize-inner (isl::schedule-node-band-sink vband))
          (directive (directive "VECTORIZE" (vectorize-width opt) depth NIL)) ;; Vectorized band should not touched!
-         (final-sched (schedule-node-insert-directive vectorize-inner vband directive)))
+         (final-sched vectorize-inner));(schedule-node-insert-directive vectorize-inner vband directive)))
     (setf (poly-schedule poly) (schedule-node-get-schedule final-sched))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
@@ -1685,8 +1757,12 @@ for (int i=0; i<32; i+=2)
                   do (uiop:symbol-call :caten/codegen/jit :register-autotune-node extra-arg))
             ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
             t))))))
-
-;; = [TODO] ========================================
+;; = [TODO] =========================================
+;; - [ ] 一度全部Polyhedral IRで実施できるように再度検討する。===> Minimize the exploration space
+;;   - [ ] Isolate Tile Generation
+;;   - [ ] Mark+Interchange
+;;   - [ ] Distribute Reduction!
+;;   - [ ] Softmaxの内側のLoopって同一のDomainとしていいのだろうか？
 ;; - [ ] VECTORIZE
 ;;   - [ ] Float4/ArmNeon
 ;;   - [ ] TensorCore
@@ -1698,6 +1774,7 @@ for (int i=0; i<32; i+=2)
 ;; - [ ] ScheduleCache on DISK
 ;;   - [ ] caten/aasm level, graph-eq impl
 ;;   - [ ] For Symbolic ==> Insert GUARD (e.g.: A >= 1)
+;;   - [ ] Reschedule Split the kernel ==> Kernel itemごとにBenchmarkをする
 ;; ================================================
 #|
 ### Workload
@@ -1714,4 +1791,34 @@ for (int i=0; i<32; i+=2)
 - [ ] ISL AST Generation is too slow? なるべく多くのことをISL Levelで実施したい。
   - [ ] TileGPU
   - [ ] Coalesce
+
 |#
+
+
+(defparameter *sched*
+  "
+domain: \"{ NID152076[_gid0] : 0 <= _gid0 <= 9999 }\"
+child:
+  schedule: \"[{ NID152076[_gid0] -> [(_gid0 - (_gid0) mod 3)] }, { NID152076[_gid0] -> [((_gid0) mod 3)] }]] \"
+  options: \" { isolate[[] -> [a,b]] : a,b >= 0 and a<=9993 }\"
+")
+
+(defparameter *sched*
+  "
+domain: \"{ NID153174[_gid0] : 0 <= _gid0 <= 9999 }\"
+child:
+  schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
+  options: \"{ isolate[[] -> [i]] : i >= 0 and i <= 9993 }\"
+  child:
+    schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
+")
+
+(defun ->str (sched)
+  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (ast   (->ast sched 0))
+         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+         (str   (isl::%isl-printer-get-str q)))
+    str))
+
+(print (->str (isl::schedule-read-from-str *sched*)))
