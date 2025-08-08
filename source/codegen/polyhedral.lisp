@@ -1805,10 +1805,10 @@ child:
 
 (defparameter *sched*
   "
-domain: \"{ NID153174[_gid0] : 0 <= _gid0 <= 9999 }\"
+domain: \" [M] -> { NID153174[_gid0] : 0 <= _gid0 <= M }\"
 child:
   schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
-  options: \"{ isolate[[] -> [i]] : i >= 0 and i <= 9993 }\"
+  options: \" [M] -> { isolate[[] -> [i]] : i <= (M - 3 * (M mod 3)) and i >= 0}\"
   child:
     schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
 ")
