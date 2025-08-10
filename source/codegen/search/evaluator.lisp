@@ -3,23 +3,48 @@
   (:use :cl :caten/codegen/search/polyhedral)
   (:export
    #:Evaluator
+   #:DeviceMeasurer
+
+   #:evaluate-polyhedral
    ))
 
 (in-package :caten/codegen/search/evaluator)
 
 (defclass Evaluator ()
   nil)
-;; [TODO] というかこれは丸ごとCommonにする。
-(defclass Device-Measurer (Evaluator)
+
+(defclass Random-Forest () nil)
+
+(defclass Proximity () nil)
+
+;; [TODO] というかこれは丸ごとCommonにしてDISKへ保存する。
+(defclass DeviceMeasurer (Evaluator)
   ((runtime :initarg :runtime)
    (cache :initform (make-hash-table :test 'equal))))
 
 (defgeneric evaluate-polyhedral (psi evaluator blueprint))
 
 (defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Evaluator) blueprint)
-  ;; Modify psi-evaluation
-  ;; これは，Splitしたカーネルごとに文字列 vs 実行時間のHashTableを作るようにする
+  "
+MeasurerWorkflow
+```
+   [Input: Polyhedral, Blueprint]
+              |
+   ForEach [Kernel] in codegen(polyhedral, blueprint):
+              |
+   <IF: EntryIsInCache> ---> [Return previous result]
+              |
+          [Profile]
+              |
+         [StoreInCache]
+```
+"
+  ;; TODO
+  ;; - [ ] Finish ASTGen
+  ;; - [ ] BEAM Cache Systemを構築する
   )
+
+(defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Proximity) blueprint))
 ;; [TODO]
 ;; - 前回とのDiffを計測して，差分が0ならSKIP
 ;; - RandomForest, Compile+Runをサポート
