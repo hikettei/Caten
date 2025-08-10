@@ -9,9 +9,16 @@
 
 (defclass Evaluator ()
   nil)
+;; [TODO] というかこれは丸ごとCommonにする。
+(defclass Device-Measurer (Evaluator)
+  ((runtime :initarg :runtime)
+   (cache :initform (make-hash-table :test 'equal))))
+
+(defgeneric evaluate-polyhedral (psi evaluator blueprint))
 
 (defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Evaluator) blueprint)
   ;; Modify psi-evaluation
+  ;; これは，Splitしたカーネルごとに文字列 vs 実行時間のHashTableを作るようにする
   )
 ;; [TODO]
 ;; - 前回とのDiffを計測して，差分が0ならSKIP

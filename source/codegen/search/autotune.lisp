@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/search/autotune
-  (:use :cl :caten/air :caten/codegen/search/polyhedral)
+  (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc)
   (:export
    #:online-autotune-kernel
    ))
@@ -16,7 +16,7 @@ its children {θ₁,θ₂,…} formed by one-step transformations constitute one
 (generation) of this tree. The class stores the current frontier to be scored,
 pruned (Top-k), and expanded to produce the next generation."))
 
-(defun sgt-add-evaluations (sgt evaluator)
+(defun sgt-add-evaluations (sgt evaluator blueprint)
   "Attach evaluation scores to the current generation."
   (declare (type Schedule-Generation-Tree sgt))
   (mapc #'(lambda (x) ) (sgt-items sgt)))
@@ -39,7 +39,10 @@ pruned (Top-k), and expanded to produce the next generation."))
 (defun setup-autotune ()
   (values
    (ctx:getenv :BEAM)
-   (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)))
+   (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)
+   ;; evaluator1
+   ;; evaluator2
+   ))
 
 ;; - GraphScheduleの時点で，なるべく超デカくグラフを持っておく(あくまでAutoTuneの計算量が膨大になるのを防ぐための)
 ;; - OnlineAutotuneKernelはめちゃめちゃでかい関数をFissionできる
@@ -58,14 +61,15 @@ BEAM Search Workflow:
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
   (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
-  (multiple-value-bind (beam-width threshold) (setup-autotune)
+  (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune)
     (caten/isl::with-isl-context
       ;; - BEAM Search With Early Pruning
       ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
       ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
-      (let* (;;(root (make-polyhedral-from-blueprint nil))
+      (let* ((blueprint (kernel-blueprint (getattr node :kernel-info)))
+             (root (make-polyhedral-schedule-item blueprint))
              (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-        (sgt-add-evaluations gen0 0)
+        (sgt-add-evaluations gen0 cost1 blueprint)
         (sgt-prune-topk gen0 3)
         (print (sgt-make-nextgen gen0))
 

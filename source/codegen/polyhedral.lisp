@@ -139,33 +139,6 @@
 (defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t :identity t)
     (format stream "~%~a~%  :history ~a" (pg-dump-into-str pg) (poly-cmd-history pg))))
-
-
-(defun make-polyhedral-from-blueprint (blueprint &key (strategy))
-  "Constructs Polyhedral IR from blueprint which is a static graph.
-```
-DependencyGraph, θ_0 = MakePolyhedralFromBlueprint(blueprint)
-```
-   The blueprint should be a FastGraph containing nodes with the following types:
-   - :RANGE - defines loop bounds
-   - :FOR - marks loop entry with :mark attribute (:coincident, :reduction, :noopt)
-   - :AREF - memory load operations
-   - :SETF - memory store operations
-   - :PROGN - sequence of operations
-   
-   Returns a Polyhedral-IR object."
-  (declare (type Graph blueprint))
-  ;; Extract domain, reads, writes
-  ;; [TODO] Handler-case-bind and add a warning
-  (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
-         (domain (union-set-from-str (render-domains ctx blueprint)))
-         (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
-         (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
-    (handler-case (setf reads (union-map-from-str (car reads/writes))
-                        writes (union-map-from-str (cdr reads/writes)))
-      (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
-Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
-    (make-polyhedral-ir blueprint domain reads writes schedule ctx strategy)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;;; Polyhedral -> Blueprint
 (defstruct (parse-ctx
