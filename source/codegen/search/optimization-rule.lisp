@@ -194,5 +194,8 @@ options; typically used to seed candidate schedules at the start of search."))
 ;; [TODO]
 ;; - [ ] Coalesce on ScheduleTree Level
 ;; - [ ] Fuse/Shift/Stencil(Skewing)
+;; - [ ] Transpose
+;;   - [ ] stride=1であることのCostFunction
 ;; - [ ] FuseWithParent
 ;; - [ ] Beautiful MultiKernel Separation, Directive Exploration,
+;; - [ ] NoOptなBand --> check-legality-parallelで自動でcoincident付与する？
