@@ -972,52 +972,6 @@ if (not ensure_domain_is_right)
 ;; - [x] Parallel    Coalesce+Tile+Parallel
 ;; - [x] Vectorize   Tile+Sink, later mapped w/ TensorCore
 ;; - [x] SplitReduce Tile+Sink, this is the optimization for reduction and it has two mode: :warp and :block
-(defclass NoOpt (OptimizationRule) nil)
-(defmethod optrule-generate-search-space (poly bands (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
-(defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
-
-(defclass Reschedule (OptimizationRule)
-  ((outer-coincidence :initarg :outer-coincidence :initform 0)
-   (maximize-coincidence :initarg :maximize-coincidence :initform 0)
-   (treat-coalescing :initarg :treat-coalescing :initform 0)
-   (maximize-band-depth :initarg :maximize-band-depth :initform 0)
-   (schedule-whole-component :initarg :schedule-whole-component :initform 0)
-   (serialize-sccs :initarg :serialize-sccs :initform 0)
-   (max-coefficient :initarg :max-coefficient :initform 1) ;; always set to 1 to keep simplicy!
-   (max-constant-term :initarg :max-constant-term :initform 0))) ;; always set to 0 to keep simplicity!
-
-(defmethod optrule-generate-search-space (poly bands (id (eql :Reschedule)))
-  ;; Reschedule can be placed on the top of scheduling commands.
-  (when (null (some #'(lambda (x) (typep x 'Reschedule)) (poly-cmd-history poly)))
-    (list
-     ;; [TODO] Isn't there more to search configurations?
-     ;; [TODO] proximity/validity/coincidence, what is constraints?
-     ;; [TODO] More Patterns!
-     (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
-     (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
-     (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0))))
-
-(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
-  (macrolet ((set-option (name slot)
-	       `(cffi:foreign-funcall
-                 ,(format nil "isl_options_set_~(~a~)" name)
-                 :pointer (isl::context-handle isl::*context*)
-                 :int (slot-value optrule ',slot)
-		 :void)))
-    (set-option "schedule_serialize_sccs" serialize-sccs)
-    (set-option "schedule_max_constant_term" max-constant-term)
-    (set-option "schedule_max_coefficient" max-coefficient)
-    (set-option "schedule_outer_coincidence" outer-coincidence)
-    (set-option "schedule_maximize_coincidence" maximize-coincidence)
-    (set-option "schedule_treat_coalescing" treat-coalescing)
-    (set-option "schedule_maximize_band_depth" maximize-band-depth)
-    (set-option "schedule_whole_component" schedule-whole-component))
-  (setf (poly-schedule poly) (schedule-constraints-compute-schedule (poly-make-schedule-constraints poly))))
-
-(defun schedule-node-get-band-depth (band) (space-dim (schedule-node-band-get-space band) 3))
-
 
 (defun schedule-get-roots (schedule)
   (declare (type isl::schedule schedule))
@@ -1054,10 +1008,6 @@ if (not ensure_domain_is_right)
                         collect (make-instance 'Interchange :axis axis :band band :order perm :nth nth-kernel)))))
 
 
-(defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
-  (setf (poly-schedule poly)
-        (schedule-node-get-schedule (schedule-node-band-permute (optrule-band opt) (interchange-order opt)))))
-
 (defclass Tile (OptimizationRule)
   ((size :initarg :size :accessor tile-size)
    (sink :initarg :sink :accessor tile-sink :initform nil)))
@@ -1073,13 +1023,6 @@ if (not ensure_domain_is_right)
                (make-instance 'Tile :size size :band band :axis nth)
                (make-instance 'Tile :size size :band band :axis nth :sink t)))))
                
-(defmethod optrule-apply-transform-on-polyhedral (poly (opt Tile))
-  (setf
-   (poly-schedule poly)
-   (schedule-node-get-schedule
-    (funcall
-     (if (tile-sink opt) #'isl::schedule-node-band-sink #'identity)
-     (schedule-node-band-tile (optrule-band opt) (tiling-size (optrule-band opt) (tile-size opt)))))))
 
 (defclass TileGPU (OptimizationRule)
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)

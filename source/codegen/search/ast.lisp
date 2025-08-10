@@ -3,8 +3,9 @@
   (:export
    ))
 (in-package :caten/codegen/search/ast)
-
-;; [todo]
+;; [todo] utilize annotation
+;; [todo] coalesce on ast generation lvl
+;; [todo] coalesce => domain, filterなど全て書き換えることで実装できる？
 (defun ->ast (schedule &key (rank 0))
   (macrolet ((set-option (name level)
 	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name) :pointer (isl::context-handle isl::*context*) :int ,level  :void)))

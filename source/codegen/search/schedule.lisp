@@ -403,6 +403,7 @@ named dimensions are considered."
         (when hit
           (setf acc (if acc (isl::union-set-union acc (isl::union-set-from-set s)) (isl::union-set-from-set s))))))
     (or acc (isl::union-set-empty (isl::union-set-get-space uset)))))
+
 (defun tiling-size (band size)
   "Construct a uniform tiling width vector in the band space.
 Inputs:
