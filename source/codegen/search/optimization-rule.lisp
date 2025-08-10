@@ -8,8 +8,10 @@ Default Search Space (Hackable by users for different BYOC)
 - [x] Parallel    Coalesce+Tile+Parallel
 - [x] Vectorize   Tile+Sink, later mapped w/ TensorCore
 - [x] SplitReduce Tile+Sink, this is the optimization for reduction and it has two mode: :warp and :block
+TODO:
+- [ ] FUSE
 ")
-  (:use :cl)
+  (:use :cl :caten/codegen/search/polyhedral)
   (:export
 
    ))
@@ -34,3 +36,22 @@ Default Search Space (Hackable by users for different BYOC)
 (defgeneric optrule-apply-transform-on-blueprint (directive-id bands blueprint)
   (:documentation "A callback for making a transformation to blueprint named as directive-id"))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Reschedule (OptimizationRule)
+  ((outer-coincidence :initarg :outer-coincidence :initform 0)
+   (maximize-coincidence :initarg :maximize-coincidence :initform 0)
+   (treat-coalescing :initarg :treat-coalescing :initform 0)
+   (maximize-band-depth :initarg :maximize-band-depth :initform 0)
+   (schedule-whole-component :initarg :schedule-whole-component :initform 0)
+   (serialize-sccs :initarg :serialize-sccs :initform 0)
+   (max-coefficient :initarg :max-coefficient :initform 1) ;; always set to 1 to keep simplicy!
+   (max-constant-term :initarg :max-constant-term :initform 0)) ;; always set to 0 to keep simplicity!
+  (:documentation "Reschedule: Solves ILP Problem with various cost functions to generate multiple schedule candidates to start with."))
+
+(defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
+  ;; Reschedule can be placed on the top of scheduling commands.
+  (list
+   (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
+   (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
+   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+   (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)))

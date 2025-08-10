@@ -81,51 +81,14 @@
    (strategy :accessor poly-strategy :initarg :strategy)
    (bp-cache :accessor poly-bp-cache :initarg :bp-cache :initform nil)))
 
-(defun make-polyhedral-ir (blueprint domain read write schedule ctx strategy)
-  (let ((pg (make-instance 'Polyhedral-IR :ctx ctx :schedule schedule :domain domain :blueprint blueprint :strategy strategy)))
-    (let* ((access (union-access-info-from-sink read))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-schedule access schedule))
-           (flow (union-access-info-compute-flow access))
-           (RaW (union-flow-get-must-dependence flow))
-           (access (union-access-info-from-sink write))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-may-source access read))
-           (access (union-access-info-set-schedule access schedule))
-           (flow   (union-access-info-compute-flow access))
-           (WaW    (union-flow-get-must-dependence flow))
-           (WaR    (union-flow-get-may-dependence flow))
-           (dependencies (union-map-union (union-map-union WaR RaW) WaW)))
-      (setf (poly-dependencies pg) dependencies)
-      pg)))
 
 (defmethod poly-clone-for-next-generation ((pg Polyhedral-IR))
   (make-instance 'Polyhedral-IR :schedule (copy (poly-schedule pg)) :history (copy-list (poly-cmd-history pg)) :dependencies (poly-dependencies pg) :domain (poly-domain pg) :blueprint (poly-blueprint pg) :ctx (poly-ctx pg) :last-evaluation (poly-last-evaluation pg) :strategy (poly-strategy pg) :stage (poly-stage pg) :bp-cache (poly-bp-cache pg) :extra-allocs (poly-extra-allocs pg)))
-
-(defmethod poly-make-schedule-constraints ((pg Polyhedral-IR))
-  (let* ((sc (schedule-constraints-on-domain (poly-domain pg)))
-         (sc (schedule-constraints-set-coincidence sc (poly-dependencies pg)))
-         (sc (schedule-constraints-set-validity sc (poly-dependencies pg)))
-         (sc (schedule-constraints-set-proximity sc (poly-dependencies pg))))
-    sc))
 
 (defmethod poly-get-rank ((pg Polyhedral-IR))
   (count :RANGE (graph-nodes (poly-blueprint pg)) :key #'node-type))
 
 (defun gid (n) (intern (format nil "_gid_p~a" n)))
-
-(cffi:defcallback apply-set-separate-loop :pointer
-    ((schedule-node :pointer) (user :pointer))
-  (declare (ignore user))
-  (if (eql (isl::%isl-schedule-node-get-type schedule-node) :schedule-node-band)
-      (let ((n (isl::%isl-schedule-node-band-n-member schedule-node)))
-        (dotimes (i n) (setf schedule-node (isl::%isl-schedule-node-band-member-set-ast-loop-type schedule-node i 1)))
-        schedule-node)
-      schedule-node))
-
-(defun schedule-set-separate (schedule)
-  (isl::%%make-schedule
-   (isl::%isl-schedule-map-schedule-node-bottom-up (isl::schedule-handle schedule) (cffi:callback apply-set-separate-loop) (cffi:null-pointer))))
 
 ;; before -> just used to add annotation
 ;; after -> used to transform loops
@@ -997,48 +960,6 @@ if (not ensure_domain_is_right)
   (declare (type isl::schedule-node schedule-node) (type fixnum idx))
   (nth idx (schedule-node-get-undernearth-bands schedule-node)))
 
-(defun get-zeros-on-union-set (delta-uset)
-  (declare (type isl::union-set delta-uset))
-  (let* ((delta-set (set-from-union-set delta-uset))
-         (ma (multi-aff-zero (set-get-space delta-set))))
-    (union-set-from-set (set-from-multi-aff ma))))
-
-(defun check-legality-parallel (node dep)
-  "
-```
-(check-legality-parallel node dep)
-```
-Returns T if the band node is legal to be parallelized with respect to the dep.
-Reference: https://github.com/hikettei/tadashi/blob/main/src/legality.c#L91-L122"
-  (declare (type isl::schedule-node node) (type isl::union-map dep))
-  (when (union-map-is-empty dep) (return-from check-legality-parallel t))
-  (let* ((map (schedule-node-band-get-partial-schedule-union-map node))
-         (domain (union-map-apply-range (union-map-apply-domain dep map) map))
-         (delta (union-map-deltas domain))
-         (_ (when (union-set-is-empty delta) (return-from check-legality-parallel t)))
-         (zeros (get-zeros-on-union-set delta))
-         (cmp (union-set-lex-lt-union-set delta zeros))
-         (retval (union-set-is-empty cmp))
-         (cmp (union-set-lex-gt-union-set delta zeros)))
-    (declare (ignore _))
-    (and retval (union-set-is-empty cmp))))
-
-(defun check-legality (schedule dep)
-  "
-```
-(check-legality schedule dep)
-```
-Returns T if the current schedule does not break any dependences in dep."
-  (declare (type isl::schedule schedule) (type isl::union-map dep))
-  (when (union-map-is-empty dep) (return-from check-legality t))
-  (let* ((map (schedule-get-map schedule))
-         (domain (union-map-apply-domain dep map))
-         (domain (union-map-apply-range domain map))
-         (delta (union-map-deltas domain))
-         (zeros (get-zeros-on-union-set delta))
-         (le (union-set-lex-le-union-set delta zeros))
-         (retval (union-set-is-empty le)))
-    retval))
 
 (defmethod verify-polyhedral-ir ((pg Polyhedral-IR)) (check-legality (poly-schedule pg) (poly-dependencies pg)))
 ;; ~~ Search Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1097,11 +1018,6 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defun schedule-node-get-band-depth (band) (space-dim (schedule-node-band-get-space band) 3))
 
-(defun permutations (lst)
-  (if (null lst) (list nil)
-      (mapcan (lambda (x) (mapcar (lambda (y) (cons x y)) (permutations (remove x lst :count 1)))) lst)))
-
-(defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
 
 (defun schedule-get-roots (schedule)
   (declare (type isl::schedule schedule))
@@ -1137,37 +1053,10 @@ Returns T if the current schedule does not break any dependences in dep."
                         for perm in permutations
                         collect (make-instance 'Interchange :axis axis :band band :order perm :nth nth-kernel)))))
 
-(defun schedule-node-band-permute (band order)
-  (declare (type isl:schedule-node-band band) (type list order))
-  (assert (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle band)))
-          ()
-          "schedule-node-band-permute: The band should have a permutable")
-  (let ((depth (schedule-node-get-band-depth band)))
-    (assert (= depth (length order)) () "schedule-node-band-permute: The size of order should be equivalent to depth ~a" depth)
-    (assert (equal (loop for i upfrom 0 below depth collect i) (sort (copy-list order) #'<))
-            ()
-            "schedule-node-band-permute: order must be 0~N list")
-    (let* ((mupa (schedule-node-band-get-partial-schedule band))
-           (coincidents (schedule-node-band-get-coincident band))
-           (upas (loop for i upfrom 0 below depth collect (multi-union-pw-aff-get-union-pw-aff mupa i)))
-           (coincidents-new (permute-list order coincidents))
-           (upas-new (permute-list order upas)))
-      (loop for i upfrom 0 below depth do
-        (setf mupa (multi-union-pw-aff-set-union-pw-aff mupa i (nth i upas-new))))
-      (setf band (schedule-node-insert-partial-schedule band mupa))
-      (loop for i upfrom 0 below depth do
-        (setf band (isl::schedule-node-band-member-set-coincident band i (nth i coincidents-new))))
-      band)))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
   (setf (poly-schedule poly)
         (schedule-node-get-schedule (schedule-node-band-permute (optrule-band opt) (interchange-order opt)))))
-
-(defun tiling-size (band size)
-  (declare (type fixnum size))
-  (let* ((band-space (schedule-node-band-get-space band))
-         (dim (space-dim band-space 3)))
-    (multi-val-from-val-list band-space (apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
 
 (defclass Tile (OptimizationRule)
   ((size :initarg :size :accessor tile-size)
@@ -1196,11 +1085,6 @@ Returns T if the current schedule does not break any dependences in dep."
   ((local-size :initarg :local-size :accessor tile-gpu-local-size)
    (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at :initform nil)
    (nth-kernel :initarg :nth-kernel :accessor tile-gpu-nth-kernel :initform 0)))
-
-(defun schedule-node-band-get-coincident (band)
-  (loop for i upfrom 0 below (schedule-node-get-band-depth band)
-        if (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle band) i))
-          collect 1 else collect 0))
 
 (defun schedule-node-band-no-directive-p (band name)
   (declare (type string name))
@@ -1365,140 +1249,8 @@ for (int i=0; i<32; i+=2)
           directive)))
       (schedule-node-insert-mark schedule-node (directive->id directive))))
 
-(cffi:defcfun ("isl_map_domain_tuple_dim" %isl-map-domain-tuple-dim) :int (x :pointer))
-(cffi:defcfun ("isl_set_tuple_dim" %isl-set-tuple-dim) :int (x :pointer))
-(cffi:defcfun ("isl_set_dim_max_val" %isl-set-dim-max-val) :pointer (x :pointer)  (pos :int))
 
-(defvar *domain-maxima-results*)
-(cffi:defcallback extract-domain-maxima-bset-cb :int
-    ((bset :pointer) (user :pointer))
-  (let ((set (isl::%isl-set-from-basic-set bset))) ;; todo: check memory leak
-    (dotimes (pos (cffi:mem-ref user :int))
-      (let ((cpy (isl::%isl-set-copy set))
-            (dname (isl::%isl-basic-set-get-dim-name bset :dim-set pos)))
-        (setf (gethash dname *domain-maxima-results*)
-              (isl::%make-value (%isl-set-dim-max-val cpy pos))))))
-  0)
 
-(cffi:defcallback extract-domain-maxima-map-cb :int
-    ((map :pointer) (user :pointer))
-  (declare (ignore user))
-  (cffi:with-foreign-objects ((size :int))
-    (setf (cffi:mem-aref size :int) (%isl-map-domain-tuple-dim map))
-    (isl::%isl-set-foreach-basic-set (isl::%isl-map-wrap map) (cffi:callback extract-domain-maxima-bset-cb) size))
-  0)
-
-(defun extract-domain-maxima (umap)
-  "Return an alist mapping each map index to a vector of max values per dimension."
-  (let ((*domain-maxima-results* (make-hash-table :test 'equal)))
-    (isl::%isl-union-map-foreach-map (isl::union-map-handle umap) (cffi:callback extract-domain-maxima-map-cb) (cffi:null-pointer))
-    *domain-maxima-results*))
-
-(defun union-set-add-isolation-constraint (dom width dim-name dom-size is-full-tile-p)
-  (declare (type isl::union-set dom) (type string dim-name) (type isl::value dom-size width) (type boolean is-full-tile-p))
-  (let* ((lst (isl::union-set-get-set-list dom))
-         (cnt (isl::set-list-n-set lst))
-         (res nil)
-         (bound (value- (value- dom-size (value-mod dom-size width)) (value 1)))) ;; bound = (domain_size) - (domain_size mod width)
-    (when (not is-full-tile-p)
-      (setf bound (value+ bound (value 1))))
-    (loop for i from 0 below cnt do
-      (let* ((s (isl::set-list-get-at lst i))
-             (bsl (isl::set-get-basic-set-list s))
-             (b0  (isl::basic-set-list-get-at bsl 0))
-             (nd  (isl::basic-set-dim b0 :dim-set))
-             (pos (loop for k from 0 below nd
-                        for nm = (isl::%isl-basic-set-get-dim-name (isl::basic-set-handle b0) :dim-set k)
-                        when (and nm (string= nm (string dim-name))) do (return k))))
-        (if pos
-            (let* ((sp  (isl::set-get-space s))
-                   (ls  (isl::local-space-from-space sp))
-                   (ineq (make-inequality-constraint ls))
-                   (ineq (isl::set-constant-val ineq (if is-full-tile-p bound (value-neg bound))))
-                   (ineq (isl::set-coefficient-si ineq :dim-set pos (if is-full-tile-p -1 1)))
-                   (s (isl::set-add-constraint s ineq))
-                   (u (isl::union-set-from-set s)))
-              (setf res (if res (isl::union-set-union res u) u)))
-            (let ((s (isl::union-set-from-set s)))
-              (setf res (if res (isl::union-set-union res s) s))))))
-    res))
-
-(defun %union-set-list-add-nonempty (lst uset)
-  (if (or (null uset) (isl::union-set-is-empty uset))
-      lst
-      (isl::union-set-list-add lst uset)))
-
-(defun %make-full/partial-filters (subdom tiled-ids maxima width)
-  "Return two union-sets: (values full tail)."
-  (let ((full subdom)
-        (tail subdom))
-    (dolist (name tiled-ids)
-      (let ((max (gethash name maxima)))
-        (setf full (union-set-add-isolation-constraint full  width name max t))
-        (setf tail (union-set-add-isolation-constraint tail  width name max nil))))
-    (values full tail)))
-
-(defun schedule-node-band-tile-with-options (band size &key (strategy :isolate) (directive) (sink))
-  "Tile BAND by SIZE, then optionally isolate partial tiles.
-   strategy:
-     :isolate  -> Inserts a sequence{unaffected, full_tile, isolate_tile}
-     :padding/:atomic/:guard -> (currently no-op passthrough)"
-  (declare (ignore directive sink))
-  (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
-    (ecase strategy
-      (:isolate
-       (let* ((subdom (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
-              (mupa (schedule-node-band-get-partial-schedule tiled))
-              (tiled-ids (partial-schedule-get-involved-dims mupa)))
-         (when (null tiled-ids) (return-from schedule-node-band-tile-with-options tiled))
-         (let* ((maxima (extract-domain-maxima (isl::schedule-node-get-prefix-schedule-relation tiled)))
-                (width  (value size))
-                (affected
-                  (reduce
-                   #'isl::union-set-union
-                   (map 'list #'(lambda (nm) (union-set-filter-by-dim-name subdom nm)) tiled-ids)
-                   :initial-value (isl::union-set-from-str "{}")))
-                (unaffected (isl::union-set-subtract subdom affected)))
-           (multiple-value-bind (full tail)
-               (%make-full/partial-filters affected tiled-ids maxima width)
-             (let* ((lst (isl::union-set-list-alloc 0))
-                    (lst (%union-set-list-add-nonempty lst unaffected))
-                    (lst (%union-set-list-add-nonempty lst full))
-                    (lst (%union-set-list-add-nonempty lst tail))
-                    (sched (isl::schedule-node-insert-sequence tiled lst)))
-               sched)))))
-      (:padding tiled)
-      (:atomic  tiled)
-      (:guard   tiled))))
-
-(defun partial-schedule-get-involved-dims (mupa)
-  (declare (type isl::multi-union-pw-aff mupa))
-  (remove-duplicates
-   (loop for i below (isl::multi-union-pw-aff-size mupa) append
-         (let* ((upa (multi-union-pw-aff-get-union-pw-aff mupa i))
-                (lst (isl::union-pw-aff-get-pw-aff-list upa)))
-           (loop for k below (isl::%isl-pw-aff-list-n-pw-aff (isl::pw-aff-list-handle lst)) append
-                 (let* ((pwa (isl::pw-aff-list-get-at lst k)) (dom (isl::pw-aff-domain pwa)))
-                   (loop for d below (isl::set-dim dom :dim-set)
-                         when (eql :bool-true (isl::%isl-pw-aff-involves-dims (isl::pw-aff-handle pwa) :dim-in d 1))
-                         collect (isl::identifier-name-str (isl::set-get-dim-id dom :dim-set d)))))))
-   :test #'string=))
-
-(defun union-set-filter-by-dim-name (uset dim-name)
-  (let* ((lst (isl::union-set-get-set-list uset))
-         (n   (isl::set-list-n-set lst))
-         (acc nil))
-    (dotimes (i n)
-      (let* ((s  (isl::set-list-get-at lst i))
-             (bs (isl::set-get-basic-set-list s))
-             (b0 (isl::basic-set-list-get-at bs 0))
-             (nd (isl::basic-set-dim b0 :dim-set))
-             (hit (loop for k below nd
-                        for nm = (isl::%isl-basic-set-get-dim-name (isl::basic-set-handle b0) :dim-set k)
-                        thereis (and nm (string= nm dim-name)))))
-        (when hit
-          (setf acc (if acc (isl::union-set-union acc (isl::union-set-from-set s)) (isl::union-set-from-set s))))))
-    (or acc (isl::union-set-empty (isl::union-set-get-space uset)))))
 
 (defun add-extent-constraints (set width)
   (declare (type isl::set set) (type fixnum width))
@@ -1863,6 +1615,7 @@ for (int i=0; i<32; i+=2)
 - [ ] caten/search/isl
 - [ ] max utilize check-legality-parallel
 ;; - [ ] caten/codegen/searchを作る, 必要な機能を全て追加したら，refactor and clean up! or reimpl things
+;; - 一旦休憩 ~ 戻ったら全て完璧な状態でBEAM Searchを再実装する。
 |#
 
 (defun ->str (sched)

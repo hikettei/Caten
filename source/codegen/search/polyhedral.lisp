@@ -1,6 +1,10 @@
 (defpackage :caten/codegen/search/polyhedral
   (:use :cl)
   (:export
+   #:Polyhedral-Schedule-Item
+   #:theta #:psi-theta
+   #:dependency-graph #:psi-dependency-graph
+   #:opt-history #:psi-opt-history
    ))
 (in-package :caten/codegen/search/polyhedral)
 
@@ -34,5 +38,4 @@ In other words, this class encapsulates both the analysis results and the schedu
 (defun make-polyhedral-schedule-item (blueprint)
 
   )
-
 

@@ -1,4 +1,5 @@
 (defpackage :caten/codegen/search/evaluator
+  (:documentation "Provides an Evaluator which sorts multiple PolyhedralScheduleItem")
   (:use :cl)
   (:export
 
@@ -11,3 +12,4 @@
 ;; - RandomForest, Compile+Runをサポート
 ;;   - SymbolicTileをサポートする
 ;; - 複数のカーネルを生成するときは，カーネルごとに分割してCacheできるように
+;; - regression tree!
