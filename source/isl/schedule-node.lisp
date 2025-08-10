@@ -176,3 +176,7 @@
 (define-isl-function schedule-node-get-prefix-schedule-relation %isl-schedule-node-get-prefix-schedule-relation
   (:give union-map)
   (:keep schedule-node))
+
+(define-isl-function schedule-node-get-subtree-expansion %isl-schedule-node-get-subtree-expansion
+  (:give union-map)
+  (:keep schedule-node))

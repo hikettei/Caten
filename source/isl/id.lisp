@@ -38,6 +38,12 @@
      (read-from-string
       (cffi:foreign-string-to-lisp char*)))))
 
+(defun identifier-name-str (identifier)
+  (declare (identifier identifier))
+  (let* ((handle (identifier-handle identifier))
+         (char* (%isl-id-get-name handle)))
+    (cffi:foreign-string-to-lisp char*)))
+
 (define-isl-function identifier-context %isl-id-get-ctx
     (:give context)
     (:keep identifier))

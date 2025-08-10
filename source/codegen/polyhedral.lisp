@@ -29,13 +29,6 @@
 
 (defparameter *allow-compilation-error-during-beam* t)
 (defparameter *+inf* (expt 2 32))
-
-(define-condition beam-post-rejection (error)
-  ((reason :initarg :reason))
-  (:documentation
-   "Raised when the conversion from Polyhedral IR to Blueprint
-    after beam search is determined to be invalid, causing result rejection.")
-  (:report (lambda (c s) (format s "The transformation was rejected by:~%~a" (slot-value c 'reason)))))
 ;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
@@ -446,7 +439,9 @@
 
 (defun make-polyhedral-from-blueprint (blueprint &key (strategy))
   "Constructs Polyhedral IR from blueprint which is a static graph.
-   
+```
+DependencyGraph, θ_0 = MakePolyhedralFromBlueprint(blueprint)
+```
    The blueprint should be a FastGraph containing nodes with the following types:
    - :RANGE - defines loop bounds
    - :FOR - marks loop entry with :mark attribute (:coincident, :reduction, :noopt)
@@ -1395,6 +1390,7 @@ for (int i=0; i<32; i+=2)
 
 (defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width))
   (:documentation "Vectorize = Tile+Sink"))
+
 (defmethod optrule-generate-search-space (poly bands (id (eql :Vectorize)))
   (loop for band in bands for nth upfrom 0
         append
@@ -1457,20 +1453,90 @@ for (int i=0; i<32; i+=2)
     (isl::%isl-union-map-foreach-map (isl::union-map-handle umap) (cffi:callback extract-domain-maxima-map-cb) (cffi:null-pointer))
     *domain-maxima-results*))
 
-(defun schedule-node-band-tile-with-options (band size &key (strategy :isolate) (directive))
+(defun union-set-add-constraint (dom dim-name bound is-full-tile-p)
+  (declare (type isl::union-set dom))
+  (let* ((lst (isl::union-set-get-set-list dom))
+         (cnt (isl::set-list-n-set lst))
+         (res nil))
+    (loop for i from 0 below cnt do
+      (let* ((s (isl::set-list-get-at lst i))
+             (bsl (isl::set-get-basic-set-list s))
+             (b0  (isl::basic-set-list-get-at bsl 0))
+             (nd  (isl::basic-set-dim b0 :dim-set))
+             (pos (loop for k from 0 below nd
+                        for nm = (isl::%isl-basic-set-get-dim-name (isl::basic-set-handle b0) :dim-set k)
+                        when (and nm (string= nm (string dim-name))) do (return k))))
+        (if pos
+            (let* ((sp  (isl::set-get-space s))
+                   (ls  (isl::local-space-from-space sp))
+                   (ineq (make-inequality-constraint ls))
+                   (ineq (isl::set-constant-si ineq (- bound)))
+                   (ineq (isl::set-coefficient-si ineq :dim-set pos 1))
+                   (s (isl::set-add-constraint s ineq))
+                   (u (isl::union-set-from-set s)))
+              (setf res (if res (isl::union-set-union res u) u)))
+            (let ((s (isl::union-set-from-set s)))
+              (setf res (if res (isl::union-set-union res s) s))))))
+    res))
+
+(defun partial-schedule-get-involved-dims (mupa)
+  (declare (type isl::multi-union-pw-aff mupa))
+  (remove-duplicates
+   (loop for i below (isl::multi-union-pw-aff-size mupa) append
+         (let* ((upa (multi-union-pw-aff-get-union-pw-aff mupa i))
+                (lst (isl::union-pw-aff-get-pw-aff-list upa)))
+           (loop for k below (isl::%isl-pw-aff-list-n-pw-aff (isl::pw-aff-list-handle lst)) append
+                 (let* ((pwa (isl::pw-aff-list-get-at lst k)) (dom (isl::pw-aff-domain pwa)))
+                   (loop for d below (isl::set-dim dom :dim-set)
+                         when (eql :bool-true (isl::%isl-pw-aff-involves-dims (isl::pw-aff-handle pwa) :dim-in d 1))
+                         collect (isl::identifier-name-str (isl::set-get-dim-id dom :dim-set d)))))))
+   :test #'string=))
+
+(defun schedule-node-band-tile-with-options (band size &key (strategy :isolate) (directive) (sink nil))
+  "A high-level wrapper for %isl-schedule-node-band-tile. It tiles the given band with size with giving the directive and tries to separate full/isolated tile based on the given strategy:
+- :isolate
+
+- :padding
+
+- :atomic
+
+- :guard
+
+"
   (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
     (ecase strategy
       (:isolate
        ;; union_map -> basic_set -> constraint
        (let* ((sched-domain-umap (isl::schedule-node-get-prefix-schedule-relation tiled))
-              (maxima-bounds (extract-domain-maxima sched-domain-umap)))
+              (maxima-bounds (extract-domain-maxima sched-domain-umap))
+              (filters-full
+                (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
+              (filters-isolate
+                (union-map-domain (isl::schedule-node-get-subtree-expansion tiled))))
+         ;; ISL Schedule Isolate Options are flaky, we manually graft a following subtree starting with sequence
+         ;; sequence:
+         ;;   - filter: " { S[tile_dim] : tile_dim <= reminder_last }"
+         ;;     - copy_of_schedule ...
+         ;;   - filter: " { S[tile_dim] : tile_dim >= reminder_last }"
+         ;;     - copy_of_schedule ...
+         ;; でもこれはSubtreeのOptimizationSpaceがなぁ
+         ;; -> Proper DIRECTIVE Insertionで探索空間を縮小する。
+         ;; -> how to get filters?
+         (print "TILED")
          (print tiled)
+
+         (print (partial-schedule-get-involved-dims (schedule-node-band-get-partial-schedule tiled)))
          (print (alexandria:hash-table-keys maxima-bounds))
+         (print (alexandria:hash-table-values maxima-bounds))
+         (print (union-set-add-constraint filters-full "kk" 10 nil))
+         
          tiled
          ))
       (:padding
        )
       (:atomic
+       )
+      (:guard
        ))))
 
 (defun add-extent-constraints (set width)
@@ -1525,8 +1591,6 @@ for (int i=0; i<32; i+=2)
   (let* ((vectorized (schedule-node-band-tile-with-options (optrule-band opt) (vectorize-width opt)
                                                            :strategy :isolate))
          (sunk (isl::schedule-node-band-sink (schedule-node-get-child vectorized 0))))
-    (print sunk)
-     
     (setf (poly-schedule poly) (schedule-node-get-schedule sunk))))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
@@ -1797,6 +1861,7 @@ for (int i=0; i<32; i+=2)
 ;; = [TODO] =========================================
 ;; - [ ] 一度全部Polyhedral IRで実施できるように再度検討する。===> Minimize the exploration space
 ;;   - [ ] Isolate Tile Generation
+;;   - [ ] VECTORIZE -> Ensure the innner tile is always isolated
 ;;   - [ ] Mark+Interchange
 ;;   - [ ] Distribute Reduction!
 ;;   - [ ] Softmaxの内側のLoopって同一のDomainとしていいのだろうか？
@@ -1828,7 +1893,9 @@ for (int i=0; i<32; i+=2)
 - [ ] ISL AST Generation is too slow? なるべく多くのことをISL Levelで実施したい。
   - [ ] TileGPU
   - [ ] Coalesce
-
+- [ ] Implement Search as an separated components?
+- [ ] caten/search
+  - [ ] caten/search/isl
 |#
 
 (defparameter *sched*
@@ -1844,7 +1911,6 @@ child:
       child:
         schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
         permutable: 1
-        options: \"{ [isolate[] -> [k,k1]] : k+k1>= 5 }\"
         child:
           sequence:
           - filter: \"{ NID41137[i, j] }\"
@@ -1858,6 +1924,10 @@ child:
     - filter: \"{ NID41178[i, j] }\"
 ")
 
+;; child: scheduleのInsertはLegal
+;; guard -> context? for gpu
+;; coalesce when pasing isl ast (this option should be added to directive)
+;; Isolate OptionをMultiple Domainに対してどう適用したらいいのか？
 (defparameter *sched*
   "
 domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
@@ -1871,17 +1941,14 @@ child:
       child:
         schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
         permutable: 1
-        options: \"{ [isolate[] -> [k]] : k>= 5 }\"
         child:
           sequence:
           - filter: \"{ NID41137[i, j] }\"
             child:
               schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-          - filter: \"{ NID41157[i, j, kk] }\"
+          - filter: \"{ NID41157[i, j, kk] : kk <= 10 }\"
             child:
               schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
     - filter: \"{ NID41178[i, j] }\"
 ")
 
@@ -1893,6 +1960,23 @@ child:
   options: \" { isolate[[] -> [i]] : floord(i, 3)*3 + 3 <= 10000 }\"
   child:
     schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
+")
+
+(defparameter *sched*
+  "
+domain: \" { NID153174[_gid0] : 0 <= _gid0 <= 10000 }\"
+child:
+  sequence:
+    - filter: \"{ NID153174[_gid0] : _gid0 <= 9 }\"
+      child:
+        schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
+        child:
+          schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
+    - filter: \"{ NID153174[_gid0] : _gid0 >= 9 }\"
+      child:
+        schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
+        child:
+          schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
 ")
        
 (defparameter *sched*
@@ -1933,4 +2017,44 @@ child:
          (str   (isl::%isl-printer-get-str q)))
     str))
 
-(defun test () (->str (print (isl::schedule-read-from-str *sched*))))
+(defparameter *sched*
+  "
+domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
+child:
+  schedule: \"[{ NID41157[i, j, kk] -> [(i)]; NID41178[i, j] -> [(i)]; NID41137[i, j] -> [(i)] }, { NID41157[i, j, kk] -> [(j)]; NID41178[i, j] -> [(j)]; NID41137[i, j] -> [(j)] }]\"
+  permutable: 1
+  coincident: [ 1, 1 ]
+  child:
+    sequence:
+    - filter: \"{ NID41157[i, j, kk] : kk <= 24 ; NID41137[i, j] }\"
+      child:
+        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
+        permutable: 1
+        child:
+          sequence:
+          - filter: \"{ NID41137[i, j] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)]}]\"
+              permutable: 1
+          - filter: \"{ NID41157[i, j, kk] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+    - filter: \"{ NID41157[i, j, kk] : kk >= 24 ; NID41137[i, j] }\"
+      child:
+        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
+        permutable: 1
+        child:
+          sequence:
+          - filter: \"{ NID41137[i, j] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)]}]\"
+              permutable: 1
+          - filter: \"{ NID41157[i, j, kk] }\"
+            child:
+              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+    - filter: \"{ NID41178[i, j] }\"
+")
+;; まず，複数のFilterをまとめない形でScheduleが欲しいよな。。。
+(defun test () (->str (isl::schedule-read-from-str *sched*)))

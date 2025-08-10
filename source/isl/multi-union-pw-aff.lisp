@@ -15,7 +15,8 @@
 
 (define-isl-object pw-aff
   :free %isl-pw-aff-free
-  :copy %isl-pw-aff-copy)
+  :copy %isl-pw-aff-copy
+  :list-type pw-aff-list)
 
 (defmethod print-object ((value multi-union-pw-aff) stream)
   (print-unreadable-object (value stream :type t)
@@ -150,3 +151,14 @@
 (define-isl-function union-map-from-union-pw-aff %isl-union-map-from-union-pw-aff
   (:give union-map)
   (:take union-pw-aff))
+
+(define-isl-function union-pw-aff-get-pw-aff-list %isl-union-pw-aff-get-pw-aff-list
+  (:give pw-aff-list)
+  (:keep union-pw-aff))
+
+(defun pw-aff-list-get-at (pw-aff-list n)
+  (%make-pw-aff (%isl-pw-aff-list-get-at (pw-aff-list-handle pw-aff-list) n)))
+
+(define-isl-function pw-aff-domain %isl-pw-aff-domain
+  (:give set)
+  (:take pw-aff))

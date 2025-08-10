@@ -63,4 +63,19 @@
 (define-isl-function set-get-basic-set-list %isl-set-get-basic-set-list
   (:give basic-set-list)
   (:keep set))
+
+(defun set-list-n-set (lst)
+  (%isl-set-list-n-set (set-list-handle lst)))
+
+(defun set-list-get-at (lst n)
+  (%make-set (%isl-set-list-get-at (set-list-handle lst) n)))
+
+(defun basic-set-list-get-at (lst n)
+  (%make-basic-set (%isl-basic-set-list-get-at (basic-set-list-handle lst) n)))
+
+(defun basic-set-dim (bset dim)
+  (%isl-basic-set-dim (basic-set-handle (copy bset)) dim))
+
+(defun set-get-dim-id (set type pos)
+  (%make-identifier (%isl-set-get-dim-id (set-handle set) type pos)))
   
