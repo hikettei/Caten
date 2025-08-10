@@ -19,14 +19,15 @@ pruned (Top-k), and expanded to produce the next generation."))
 (defun sgt-add-evaluations (sgt evaluator blueprint)
   "Attach evaluation scores to the current generation."
   (declare (type Schedule-Generation-Tree sgt))
-  (mapc #'(lambda (x) ) (sgt-items sgt)))
+  (mapc
+   #'(lambda (x) (setf (psi-evaluation x) (evaluate-polyhedral x evaluator blueprint)))
+   (sgt-items sgt)))
 
 (defun sgt-prune-topk (sgt topk)
   "Prune the current frontier by keeping the Top-k candidates under the active"
   (declare (type Schedule-Generation-Tree sgt) (type fixnum topk))
-  (let ((best-items ;; sort
-          ))
-    (setf (sgt-items sgt) best-items)))
+  (let ((best-items (sort (sgt-items sgt) #'< :key #'psi-evaluation)))
+    (setf (sgt-items sgt) (subseq best-items 0 (min topk (length best-items))))))
 
 (defun sgt-make-nextgen (sgt)
   "Expand the pruned frontier to form the next generation."

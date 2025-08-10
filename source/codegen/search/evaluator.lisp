@@ -10,8 +10,7 @@
 
 (in-package :caten/codegen/search/evaluator)
 
-(defclass Evaluator ()
-  nil)
+(defclass Evaluator () nil)
 
 (defclass Random-Forest () nil)
 
@@ -40,7 +39,7 @@ MeasurerWorkflow
 ```
 "
   ;; TODO
-  ;; - [ ] Finish ASTGen
+  ;; - [x] Finish ASTGen
   ;; - [ ] BEAM Cache Systemを構築する
   ;; - [ ] Replayerは削除する
   ;; - [ ] 入力データについてどうしよう。ZeroDivisionが起こるかもしれない

@@ -1,6 +1,7 @@
 (defpackage :caten/codegen/search/polyhedral
   (:use :cl :caten/air :caten/codegen/renderer :caten/codegen/search/schedule)
   (:export
+   #:*+inf*
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
    #:dependency-graph #:psi-dependency-graph
@@ -13,11 +14,12 @@
    ))
 (in-package :caten/codegen/search/polyhedral)
 
+(defparameter *+inf* (coerce (expt 2 32) 'double-float))
 (defclass Polyhedral-Schedule-Item ()
   ((theta :accessor psi-theta :initarg :initial-theta)
    (dependency-graph :accessor psi-dependency-graph :initarg :dependency-graph)
    (opt-history :accessor psi-opt-history :initform nil)
-   (evaluation :accessor psi-evaluation :initform nil)
+   (evaluation :accessor psi-evaluation :initform *+inf* :type double-float)
    ;; ctx?
    ;; during transformation blueprint should not be used
    )
@@ -39,8 +41,9 @@ After applying a series of loop transformations to θ₀ an optimized Blueprint 
 Blueprint_optimized = MakeBlueprintFromPolyhedral(Blueprint, θ_0) s.t.: ScheduleIsValid(DependencyGraph)
 ```
 
-In other words, this class encapsulates both the analysis results and the scheduling state, enabling generation of a valid, optimized Blueprint from the polyhedral representation."))
+In other words, this class encapsulates both the analysis results and the scheduling state, enabling generation of a valid, optimized Blueprint from the polyhedral representation.
 
+During the optimization, auto scheduler tries to minimize the floating value of psi-evaluation."))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "Context for tracking loop structure during traversal"
