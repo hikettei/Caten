@@ -41,7 +41,7 @@ pruned (Top-k), and expanded to produce the next generation."))
   (values
    (ctx:getenv :BEAM)
    (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)
-   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint)
+   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint :version (ctx:getenv :BACKEND))
    ;; evaluator2
    ))
 
@@ -82,3 +82,4 @@ BEAM Search Workflow:
 ;; 次にタイルなど細かい最適化
 ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
 ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
+;; - TensorGraphから演算の可換などを考慮してSHA256 Hash作れないかな？

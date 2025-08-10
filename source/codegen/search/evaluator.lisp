@@ -22,7 +22,8 @@
   ((runtime :initarg :runtime)
    (blueprint :initarg :blueprint)
    (ctx :initform nil :accessor dm-ctx)
-   (cache :initform (make-hash-table :test 'equal))))
+   (version :initform nil :initarg :version)
+   (cache :initform (make-hash-table :test 'equal) :accessor dm-cache)))
 
 (defgeneric evaluate-polyhedral (psi evaluator blueprint))
 
@@ -44,18 +45,17 @@ MeasurerWorkflow
   (multiple-value-bind (kernels allocs) (apply-schedule (psi-theta psi) blueprint :ctx (dm-ctx evaluator))
     ;; TODO
     ;; - [x] Finish ASTGen
-    ;; - [ ] BEAM Cache Systemを構築する
+    ;; - [x] BEAM Cache Systemを構築する
     ;; - [ ] Replayerは削除する
     ;; - [ ] 入力データについてどうしよう。ZeroDivisionが起こるかもしれない
     ;; - [ ] Where, 条件分岐を含む実装についてはもっと難しい。PayneHanekなど
-    ))
+    (loop for kernel in kernels
+          for kernel-id = (caten/codegen/renderer:make-kernel-description kernel :version (slot-value evaluator 'version) :getraw nil)
+          for cache = (gethash kernel-id (dm-cache evaluator))
+          if cache sum cache
+            else sum (setf (gethash kernel-id (dm-cache evaluator)) (random 1.0)))))
 
 (defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Proximity) blueprint)
   "Compute Proximity Evaluation"
+  
   )
-;; [TODO]
-;; - 前回とのDiffを計測して，差分が0ならSKIP
-;; - RandomForest, Compile+Runをサポート
-;;   - SymbolicTileをサポートする
-;; - 複数のカーネルを生成するときは，カーネルごとに分割してCacheできるように
-;; - regression tree!

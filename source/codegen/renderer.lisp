@@ -16,7 +16,8 @@
    #:expr-index-components
    
    #:render-index
-   #:render-aref-index))
+   #:render-aref-index
+   #:make-kernel-description))
 
 (in-package :caten/codegen/renderer)
 
