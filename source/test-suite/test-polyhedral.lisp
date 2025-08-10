@@ -317,20 +317,34 @@
   ;; Workload
   ;; - DirectiveをちゃんとFORに適用させる or DirectiveMarkにSequenceを挿入したい？
   ;; - ReminderはPaddingで表現する
+  (testing "Vectorize at ELWISE"
+    (with-polyhedral
+        ;; TODO: If the loop was smaller than width?
+        ((sin ($sin (make-tensor `(100 100))))
+         (setf sin (apply-optimization sin (make-instance 'Vectorize :width 3 :band (getband sin 0) :axis 0)))
+         (print sin))
+        ((new-kernels extra-allocs)
+          (print-blueprint (car new-kernels) t)
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+          )))
+  
   (testing "Vectorize at K"
     (with-polyhedral
         ;; TODO: If the loop was smaller than width?
-        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 27)) (make-tensor `(27 30))))
          (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
          (ok (= 1 (get-depth (getband gemm 1))))
          (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 0) :axis 0)))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 1)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 5) :axis 0)))
          (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
           (ok (= 1 (length new-kernels)))
           (ok (= 0 (length extra-allocs)))
-          ))))
+  )))
+  
+  )
 ;; [TODO]
 ;; 戻ったら
 ;; Softmax, FlashAttentionでVECTORIZE

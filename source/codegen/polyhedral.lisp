@@ -1500,7 +1500,7 @@ for (int i=0; i<32; i+=2)
 (defun schedule-node-band-tile-with-options (band size &key (strategy :isolate) (directive) (sink))
   "Tile BAND by SIZE, then optionally isolate partial tiles.
    strategy:
-     :isolate  -> split affected statements into {full, tail}, leave unaffected as-is
+     :isolate  -> Inserts a sequence{unaffected, full_tile, isolate_tile}
      :padding/:atomic/:guard -> (currently no-op passthrough)"
   (declare (ignore directive sink))
   (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
