@@ -1495,6 +1495,22 @@ for (int i=0; i<32; i+=2)
                          collect (isl::identifier-name-str (isl::set-get-dim-id dom :dim-set d)))))))
    :test #'string=))
 
+(defun union-set-filter-by-dim-name (uset dim-name)
+  (let* ((lst (isl::union-set-get-set-list uset))
+         (n   (isl::set-list-n-set lst))
+         (acc nil))
+    (dotimes (i n)
+      (let* ((s  (isl::set-list-get-at lst i))
+             (bs (isl::set-get-basic-set-list s))
+             (b0 (isl::basic-set-list-get-at bs 0))
+             (nd (isl::basic-set-dim b0 :dim-set))
+             (hit (loop for k below nd
+                        for nm = (isl::%isl-basic-set-get-dim-name (isl::basic-set-handle b0) :dim-set k)
+                        thereis (and nm (string= nm dim-name)))))
+        (when hit
+          (setf acc (if acc (isl::union-set-union acc (isl::union-set-from-set s)) (isl::union-set-from-set s))))))
+    (or acc (isl::union-set-empty (isl::union-set-get-space uset)))))
+
 (defun schedule-node-band-tile-with-options (band size &key (strategy :isolate) (directive) (sink nil))
   "A high-level wrapper for %isl-schedule-node-band-tile. It tiles the given band with size with giving the directive and tries to separate full/isolated tile based on the given strategy:
 - :isolate
@@ -1509,36 +1525,37 @@ for (int i=0; i<32; i+=2)
   (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
     (ecase strategy
       (:isolate
-       ;; union_map -> basic_set -> constraint
-       (let* ((sched-domain-umap
-                (isl::schedule-node-get-prefix-schedule-relation tiled))
-              (maxima-bounds
-                (extract-domain-maxima sched-domain-umap))
-              (tiled-ids
-                (partial-schedule-get-involved-dims
-                 (schedule-node-band-get-partial-schedule tiled)))
-              (filters-full
-                (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
-              (filters-isolate
-                (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
-              (width (value size)))
-         ;; ISL Schedule Isolate Options are flaky, we manually graft a following subtree starting with sequence
-         ;; sequence:
-         ;;   - filter: " { S[tile_dim] : tile_dim <= reminder_last }"
-         ;;     - copy_of_schedule ...
-         ;;   - filter: " { S[tile_dim] : tile_dim >= reminder_last }"
-         ;;     - copy_of_schedule ...
-         ;; でもこれはSubtreeのOptimizationSpaceがなぁ
-         ;; -> Proper DIRECTIVE Insertionで探索空間を縮小する。
-         ;; -> how to get filters?
-         ;; [todo] dependency graphに違反しないかCheck!
-         (loop for tiled-id in tiled-ids
-               for bound = (gethash tiled-id maxima-bounds) do
-                 (assert bound () "The bound ~a is not found in the maxima-bounds." tiled-id)
-                 (setf filters-full (union-set-add-isolation-constraint filters-full width tiled-id bound t)
-                       filters-isolate (union-set-add-isolation-constraint filters-isolate width tiled-id bound nil)))
-         (let ((sequence (isl::union-set-list-add (isl::union-set-list-add (isl::union-set-list-alloc 0) filters-full) filters-isolate)))
-           (isl::schedule-node-insert-sequence tiled sequence))))
+       (let* ((subdom (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
+              (mupa (schedule-node-band-get-partial-schedule tiled))
+              (tiled-ids (partial-schedule-get-involved-dims mupa))
+              (affected (reduce #'isl::union-set-union (map 'list #'(lambda (nm) (union-set-filter-by-dim-name subdom nm)) tiled-ids)))
+              (unaffected (isl::union-set-subtract subdom affected))
+              (maxima (extract-domain-maxima (isl::schedule-node-get-prefix-schedule-relation tiled)))
+              (width  (value size))
+              ;; N Dimensional FullTile Area:
+              (F_all
+                (reduce
+                 #'(lambda (u nm)
+                     (union-set-add-isolation-constraint u width nm (gethash nm maxima) t))
+                 tiled-ids
+                 :initial-value affected))
+              ;; N Dimensional Isolated Tile Area
+              (T_any
+                (reduce
+                 #'isl::union-set-union
+                 (map
+                  'list
+                  #'(lambda (nm)
+                      (union-set-add-isolation-constraint affected width nm (gethash nm maxima) nil))
+                  tiled-ids)))
+              ;; Remove duplications
+              (T_only (isl::union-set-subtract T_any F_all))
+              ;; Insert a sequence {unaffected, full_tile, isolate_tile}
+              (seq (isl::union-set-list-alloc 0)))
+         (setf seq (isl::union-set-list-add seq unaffected))
+         (setf seq (isl::union-set-list-add seq F_all))
+         (setf seq (isl::union-set-list-add seq T_only))
+         (isl::schedule-node-insert-sequence tiled seq)))
       (:padding
        )
       (:atomic

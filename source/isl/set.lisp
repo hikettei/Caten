@@ -78,4 +78,3 @@
 
 (defun set-get-dim-id (set type pos)
   (%make-identifier (%isl-set-get-dim-id (set-handle set) type pos)))
-  

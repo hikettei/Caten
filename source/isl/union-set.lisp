@@ -81,3 +81,9 @@
 (define-isl-function union-set-get-set-list %isl-union-set-get-set-list
   (:give set-list)
   (:keep union-set))
+
+(defun union-set-list-alloc (n)
+  (%make-union-set-list (%isl-union-set-list-alloc (context-handle *context*) n)))
+
+(defun union-set-list-add (lst uset)
+  (%make-union-set-list (%isl-union-set-list-add (union-set-list-handle (copy lst)) (union-set-handle (copy uset)))))

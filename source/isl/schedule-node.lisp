@@ -180,3 +180,13 @@
 (define-isl-function schedule-node-get-subtree-expansion %isl-schedule-node-get-subtree-expansion
   (:give union-map)
   (:keep schedule-node))
+
+(define-isl-function schedule-node-insert-filter %isl-schedule-node-insert-filter
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
+(define-isl-function schedule-node-insert-sequence %isl-schedule-node-insert-sequence
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set-list))
