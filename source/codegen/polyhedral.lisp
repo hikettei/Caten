@@ -1458,7 +1458,7 @@ for (int i=0; i<32; i+=2)
   (let* ((lst (isl::union-set-get-set-list dom))
          (cnt (isl::set-list-n-set lst))
          (res nil)
-         (bound (value- dom-size (value-mod dom-size width)))) ;; bound = (domain_size) - (domain_size mod width)
+         (bound (value- (value- dom-size (value-mod dom-size width)) (value 1)))) ;; bound = (domain_size) - (domain_size mod width)
     (when (not is-full-tile-p)
       (setf bound (value+ bound (value 1))))
     (loop for i from 0 below cnt do
@@ -1537,10 +1537,8 @@ for (int i=0; i<32; i+=2)
                  (assert bound () "The bound ~a is not found in the maxima-bounds." tiled-id)
                  (setf filters-full (union-set-add-isolation-constraint filters-full width tiled-id bound t)
                        filters-isolate (union-set-add-isolation-constraint filters-isolate width tiled-id bound nil)))
-         (print filters-full)
-         (print filters-isolate)
-         tiled
-         ))
+         (let ((sequence (isl::union-set-list-add (isl::union-set-list-add (isl::union-set-list-alloc 0) filters-full) filters-isolate)))
+           (isl::schedule-node-insert-sequence tiled sequence))))
       (:padding
        )
       (:atomic
@@ -1599,8 +1597,13 @@ for (int i=0; i<32; i+=2)
   (assert (optrule-band opt))
   (let* ((vectorized (schedule-node-band-tile-with-options (optrule-band opt) (vectorize-width opt)
                                                            :strategy :isolate))
-         (sunk (isl::schedule-node-band-sink (schedule-node-get-child vectorized 0))))
-    (setf (poly-schedule poly) (schedule-node-get-schedule sunk))))
+         ;(sunk (isl::schedule-node-band-sink (schedule-node-get-child vectorized 0)))
+         )
+    (print vectorized)
+    (setf (poly-schedule poly) (schedule-node-get-schedule vectorized))
+    (print "IS_VALID")
+    (print (verify-polyhedral-ir poly))
+    ))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :VECTORIZE)) bands blueprint) blueprint)
 
@@ -2065,5 +2068,43 @@ child:
               permutable: 1
     - filter: \"{ NID41178[i, j] }\"
 ")
+
+(defparameter *sched*
+  "
+domain: \"{ NID270546[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID270526[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID270567[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
+child:
+  schedule: \"[{ NID270546[i, j, kk] -> [(i)]; NID270526[i, j] -> [(i)]; NID270567[i, j] -> [(i)] }, { NID270546[i, j, kk] -> [(j)]; NID270526[i, j] -> [(j)]; NID270567[i, j] -> [(j)] }]\"
+  permutable: 1
+  coincident: [ 1, 1 ]
+  child:
+    sequence:
+    - filter: \"{ NID270546[i, j, kk]; NID270526[i, j] }\"
+      child:
+        sequence:
+        - filter: \"{ NID270546[i, j, kk] : kk <= 23; NID270526[i, j] }\"
+          child:
+            schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
+            permutable: 1
+            child:
+              schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+              child:
+                sequence:
+                - filter: \"{ NID270526[i, j] }\"
+                - filter: \"{ NID270546[i, j, kk] }\"
+        - filter: \"{ NID270546[i, j, kk] : kk >= 24; NID270526[i, j] }\"
+          child:
+            schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
+            permutable: 1
+            child:
+              schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [((kk) mod 4)] }]\"
+              permutable: 1
+              child:
+                sequence:
+                - filter: \"{ NID270526[i, j] }\"
+                - filter: \"{ NID270546[i, j, kk] }\"
+    - filter: \"{ NID270567[i, j] }\"
+")
+
 ;; まず，複数のFilterをまとめない形でScheduleが欲しいよな。。。
 (defun test () (->str (isl::schedule-read-from-str *sched*)))
