@@ -37,11 +37,11 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; [TODO]
 ;; - TILE Parameter Space?
 ;; - 
-(defun setup-autotune (runtime)
+(defun setup-autotune (runtime blueprint)
   (values
    (ctx:getenv :BEAM)
    (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)
-   (make-instance 'DeviceMeasurer :runtime runtime)
+   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint)
    ;; evaluator2
    ))
 
@@ -62,19 +62,19 @@ BEAM Search Workflow:
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
   (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
-  (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime)
-    (caten/isl::with-isl-context
-      ;; - BEAM Search With Early Pruning
-      ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
-      ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
-      (let* ((blueprint (kernel-blueprint (getattr node :kernel-info)))
-             (root (make-polyhedral-schedule-item blueprint))
-             (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-        (sgt-add-evaluations gen0 cost1 blueprint)
-        (sgt-prune-topk gen0 3)
-        (print (sgt-make-nextgen gen0))
+  (let ((blueprint (kernel-blueprint (getattr node :kernel-info))))
+    (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime blueprint)
+      (caten/isl::with-isl-context
+        ;; - BEAM Search With Early Pruning
+        ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
+        ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
+        (let* ((root (make-polyhedral-schedule-item blueprint))
+               (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
+          (sgt-add-evaluations gen0 cost1 blueprint)
+          (sgt-prune-topk gen0 3)
+          (print (sgt-make-nextgen gen0))
 
-        ))))
+          )))))
 
 ;; 次にやること
 ;; タイルアクセスを解析して、インターチェンジが有効な次元がどれか列挙する方法はないか考える

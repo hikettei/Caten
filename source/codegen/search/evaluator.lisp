@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/search/evaluator
   (:documentation "Provides an Evaluator which sorts multiple PolyhedralScheduleItem")
-  (:use :cl :caten/codegen/search/polyhedral)
+  (:use :cl :caten/codegen/search/polyhedral :caten/codegen/search/ast)
   (:export
    #:Evaluator
    #:DeviceMeasurer
@@ -17,13 +17,16 @@
 (defclass Proximity () nil)
 
 ;; [TODO] というかこれは丸ごとCommonにしてDISKへ保存する。
+;; GlobalParamにDeviceMeasurerを配置する
 (defclass DeviceMeasurer (Evaluator)
   ((runtime :initarg :runtime)
+   (blueprint :initarg :blueprint)
+   (ctx :initform nil :accessor dm-ctx)
    (cache :initform (make-hash-table :test 'equal))))
 
 (defgeneric evaluate-polyhedral (psi evaluator blueprint))
 
-(defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Evaluator) blueprint)
+(defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator DeviceMeasurer) blueprint)
   "
 MeasurerWorkflow
 ```
@@ -38,13 +41,14 @@ MeasurerWorkflow
          [StoreInCache]
 ```
 "
-  ;; TODO
-  ;; - [x] Finish ASTGen
-  ;; - [ ] BEAM Cache Systemを構築する
-  ;; - [ ] Replayerは削除する
-  ;; - [ ] 入力データについてどうしよう。ZeroDivisionが起こるかもしれない
-  ;; - [ ] Where, 条件分岐を含む実装についてはもっと難しい。PayneHanekなど
-  )
+  (multiple-value-bind (kernels allocs) (apply-schedule (psi-theta psi) blueprint :ctx (dm-ctx evaluator))
+    ;; TODO
+    ;; - [x] Finish ASTGen
+    ;; - [ ] BEAM Cache Systemを構築する
+    ;; - [ ] Replayerは削除する
+    ;; - [ ] 入力データについてどうしよう。ZeroDivisionが起こるかもしれない
+    ;; - [ ] Where, 条件分岐を含む実装についてはもっと難しい。PayneHanekなど
+    ))
 
 (defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Proximity) blueprint)
   "Compute Proximity Evaluation"
