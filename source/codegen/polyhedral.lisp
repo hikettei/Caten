@@ -1453,11 +1453,14 @@ for (int i=0; i<32; i+=2)
     (isl::%isl-union-map-foreach-map (isl::union-map-handle umap) (cffi:callback extract-domain-maxima-map-cb) (cffi:null-pointer))
     *domain-maxima-results*))
 
-(defun union-set-add-constraint (dom dim-name bound is-full-tile-p)
-  (declare (type isl::union-set dom))
+(defun union-set-add-isolation-constraint (dom width dim-name dom-size is-full-tile-p)
+  (declare (type isl::union-set dom) (type string dim-name) (type isl::value dom-size width) (type boolean is-full-tile-p))
   (let* ((lst (isl::union-set-get-set-list dom))
          (cnt (isl::set-list-n-set lst))
-         (res nil))
+         (res nil)
+         (bound (value- dom-size (value-mod dom-size width)))) ;; bound = (domain_size) - (domain_size mod width)
+    (when (not is-full-tile-p)
+      (setf bound (value+ bound (value 1))))
     (loop for i from 0 below cnt do
       (let* ((s (isl::set-list-get-at lst i))
              (bsl (isl::set-get-basic-set-list s))
@@ -1470,8 +1473,8 @@ for (int i=0; i<32; i+=2)
             (let* ((sp  (isl::set-get-space s))
                    (ls  (isl::local-space-from-space sp))
                    (ineq (make-inequality-constraint ls))
-                   (ineq (isl::set-constant-si ineq (- bound)))
-                   (ineq (isl::set-coefficient-si ineq :dim-set pos 1))
+                   (ineq (isl::set-constant-val ineq (if is-full-tile-p bound (value-neg bound))))
+                   (ineq (isl::set-coefficient-si ineq :dim-set pos (if is-full-tile-p -1 1)))
                    (s (isl::set-add-constraint s ineq))
                    (u (isl::union-set-from-set s)))
               (setf res (if res (isl::union-set-union res u) u)))
@@ -1507,12 +1510,18 @@ for (int i=0; i<32; i+=2)
     (ecase strategy
       (:isolate
        ;; union_map -> basic_set -> constraint
-       (let* ((sched-domain-umap (isl::schedule-node-get-prefix-schedule-relation tiled))
-              (maxima-bounds (extract-domain-maxima sched-domain-umap))
+       (let* ((sched-domain-umap
+                (isl::schedule-node-get-prefix-schedule-relation tiled))
+              (maxima-bounds
+                (extract-domain-maxima sched-domain-umap))
+              (tiled-ids
+                (partial-schedule-get-involved-dims
+                 (schedule-node-band-get-partial-schedule tiled)))
               (filters-full
                 (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
               (filters-isolate
-                (union-map-domain (isl::schedule-node-get-subtree-expansion tiled))))
+                (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
+              (width (value size)))
          ;; ISL Schedule Isolate Options are flaky, we manually graft a following subtree starting with sequence
          ;; sequence:
          ;;   - filter: " { S[tile_dim] : tile_dim <= reminder_last }"
@@ -1522,14 +1531,14 @@ for (int i=0; i<32; i+=2)
          ;; でもこれはSubtreeのOptimizationSpaceがなぁ
          ;; -> Proper DIRECTIVE Insertionで探索空間を縮小する。
          ;; -> how to get filters?
-         (print "TILED")
-         (print tiled)
-
-         (print (partial-schedule-get-involved-dims (schedule-node-band-get-partial-schedule tiled)))
-         (print (alexandria:hash-table-keys maxima-bounds))
-         (print (alexandria:hash-table-values maxima-bounds))
-         (print (union-set-add-constraint filters-full "kk" 10 nil))
-         
+         ;; [todo] dependency graphに違反しないかCheck!
+         (loop for tiled-id in tiled-ids
+               for bound = (gethash tiled-id maxima-bounds) do
+                 (assert bound () "The bound ~a is not found in the maxima-bounds." tiled-id)
+                 (setf filters-full (union-set-add-isolation-constraint filters-full width tiled-id bound t)
+                       filters-isolate (union-set-add-isolation-constraint filters-isolate width tiled-id bound nil)))
+         (print filters-full)
+         (print filters-isolate)
          tiled
          ))
       (:padding
