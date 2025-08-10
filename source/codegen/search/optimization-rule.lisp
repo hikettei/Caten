@@ -190,3 +190,9 @@ options; typically used to seed candidate schedules at the start of search."))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :BlockReduce)) bands blueprint)
   blueprint)
+
+;; [TODO]
+;; - [ ] Coalesce on ScheduleTree Level
+;; - [ ] Fuse/Shift/Stencil(Skewing)
+;; - [ ] FuseWithParent
+;; - [ ] Beautiful MultiKernel Separation, Directive Exploration,

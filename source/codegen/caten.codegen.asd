@@ -22,6 +22,7 @@
    (:file "search/ast")
    (:file "search/evaluator")
    (:file "search/optimization-rule")
+   (:file "search/autotune")
    
    (:file "jit")
    (:file "package")
