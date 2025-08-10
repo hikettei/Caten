@@ -325,9 +325,6 @@
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :CAST)) node)
   (format nil "(~(~a~))~a" (->cdtype (getattr node :dtype)) (render-node renderer (second (node-reads node)))))
 
-(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :INDEX-COMPONENTS)) node)
-  (render-expr 'CStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
-
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WHERE)) node)
   (format nil "(~a ? ~a : ~a)"
           (render-node renderer (car (node-reads node)))
@@ -366,3 +363,157 @@
 (defmethod %render-node ((renderer Renderer) (id (eql :RANGE)) node)
   (%render-const renderer (getattr node :idx)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass JSONStyle-Renderer (Renderer)
+  ((count :initform 0 :accessor jr-cnt)
+   (vars :initform (make-hash-table) :accessor jr-vars)))
+
+(defmethod jr-gensym ((jr JSONStyle-Renderer) val)
+  (if (symbolp val)
+      (or
+       (gethash val (jr-vars jr))
+       (prog1
+           (setf (gethash val (jr-vars jr)) (format nil "{\"symbol\": \"v~a\"}" (jr-cnt jr)))
+         (incf (jr-cnt jr))))
+      (format nil "{\"const\": ~a}" val)))
+
+(defmethod %render-const ((renderer JSONStyle-Renderer) obj) (jr-gensym renderer obj))
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :LOAD)) node) (%render-const renderer (getattr node :value)))
+;; UnaryOps
+(macrolet ((def (op &rest attrs)
+             `(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql ,op)) node)
+                (format nil "{\"op\": \"~a\", \"x\": ~a~a}"
+                        ,op
+                        (render-node renderer (car (node-reads node)))
+                        (with-output-to-string (out)
+                          (when ',attrs
+                            (loop for attr in ',attrs do
+                              (format nil ", \"~a\": ~a" attr (getattr node attr)))))))))
+  (def :NEG)
+  (def :NOT)
+  (def :SIN)
+  (def :log2)
+  (def :exp2)
+  (def :SQRT)
+  (def :RECIP))
+;; BinaryOps
+(macrolet ((def (op &rest attrs)
+             `(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql ,op)) node)
+                (format nil "{\"op\": \"~a\", \"lhs\": ~a, \"rhs\": ~a~a}"
+                        ,op
+                        (render-node renderer (car (node-reads node)))
+                        (render-node renderer (second (node-reads node)))
+                        (with-output-to-string (out)
+                          (when ',attrs
+                            (loop for attr in ',attrs do
+                              (format nil ", \"~a\": ~a" attr (getattr node attr)))))))))
+  (def :ADD :wrap-around)
+  (def :MUL :wrap-around)
+  (def :MOD) (def :IDIV) (def :AND)
+  (def :OR) (def :XOR)
+  (def :MAX) (def :AREF) (def :CAST :dtype)
+  (def :MOVE) (def :STORE) (def :SETF))
+;; TernaryOps
+(macrolet ((def (op &rest attrs)
+             `(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql ,op)) node)
+                (format nil "{\"op\": \"~a\", \"x\": ~a, \"y\": ~a, \"z\": ~a, ~a}"
+                        ,op
+                        (render-node renderer (car (node-reads node)))
+                        (render-node renderer (second (node-reads node)))
+                        (render-node renderer (third (node-reads node)))
+                        (with-output-to-string (out)
+                          (when ',attrs
+                            (loop for attr in ',attrs do
+                              (format nil ", \"~a\": ~a" attr (getattr node attr)))))))))
+  (def :!=)
+  (def :<)
+  (def :WHERE))
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :Allocate)) node) "\"<empty>\"")
+
+(macrolet ((def (op)
+             `(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql ,op)) node)
+                (%render-const renderer (car (node-writes node))))))
+  (def :EXPR) (def :DEFINE-GLOBAL) (def :DEFINE-LOCAL))
+
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
+
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :BIND)) node)
+  (%render-const renderer (getattr node :value)))
+
+(defun sha256-hex (string)
+  (ironclad:byte-array-to-hex-string
+   (ironclad:digest-sequence :sha256 (babel:string-to-octets string :encoding :utf-8))))
+
+(defun make-kernel-description (graph &key (version) (getraw nil) &aux (seen))
+  (let ((renderer (make-instance 'JSONStyle-Renderer :graph graph)))
+    (funcall
+     (if getraw #'identity #'sha256-hex)
+     (with-output-to-string (out)
+       (format out "{\"version\": ~a," version)
+       (format out "\"globals\":[")
+       (loop for node in (graph-nodes graph)
+             if (eql (node-type node) :DEFINE-GLOBAL) do
+               (format out "{\"arg\":\"~a\",\"dtype\":~a_~a_~a},"
+                       (jr-gensym renderer (car (node-writes node)))
+                       (if (getattr node :pointer-p) "*" "")
+                       (getattr node :mode)
+                       (getattr node :dtype)))
+       (format out "{\"op\":\"end\"}],")
+       (labels ((r (s &aux (val (id->value graph s)))
+                  (when (and val (null (find (node-id val) seen)))
+                    (f val) (push (node-id val) seen))
+                  s)
+                (e (id) (render-node renderer id))
+                (emit-array (items emit-fn)
+                  (format out "[")
+                  (loop for it in items
+                        for i from 0 do
+                          (when (> i 0) (format out ","))
+                          (funcall emit-fn it))
+                  (format out "]"))
+                (f (node)
+                  (case (node-type node)
+                    (:PROGN
+                      (format out "{\"progn\":")
+                      (emit-array (node-reads node) #'r)
+                      (format out "}"))
+                    (:EXPR
+                     (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                         (format out "{\"expr_store\":~a}" (e (car (node-reads node))))
+                         (let ((type (car (relay-writes (read-type-relay node)))))
+                           (format out "{\"expr\":{\"id\":~a,\"sym\":~a,\"value\":"
+                                   (->cdtype (tensor-relay-dtype type))
+                                   (jr-gensym renderer (car (node-writes node))))
+                           (format out "~a" (e (car (node-reads node))))
+                           (format out "}}"))))
+                    (:FOR
+                     (multiple-value-bind (range body) (apply #'values (node-reads node))
+                       (setf range (id->value graph range))
+                       (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
+                       (multiple-value-bind (bind size step) (values (jr-gensym renderer (getattr range :idx)) (first (node-reads range)) (second (node-reads range)))
+                         (when (symbolp size)
+                           (let ((val (id->value graph size)))
+                             (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
+                             (setf size (car (node-reads val)))))
+                         (when (symbolp step)
+                           (let ((val (id->value graph step)))
+                             (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
+                             (setf step (car (node-reads val)))))
+                         (format out "{\"for\":{\"idx\":\"~(~a~)\",\"lower\":0,\"upper\":" bind)
+                         (format out "~a" (e size))
+                         (format out ",\"step\":~a,\"body\":" (e step))
+                         (r body)
+                         (format out "}}"))))
+                    (:IF
+                     (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                       (setf cond (id->value graph cond))
+                       (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                       (format out "{\"if\":{\"cond\":~a,\"then\":" (e (car (node-reads cond))))
+                       (r body)
+                       (format out "}}")))
+                    (otherwise
+                     (warn "JSONStyleRenderer: Unknown op type ~a" (node-type node))
+                     (format out "{\"unknown_op\":~a}" (node-type node))))))
+         (format out ",\"body\":")
+         (f (id->value graph (car (graph-outputs graph))))
+         (format out "}"))))))
