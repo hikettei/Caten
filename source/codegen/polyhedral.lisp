@@ -1523,8 +1523,9 @@ for (int i=0; i<32; i+=2)
              (let* ((lst (isl::union-set-list-alloc 0))
                     (lst (%union-set-list-add-nonempty lst unaffected))
                     (lst (%union-set-list-add-nonempty lst full))
-                    (lst (%union-set-list-add-nonempty lst tail)))
-               (isl::schedule-node-insert-sequence tiled lst))))))
+                    (lst (%union-set-list-add-nonempty lst tail))
+                    (sched (isl::schedule-node-insert-sequence tiled lst)))
+               sched)))))
       (:padding tiled)
       (:atomic  tiled)
       (:guard   tiled))))
@@ -1607,8 +1608,7 @@ for (int i=0; i<32; i+=2)
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Vectorize))
   (assert (optrule-band opt))
-  (let* ((vectorized (schedule-node-band-tile-with-options (optrule-band opt) (vectorize-width opt)
-                                                           :strategy :isolate))
+  (let* ((vectorized (schedule-node-band-tile-with-options (optrule-band opt) (vectorize-width opt) :strategy :isolate))
          ;(sunk (isl::schedule-node-band-sink (schedule-node-get-child vectorized 0)))
          )
     (print vectorized)
@@ -1884,8 +1884,8 @@ for (int i=0; i<32; i+=2)
             t))))))
 ;; = [TODO] =========================================
 ;; - [ ] 一度全部Polyhedral IRで実施できるように再度検討する。===> Minimize the exploration space
-;;   - [ ] Isolate Tile Generation
-;;   - [ ] VECTORIZE -> Ensure the innner tile is always isolated
+;;   - [x] Isolate Tile Generation
+;;   - [x] VECTORIZE -> Ensure the innner tile is always isolated
 ;;   - [ ] Mark+Interchange
 ;;   - [ ] Distribute Reduction!
 ;;   - [ ] Softmaxの内側のLoopって同一のDomainとしていいのだろうか？
@@ -1919,119 +1919,10 @@ for (int i=0; i<32; i+=2)
   - [ ] Coalesce
 - [ ] Implement Search as an separated components?
 - [ ] caten/search
-  - [ ] caten/search/isl
+- [ ] caten/search/isl
+- [ ] max utilize check-legality-parallel
+;; - [ ] caten/codegen/searchを作る, 必要な機能を全て追加したら，refactor and clean up! or reimpl things
 |#
-
-(defparameter *sched*
-  "
-domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
-child:
-  schedule: \"[{ NID41157[i, j, kk] -> [(i)]; NID41178[i, j] -> [(i)]; NID41137[i, j] -> [(i)] }, { NID41157[i, j, kk] -> [(j)]; NID41178[i, j] -> [(j)]; NID41137[i, j] -> [(j)] }]\"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: \"{ NID41157[i, j, kk]; NID41137[i, j] }\"
-      child:
-        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
-        permutable: 1
-        child:
-          sequence:
-          - filter: \"{ NID41137[i, j] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-          - filter: \"{ NID41157[i, j, kk] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-    - filter: \"{ NID41178[i, j] }\"
-")
-
-;; child: scheduleのInsertはLegal
-;; guard -> context? for gpu
-;; coalesce when pasing isl ast (this option should be added to directive)
-;; Isolate OptionをMultiple Domainに対してどう適用したらいいのか？
-(defparameter *sched*
-  "
-domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
-child:
-  schedule: \"[{ NID41157[i, j, kk] -> [(i)]; NID41178[i, j] -> [(i)]; NID41137[i, j] -> [(i)] }, { NID41157[i, j, kk] -> [(j)]; NID41178[i, j] -> [(j)]; NID41137[i, j] -> [(j)] }]\"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: \"{ NID41157[i, j, kk]; NID41137[i, j] }\"
-      child:
-        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
-        permutable: 1
-        child:
-          sequence:
-          - filter: \"{ NID41137[i, j] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-          - filter: \"{ NID41157[i, j, kk] : kk <= 10 }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-    - filter: \"{ NID41178[i, j] }\"
-")
-
-(defparameter *sched*
-  "
-domain: \" { NID153174[_gid0] : 0 <= _gid0 <= 10000 }\"
-child:
-  schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
-  options: \" { isolate[[] -> [i]] : floord(i, 3)*3 + 3 <= 10000 }\"
-  child:
-    schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
-")
-
-(defparameter *sched*
-  "
-domain: \" { NID153174[_gid0] : 0 <= _gid0 <= 10000 }\"
-child:
-  sequence:
-    - filter: \"{ NID153174[_gid0] : _gid0 <= 9 }\"
-      child:
-        schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
-        child:
-          schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
-    - filter: \"{ NID153174[_gid0] : _gid0 >= 9 }\"
-      child:
-        schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
-        child:
-          schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
-")
-       
-(defparameter *sched*
-  "
-domain: \" [M] -> { NID153174[_gid0] : 0 <= _gid0 <= M }\"
-child:
-  schedule: \"[{ NID153174[_gid0] -> [(_gid0 - (_gid0) mod 3)] }]\"
-  options: \" [M] -> { unroll[2] }\"
-  child:
-    schedule: \"[{ NID153174[_gid0] -> [((_gid0) mod 3)] }]\"
-")
-
-(defparameter *sched* "
-domain: \"{ NID1494[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID1474[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID1515[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
-child:
-  schedule: \"[{ NID1494[i, j, kk] -> [(i)]; NID1474[i, j] -> [(i)]; NID1515[i, j] -> [(i)] }, { NID1494[i, j, kk] -> [(j)]; NID1474[i, j] -> [(j)]; NID1515[i, j] -> [(j)] }]\"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: \"{ NID1494[i, j, kk]; NID1474[i, j] }\"
-      child:
-        schedule: \"[{ NID1494[i, j, kk] -> [(kk)]; NID1474[i, j] -> [(0)] }]\"
-        options: \"{ [isolate[] -> [k]] : k >= 1 }\"
-        permutable: 1
-        child:
-          sequence:
-          - filter: \"{ NID1474[i, j] }\"
-          - filter: \"{ NID1494[i, j, kk] }\"
-          - filter: \"{ NID1515[i, j] }\"
-          ")
 
 (defun ->str (sched)
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
@@ -2041,82 +1932,5 @@ child:
          (str   (isl::%isl-printer-get-str q)))
     str))
 
-(defparameter *sched*
-  "
-domain: \"{ NID41157[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID41178[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID41137[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
-child:
-  schedule: \"[{ NID41157[i, j, kk] -> [(i)]; NID41178[i, j] -> [(i)]; NID41137[i, j] -> [(i)] }, { NID41157[i, j, kk] -> [(j)]; NID41178[i, j] -> [(j)]; NID41137[i, j] -> [(j)] }]\"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: \"{ NID41157[i, j, kk] : kk <= 24 ; NID41137[i, j] }\"
-      child:
-        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
-        permutable: 1
-        child:
-          sequence:
-          - filter: \"{ NID41137[i, j] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)]}]\"
-              permutable: 1
-          - filter: \"{ NID41157[i, j, kk] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-    - filter: \"{ NID41157[i, j, kk] : kk >= 24 ; NID41137[i, j] }\"
-      child:
-        schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
-        permutable: 1
-        child:
-          sequence:
-          - filter: \"{ NID41137[i, j] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)]}]\"
-              permutable: 1
-          - filter: \"{ NID41157[i, j, kk] }\"
-            child:
-              schedule: \"[{ NID41137[i, j] -> [(0)]; NID41157[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-    - filter: \"{ NID41178[i, j] }\"
-")
-
-(defparameter *sched*
-  "
-domain: \"{ NID270546[i, j, kk] : 0 <= i <= 9 and 0 <= j <= 29 and 0 <= kk <= 26; NID270526[i, j] : 0 <= i <= 9 and 0 <= j <= 29; NID270567[i, j] : 0 <= i <= 9 and 0 <= j <= 29 }\"
-child:
-  schedule: \"[{ NID270546[i, j, kk] -> [(i)]; NID270526[i, j] -> [(i)]; NID270567[i, j] -> [(i)] }, { NID270546[i, j, kk] -> [(j)]; NID270526[i, j] -> [(j)]; NID270567[i, j] -> [(j)] }]\"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: \"{ NID270546[i, j, kk]; NID270526[i, j] }\"
-      child:
-        sequence:
-        - filter: \"{ NID270546[i, j, kk] : kk <= 23; NID270526[i, j] }\"
-          child:
-            schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
-            permutable: 1
-            child:
-              schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-              child:
-                sequence:
-                - filter: \"{ NID270526[i, j] }\"
-                - filter: \"{ NID270546[i, j, kk] }\"
-        - filter: \"{ NID270546[i, j, kk] : kk >= 24; NID270526[i, j] }\"
-          child:
-            schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [(kk - (kk) mod 4)] }]\"
-            permutable: 1
-            child:
-              schedule: \"[{ NID270526[i, j] -> [(0)]; NID270546[i, j, kk] -> [((kk) mod 4)] }]\"
-              permutable: 1
-              child:
-                sequence:
-                - filter: \"{ NID270526[i, j] }\"
-                - filter: \"{ NID270546[i, j, kk] }\"
-    - filter: \"{ NID270567[i, j] }\"
-")
-
-;; まず，複数のFilterをまとめない形でScheduleが欲しいよな。。。
-(defun test () (->str (isl::schedule-read-from-str *sched*)))
+ (defparameter *sched* "")
+ (defun test () (->str (isl::schedule-read-from-str *sched*)))
