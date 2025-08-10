@@ -15,7 +15,14 @@
    (:file "blueprint")
    (:file "memory-planner")
    (:file "pprinter")
-   (:file "polyhedral")
+   ;; AutoSchedulers
+   (:file "search/directive")
+   (:file "search/schedule")
+   (:file "search/polyhedral")
+   (:file "search/ast")
+   (:file "search/evaluator")
+   (:file "search/optimization-rule")
+   
    (:file "jit")
    (:file "package")
    ;(:file "documentation")

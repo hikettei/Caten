@@ -1022,12 +1022,8 @@ if (not ensure_domain_is_right)
               (list
                (make-instance 'Tile :size size :band band :axis nth)
                (make-instance 'Tile :size size :band band :axis nth :sink t)))))
-               
 
-(defclass TileGPU (OptimizationRule)
-  ((local-size :initarg :local-size :accessor tile-gpu-local-size)
-   (band-split-at :initarg :band-split-at :accessor tile-gpu-band-split-at :initform nil)
-   (nth-kernel :initarg :nth-kernel :accessor tile-gpu-nth-kernel :initform 0)))
+
 
 (defun schedule-node-band-no-directive-p (band name)
   (declare (type string name))
@@ -1116,11 +1112,6 @@ for (int i=0; i<32; i+=2)
          (insert-nodes new-bp (append (list thread) x y z)))))
     new-bp))
 
-(defclass Parallel (OptimizationRule)
-  ((depth :initarg :depth :accessor parallel-depth)
-   (tile-size :initarg :tile-size :accessor parallel-tile-size :initform 1)
-   (nth-kernel :initarg :nth-kernel :accessor parallel-nth-kernel)))
-
 (defmethod optrule-generate-search-space (poly bands (id (eql :Parallel)))
   (when (= (slot-value (poly-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
     (loop for (nth-kernel . bands) in (schedule-get-band-and-kernel (poly-schedule poly))
@@ -1156,8 +1147,6 @@ for (int i=0; i<32; i+=2)
   (setf blueprint (caten/aasm::ast-band-collapse blueprint (reverse bands) :parallel 1))
   blueprint)
 
-(defclass Vectorize (OptimizationRule) ((width :initarg :width :accessor vectorize-width))
-  (:documentation "Vectorize = Tile+Sink"))
 
 (defmethod optrule-generate-search-space (poly bands (id (eql :Vectorize)))
   (loop for band in bands for nth upfrom 0
@@ -1191,8 +1180,6 @@ for (int i=0; i<32; i+=2)
           (cffi:callback isl-insert-mark-to-filter)
           directive)))
       (schedule-node-insert-mark schedule-node (directive->id directive))))
-
-
 
 
 (defun add-extent-constraints (set width)
@@ -1275,11 +1262,6 @@ for (int i=0; i<32; i+=2)
                            (directive->id (directive mode (splitreduce-size opt) depth NIL)))))
     (setf (poly-schedule poly) (schedule-node-get-schedule vectorize-inner))))
 
-(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :WarpReduce)) bands blueprint)
-  blueprint)
-
-(defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :BlockReduce)) bands blueprint)
-  blueprint)
 ;; ~~ AutoScheduler Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] FuseWithParent
 (defun SelectOneFromOpts (&rest opts)
