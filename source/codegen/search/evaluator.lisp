@@ -42,9 +42,14 @@ MeasurerWorkflow
   ;; TODO
   ;; - [ ] Finish ASTGen
   ;; - [ ] BEAM Cache Systemを構築する
+  ;; - [ ] Replayerは削除する
+  ;; - [ ] 入力データについてどうしよう。ZeroDivisionが起こるかもしれない
+  ;; - [ ] Where, 条件分岐を含む実装についてはもっと難しい。PayneHanekなど
   )
 
-(defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Proximity) blueprint))
+(defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Proximity) blueprint)
+  "Compute Proximity Evaluation"
+  )
 ;; [TODO]
 ;; - 前回とのDiffを計測して，差分が0ならSKIP
 ;; - RandomForest, Compile+Runをサポート

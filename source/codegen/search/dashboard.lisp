@@ -6,3 +6,5 @@
 (in-package :caten/codegen/search/dashboard)
 
 ;; [TODO] WebUI PlaceHolder
+;; - BEAM SearchのCost/Node Tree Visualization (Mouse ClickでCreateNewWindow+Display the kernel)
+;; - Launched on Clack

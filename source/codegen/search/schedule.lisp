@@ -20,7 +20,8 @@
    #:schedule-node-band-tile*
    #:union-set-filter-by-dim-name
    #:partial-schedule-get-involved-dims
-   #:tiling-size))
+   #:tiling-size
+   #:schedule-node-count-bands))
 (in-package :caten/codegen/search/schedule)
 
 (defun compute-dependence-relation (read write schedule)
@@ -457,3 +458,11 @@ Returns:
       (:padding tiled)
       (:atomic  tiled)
       (:guard   tiled))))
+
+(defun schedule-node-count-bands (node)
+  "Count how many band nodes exist in the subtree rooted at NODE."
+  (declare (type isl::schedule-node node))
+  (let ((self (if (eql (schedule-node-get-type node) :schedule-node-band)
+                  (schedule-node-band-get-depth node)
+                  0)))
+    (+ self (reduce #'+ (mapcar #'schedule-node-count-bands (schedule-node-get-children node)) :initial-value 0))))

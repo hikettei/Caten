@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/search/autotune
-  (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc)
+  (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc :caten/codegen/search/evaluator)
   (:export
    #:online-autotune-kernel
    ))
@@ -36,11 +36,11 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; [TODO]
 ;; - TILE Parameter Space?
 ;; - 
-(defun setup-autotune ()
+(defun setup-autotune (runtime)
   (values
    (ctx:getenv :BEAM)
    (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)
-   ;; evaluator1
+   (make-instance 'DeviceMeasurer :runtime runtime)
    ;; evaluator2
    ))
 
@@ -61,7 +61,7 @@ BEAM Search Workflow:
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
   (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
-  (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune)
+  (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime)
     (caten/isl::with-isl-context
       ;; - BEAM Search With Early Pruning
       ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成

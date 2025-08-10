@@ -7,11 +7,11 @@
    #:opt-history #:psi-opt-history
    #:psi-evaluation
    #:make-polyhedral-schedule-item
+   #:ctx #:ctx-node-to-loops #:ctx-all-loops #:ctx-exprs #:ctx-scal->access
+   #:node-to-loops #:all-loops #:exprs #:scal->access
+   #:make-scop-ctx-from-blueprint
    ))
 (in-package :caten/codegen/search/polyhedral)
-
-(defclass Evaluation ()
-  ((cost-per-kernel)))
 
 (defclass Polyhedral-Schedule-Item ()
   ((theta :accessor psi-theta :initarg :initial-theta)
