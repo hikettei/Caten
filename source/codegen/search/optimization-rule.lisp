@@ -77,13 +77,19 @@ options; typically used to seed candidate schedules at the start of search."))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of scheduling commands.
+  ;; [TODO] Scheduled Graph is random?
+  ;; [TODO] 最初Rescheduleするなら, Read/Write Accessだけで良いのでは？
+  ;; --> FUSE, など，Filterを移動する操作が欲しくなる。
   (list
-   (make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
-   (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
-   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
-   (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)))
+   ;(make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
+   ;(make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
+   ;; Locality Strategy
+   (make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
+   ;(make-instance 'Reschedule :outer-coincidence 1 :schedule-whole-component 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+   ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
+   ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+   ;(make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+   ))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
   (macrolet ((set-option (name slot)
@@ -104,8 +110,16 @@ options; typically used to seed candidate schedules at the start of search."))
           (isl:schedule-constraints-compute-schedule
            (compute-schedule-constraints
             (psi-domain poly)
-            (psi-dependency-graph poly)))))
-    ;; [TODO]
+            (compute-dependence-relation
+             (psi-read-union-map poly)
+             (psi-write-union-map poly)
+             (psi-theta poly))))))
+    (print poly)
+    ;; [TODO] Two strategyの雛形を用意する
+    ;; - Coincident | 一時Bufferを大量に作っておk                      (COINCIDENT)
+    ;; - Locality   | 一時Bufferの読み出しでSRAM<->DRAMの通信回数を減らす (FLASH)
+    ;; これは，Simplifierみたいに，機械的にScheduleTreeを書き換えれるようにする
+    ;; - Best way to keep fusion?
     ;; Coincident/Permutable ParameterをRevisitする
     ;; (Coincident方向のdepがempty -> extra coincident chance)
     ;; (Permutation is worthless -> do not add permutable ...)
@@ -123,6 +137,8 @@ options; typically used to seed candidate schedules at the start of search."))
     ;; If body is a sequence => split to multiple kernel
     (print top)
     (print poly)
+    ;; Parallelで256x256x256Tile作る->InnerTileをInterchange
+    ;; i.e.: InterchangeはBEAMでずっとやるのが吉？
     nil
     ))
 
@@ -156,19 +172,23 @@ options; typically used to seed candidate schedules at the start of search."))
   )
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
-  )
+  (when (= 1 (slot-value (psi-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
+    (loop for root in (schedule-get-roots (psi-theta poly))
+          do (print root))
+    nil))
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :TileGPU)) bands blueprint)
+  
   )
 ;; ~~ Parallel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Parallel (OptimizationRule)
-  ((depth :initarg :depth :accessor parallel-depth)
-   (tile-size :initarg :tile-size :accessor parallel-tile-size :initform 1)
-   (nth-kernel :initarg :nth-kernel :accessor parallel-nth-kernel)))
+(defclass Parallel (OptimizationRule) nil)
 
 (defmethod optrule-generate-search-space (poly (id (eql :Parallel)))
-
-  )
+  (when (> (slot-value (psi-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
+    (loop for root in (schedule-get-roots (psi-theta poly)) do
+      (print root)
+          )
+    nil))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
 

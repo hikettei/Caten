@@ -21,7 +21,8 @@
    #:union-set-filter-by-dim-name
    #:partial-schedule-get-involved-dims
    #:tiling-size
-   #:schedule-node-count-bands))
+   #:schedule-node-count-bands
+   #:schedule-get-roots))
 (in-package :caten/codegen/search/schedule)
 
 (defun compute-dependence-relation (read write schedule)
@@ -466,6 +467,16 @@ Returns:
                   (schedule-node-band-get-depth node)
                   0)))
     (+ self (reduce #'+ (mapcar #'schedule-node-count-bands (schedule-node-get-children node)) :initial-value 0))))
+
+(defun schedule-get-roots (schedule)
+  (declare (type isl::schedule schedule))
+  (let ((root (schedule-node-get-child (schedule-get-root schedule) 0)))
+    (case (schedule-node-get-type root)
+      (:schedule-node-sequence
+       (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle root))))
+         (loop for i upfrom 0 below n-child
+               collect (schedule-node-get-child root i))))
+      (otherwise (list root)))))
 
 (defun schedule-node-subtree-domain (node)
   "Return the statement iteration domain of the subtree rooted at NODE.
