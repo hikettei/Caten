@@ -9,7 +9,9 @@
 ;; ~~ ScheduleGenerationTree ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Schedule-Generation-Tree ()
   ((depth :initform 0 :accessor sgt-depth :initarg :depth)
-   (items :initform nil :accessor sgt-items :initarg :items))
+   (items :initform nil :accessor sgt-items :initarg :items)
+   (best-item :initform nil :accessor sgt-best-item)
+   (best-score :initform nil :accessor sgt-best-score))
   (:documentation
 "Schedule-Generation-Tree collects Polyhedral IR candidates that belong to the
 same search generation (beam frontier). Conceptually, for a parent schedule θ₀,
@@ -22,7 +24,10 @@ pruned (Top-k), and expanded to produce the next generation."))
   (declare (type Schedule-Generation-Tree sgt))
   (mapc
    #'(lambda (x) (setf (psi-evaluation x) (evaluate-polyhedral x evaluator blueprint)))
-   (sgt-items sgt)))
+   (sgt-items sgt))
+  (let ((items (sort (sgt-items sgt) #'< :key #'psi-evaluation)))
+    (setf (sgt-best-item sgt) (car items)
+          (sgt-best-score sgt) (psi-evaluation (car items)))))
 
 (defun sgt-prune-topk (sgt topk)
   "Prune the current frontier by keeping the Top-k candidates under the active"
@@ -44,6 +49,10 @@ pruned (Top-k), and expanded to produce the next generation."))
                     append
                     (loop for space in (optrule-generate-search-space item optrule-id)
                           collect (apply-optimization item space))))))
+
+(defun sgt-improvements (old-sgt new-sgt)
+  (assert (and (sgt-best-score old-sgt) (sgt-best-score new-sgt)))
+  (/ (sgt-best-score new-sgt) (sgt-best-score old-sgt)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - TILE Parameter Space?
@@ -84,9 +93,15 @@ BEAM Search Workflow:
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
           (time (sgt-apply-transformations gen0 :Reschedule))
-          (time (sgt-apply-transformations gen0 :Interchange))
+          ;; [TODO]
+          ;; - 1. Symbolic Tileができないかやっぱり検証する
+          ;; - 2. Parametricができるようにして，後からLocalSize変えれるようにしたい
+          ;; - 3. この世代で全てのKernelに対してParallelizeする
+;;          (time (sgt-apply-transformations gen0 :Parallel :TileGPU))
+;;          (time (sgt-apply-transformations gen0 :Interchange))
           (print (sgt-items gen0))
           (print gen0)
+;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
           ;; Symbolic
 ;;          (sgt-apply-transformations gen0 :Interchange)
 ;;          (sgt-apply-transformations gen0 :Parallel :TileGPU)
