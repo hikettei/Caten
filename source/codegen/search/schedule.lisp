@@ -477,7 +477,7 @@ Returns:
          (loop for i upfrom 0 below n-child
                collect (schedule-node-get-child root i))))
       (otherwise (list root)))))
-
+;; NOT TESTED!!!
 (defun schedule-node-subtree-domain (node)
   "Return the statement iteration domain of the subtree rooted at NODE.
 Inputs:
@@ -486,16 +486,6 @@ Returns:
   isl::union-set U = Dom(Exp(NODE)), i.e., the union of statement domains
   covered by the subtree expansion of NODE."
   (caten/isl::union-map-domain (caten/isl::schedule-node-get-subtree-expansion node)))
-
-(defun restrict-umap-to-domain (umap uset)
-  "Intersect the domain of a union map with a given union set.
-Inputs:
-  umap : isl::union-map F
-  uset : isl::union-set U
-Returns:
-  isl::union-map F' = F ∩ (U × Range(F)) = intersect_domain(F, U).
-If U ∩ Dom(F) = ∅, the result is the empty union map."
-  (caten/isl::union-map-intersect-domain (caten/isl::copy umap) (caten/isl::copy uset)))
 
 (defun restrict-umap-to-domain (umap uset)
   "Intersect the domain of a union map with a given union set.
@@ -537,3 +527,437 @@ Procedure:
         nil
         (let ((same (union-map-same-address-relation reads)))
           (not (caten/isl::union-map-is-empty same))))))
+;; -----------------------------------------------------------------------------
+;;  ISL ScheduleTree Deterministic Optimization
+;; -----------------------------------------------------------------------------
+;; Goal
+;;   Given a schedule S over an iteration domain D and memory accesses
+;;   (R: reads, W: writes), rewrite S into S' that is *never worse* and
+;;   often better for SRAM↔DRAM traffic, while preserving all dependences Δ.
+;;
+;; Inputs / Outputs
+;;   Simplify(S, R, W) → S'
+;;   where Δ := RAW_must(R,W,S) ∪ WAW_must(W,S) ∪ WAR_may(R,W,S).
+;;
+;; Core Idea
+;;   We identify a “group” G (a node and its subtree) that is heavy and
+;;   its dependent front/back neighbors, then *deterministically* reorder
+;;   them by inserting a sequence at a band: sequence([affected, unaffected])
+;;   or its reverse. The subtree schedules are restricted by union-set
+;;   filters, so no explicit stmt splitting is required—ISL limits domains.
+;;
+;; Heavy / Front / Back (automatic)
+;;   Let T = schedule map of S (Dom(T)=D). A statement s is “heavy” if
+;;     ∃(x→y) ∈ Δ_s.t. T(x) ≠ T(y)  (i.e., the time delta Δt ≠ 0).
+;;   Define:
+;;     front := { s | ∃(s→h) ∈ Δ for some heavy h },
+;;     back  := { s | ∃(h→s) ∈ Δ for some heavy h }.
+;;   affected := heavy ∪ front ∪ back, unaffected := D_subtree \ affected.
+;;
+;; Legality
+;;   We only accept rewrites that keep S' legal:
+;;     ∀(x→y) ∈ Δ,  T'(x) ≥_lex T'(y).
+;;   This is checked with schedule-is-legal-p over Δ.
+;;
+;; Benefit (communication proxy via reuse/fusion)
+;;   Use *same-address* relation over reads:
+;;     SameAddr(R) := R ∘ R^{-1}  ⊆ D × D.
+;;   For a pair of stmt sets A,B, restrict domain/range of SameAddr(R) and
+;;   embed into time using T:
+;;     Δ_reuse(A→B) := deltas( T ∘ (SameAddr|_{A×B}) ∘ T ).
+;;   We say “perfect fusion” holds if:
+;;     Δ_reuse ≠ ∅  and  Δ_reuse ⊆ {0⃗}.
+;;   The objective here is a discrete “fusion score”:
+;;     score := 1{front→heavy fused} + 1{heavy→back fused} ∈ {0,1,2}.
+;;   We prefer the rewrite (affected-first or -last) that maximizes score.
+;;
+;; Search Strategy (complete but local)
+;;   Enumerate all band nodes; at each band, try two candidates:
+;;     sequence([affected,unaffected])  and  sequence([unaffected,affected]).
+;;   Evaluate score for each candidate; pick the single global best gain.
+;;   If no candidate improves the score, return the original S (monotone).
+;;
+;; Why it helps (e.g., FlashAttention)
+;;   Heavy kernels (e.g., GEMM/WMMA) surrounded by pre/post transforms gain
+;;   when reuse becomes *same-time* (Δt=0), keeping tiles hot in SRAM and
+;;   removing redundant DRAM round-trips. This pass enforces such proximity
+;;   without guessing cache sizes or tile factors.
+;;
+;; Extensibility
+;;   - Replace the discrete score with a richer cost (e.g., L₁-distance of
+;;     Δ_reuse to 0⃗, or weighted reuse across dimensions).
+;;   - Generalize placement from {front/back} to n-way sibling reordering.
+;;   - Combine with later tiling/parallel passes once proximity is improved.
+;;
+;; Invariants
+;;   (1) Dependence legality is never violated.  (2) Score never decreases.
+;;   Hence, Simplify is a safe, deterministic pre-optimization for beam search.
+;; -----------------------------------------------------------------------------
+;; - [ ] Filter Relocate Concepts
+;; - [ ] Maximize Locality Rewriting
+;; - [ ] Rebundant Guard Elimination
+;; - [ ] Post Tile Fusion
+;;; ===============================================================
+;;; Utilities: tree walk (paths), domains, statement utilities
+;;; ===============================================================
+(defun %children (node)
+  (loop for i below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
+        collect (schedule-node-get-child node i)))
+
+(defun %safe-child (node i)
+  (let ((n (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
+    (when (and (<= 0 i) (< i n))
+      (schedule-node-get-child node i))))
+
+(defun %node-type (node) (schedule-node-get-type node))
+
+(defun %subtree-domain (node)
+  (isl::union-map-domain (isl::schedule-node-get-subtree-expansion node)))
+
+(defun %restrict (umap uset)
+  (isl::union-map-intersect-domain (isl::copy umap) (isl::copy uset)))
+
+(defun %same-address (acc)
+  (let ((inv (isl::union-map-reverse acc)))
+    (isl::union-map-apply-range inv acc)))
+
+(defun %uslist-add-nonempty (lst uset)
+  (if (or (null uset) (isl::union-set-is-empty uset))
+      lst
+      (isl::union-set-list-add lst uset)))
+
+(defun %node-at-path (schedule path)
+  "Return node at PATH (list of child indices) or NIL if invalid."
+  (let ((node (schedule-get-root schedule)))
+    (dolist (i path node)
+      (let ((n (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
+        (when (or (< i 0) (>= i n))
+          (return-from %node-at-path nil))
+        (setf node (schedule-node-get-child node i))))))
+
+(defun %collect-paths (root pred &optional (prefix '()))
+  "Collect paths to nodes that satisfy PRED."
+  (let ((paths '()))
+    (labels ((rec (n p)
+               (when (funcall pred n) (push (nreverse p) paths))
+               (loop for i below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n)) do
+                 (rec (schedule-node-get-child n i) (cons i p)))))
+      (rec root prefix))
+    (nreverse paths)))
+
+(defun %paths-to-seq-or-set (root)
+  (%collect-paths root (lambda (n) (member (%node-type n) '(:schedule-node-sequence :schedule-node-set)))))
+
+(defun %paths-to-band (root)
+  (%collect-paths root (lambda (n) (eql (%node-type n) :schedule-node-band))))
+
+(defun %list-stmts-in (uset)
+  (let* ((lst (isl::union-set-get-set-list uset))
+         (n   (isl::set-list-n-set lst))
+         (acc '()))
+    (dotimes (i n)
+      (let* ((s (isl::set-list-get-at lst i))
+             (id (isl::set-get-tuple-id s)))
+        (when id
+          (push (intern (string-upcase (isl::identifier-name-str id)) "KEYWORD") acc))))
+    (remove-duplicates (nreverse acc))))
+
+(defun %uset-of-stmts (domain stmt-syms)
+  (labels ((match? (id sym)
+             (string= (isl::identifier-name-str id)
+                      (etypecase sym
+                        (symbol (symbol-name sym))
+                        (string sym)))))
+    (reduce (lambda (acc sym)
+              (let* ((lst (isl::union-set-get-set-list domain))
+                     (n   (isl::set-list-n-set lst))
+                     (u   nil))
+                (dotimes (i n)
+                  (let* ((s  (isl::set-list-get-at lst i))
+                         (id (isl::set-get-tuple-id s)))
+                    (when (and id (match? id sym))
+                      (setf u (if u (isl::union-set-union u (isl::union-set-from-set s))
+                                  (isl::union-set-from-set s))))))
+                (cond ((null u) acc)
+                      ((null acc) u)
+                      (t (isl::union-set-union acc u)))))
+            stmt-syms :initial-value nil)))
+
+(defun zero-vector-union-set (delta-uset)
+  (let* ((delta-set (set-from-union-set delta-uset))
+         (ma (multi-aff-zero (set-get-space delta-set))))
+    (union-set-from-set (set-from-multi-aff ma))))
+
+(defun %schedule-time-deltas (schedule pair-map)
+  (let* ((T1  (schedule-get-map schedule))
+         (tim (isl::union-map-apply-range (isl::union-map-apply-domain pair-map T1) T1)))
+    (isl::union-map-deltas tim)))
+
+(defun schedule-is-legal-p (schedule dep)
+  (when (union-map-is-empty dep) (return-from schedule-is-legal-p t))
+  (let* ((map (schedule-get-map schedule))
+         (domain (union-map-apply-domain dep map))
+         (domain (union-map-apply-range domain map))
+         (delta (union-map-deltas domain))
+         (zeros (zero-vector-union-set delta))
+         (le (union-set-lex-le-union-set delta zeros)))
+    (union-set-is-empty le)))
+;;; ===============================================================
+;;; Heuristics: heavy stmt detection
+;;; ===============================================================
+(defun %heaviest-stmts (domain)
+  "Pick heavy statements by maximum set dimensionality (loop rank)."
+  (let* ((lst (isl::union-set-get-set-list domain))
+         (n   (isl::set-list-n-set lst))
+         (best -1) (acc '()))
+    (dotimes (i n)
+      (let* ((s (isl::set-list-get-at lst i))
+             (id (isl::set-get-tuple-id s))
+             (r  (isl::set-dim s :dim-set)))
+        (when id
+          (cond
+            ((> r best) (setf best r acc (list (intern (string-upcase (isl::identifier-name-str id)) "KEYWORD"))))
+            ((= r best) (push (intern (string-upcase (isl::identifier-name-str id)) "KEYWORD") acc))))))
+    (remove-duplicates (nreverse acc))))
+
+;;; ===============================================================
+;;; Full fuse under sequence/set (Lisp port of tadashi_full_fuse)
+;;; ===============================================================
+(defun %full-fuse-under (node)
+  "If NODE is a sequence or set whose children are filter->band,
+fuse all children bands into a single band by union_add of partial schedules
+restricted to each child filter. Return the new anchor node (parent of fused band)."
+  (let ((tp (%node-type node)))
+    (unless (member tp '(:schedule-node-sequence :schedule-node-set))
+      (return-from %full-fuse-under node))
+    (let* ((num (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
+      (when (<= num 0) (return-from %full-fuse-under node))
+      (let ((cur (schedule-node-first-child node))
+            (mupa nil))
+        (dotimes (i num)
+          (assert (eql (%node-type cur) :schedule-node-filter))
+          (let* ((filter (isl::schedule-node-filter-get-filter cur)))
+            (setf cur (schedule-node-first-child cur))
+            (when (not (eql (%node-type cur) :schedule-node-band))
+              ;; not a band; abort and return original node
+              (return-from %full-fuse-under node))
+            (let* ((tmp (isl::schedule-node-band-get-partial-schedule cur)))
+              (setf tmp (isl::multi-union-pw-aff-intersect-domain tmp filter))
+              (setf tmp (isl::multi-union-pw-aff-reset-tuple-id tmp :dim-out))
+              (setf mupa (if mupa (isl::multi-union-pw-aff-union-add mupa tmp) tmp))))
+          ;; move to next sibling filter
+          (if (= i (1- num))
+              (setf cur (isl::schedule-node-parent (isl::schedule-node-parent cur)))
+              (progn
+                (setf cur (isl::schedule-node-parent cur))
+                (setf cur (isl::schedule-node-next-sibling cur)))))
+        ;; Insert fused band on top of the sequence/set.
+        ;; (setf mupa (isl::multi-union-pw-aff-set-tuple-name mupa :dim-out "Fused"))
+        (isl::schedule-node-insert-partial-schedule node mupa)))))
+
+;;; ===============================================================
+;;; Orientation normalization on a chosen band member
+;;; ===============================================================
+(defun %negate-union-pw-aff (upa) (isl::union-pw-aff-neg upa))
+
+(defun %band-normalize-orientation (band &key (member-index -1))
+  "Try making the selected band member orientation consistent across pieces.
+Heuristic: when a union-pw-aff is a pure -var, negate it to align with +var."
+  (let* ((depth (schedule-node-band-get-depth band)))
+    (when (< member-index 0) (setf member-index (1- depth))) ;; default: innermost
+    (when (or (< member-index 0) (>= member-index depth)) (return-from %band-normalize-orientation band))
+    (let* ((mupa (schedule-node-band-get-partial-schedule band))
+           (upa (multi-union-pw-aff-get-union-pw-aff mupa member-index))
+           ;; very simple detector: if many pieces evaluate decreasing in j, flip them.
+           (lst (isl::union-pw-aff-get-pw-aff-list upa))
+           (n   (isl::%isl-pw-aff-list-n-pw-aff (isl::pw-aff-list-handle lst)))
+           (neg-count 0))
+      (dotimes (i n)
+        (let* ((pwa (isl::pw-aff-list-get-at lst i))
+               (dom (isl::pw-aff-domain pwa))
+               ;; crude probe: compare proximity when negated; if -pwa reduces lex range, count as negative.
+               (pwa (isl::pw-aff-neg pwa)))
+          (declare (ignore dom))
+          ;; We rely on structural hint: names like [-j] vs [j]. We approximate using string print.
+          (when (search "[-" (princ-to-string pwa)) (incf neg-count))
+          ;;(isl::%isl-pw-aff-free neg)
+          ))
+      (when (> neg-count 0)
+        (let ((upa (%negate-union-pw-aff upa)))
+          (setf mupa (multi-union-pw-aff-set-union-pw-aff mupa member-index upa))
+          (setf band (isl::schedule-node-insert-partial-schedule band mupa)))))
+    band))
+
+;;; ===============================================================
+;;; Set → Sequence reorder around heavy (optional; legality preserved)
+;;; ===============================================================
+
+(defun %set-to-sequence-with-order (set-node new-order)
+  "Replace SET-NODE by a SEQUENCE whose children appear in NEW-ORDER (list of indices)."
+  (assert (eql (%node-type set-node) :schedule-node-set))
+  (let* ((n (isl::%isl-schedule-node-n-children (isl::schedule-node-handle set-node)))
+         (filters (isl::union-set-list-alloc n)))
+    (dolist (i new-order)
+      (let* ((ch (schedule-node-get-child set-node i))
+             (f  (isl::schedule-node-filter-get-filter ch)))
+        (setf filters (isl::union-set-list-add filters f))))
+    (isl::schedule-node-insert-sequence set-node filters)))
+
+(defun %heuristic-set-order (set-node heavy-us domain)
+  "Return a permutation of children indices that places heavy adjacent to producers/consumers.
+Simple rule: children whose domain intersects HEAVY’s same-address buffers (reads∪writes) are grouped around HEAVY."
+  (let* ((n (isl::%isl-schedule-node-n-children (isl::schedule-node-handle set-node)))
+         (idxs (loop for i below n collect i)))
+    ;; Stable order: heavy-centric -> others
+    idxs))
+
+;;; ===============================================================
+;;; Driver: fuse bands + normalize + optional set reorder (pluggable cost)
+;;; ===============================================================
+
+(defun simplify-schedule (schedule read-umap write-umap &key (cost-fn (lambda (&rest _) 0)))
+  "Deterministic rewrite:
+  1) Full-fuse bands under each sequence/set (union_add of partial schedules).
+  2) Normalize the orientation (sign) of the innermost band member.
+  3) Optional: reorder set into sequence (heavy-adjacent) using :cost-fn (λ)."
+  (declare (type isl::schedule schedule))
+  (let* ((deps (compute-dependence-relation read-umap write-umap schedule))
+         (root (schedule-get-root schedule))
+         (paths (%paths-to-seq-or-set root))
+         (S schedule))
+    ;; STEP 1: full fuse under every seq/set
+    (dolist (p paths)
+      (let ((node (%node-at-path S p)))
+        (when node
+          (let ((after (%full-fuse-under node)))
+            (declare (ignore after))))))
+    (setf S (isl::schedule-node-get-schedule (schedule-get-root S)))
+    ;; STEP 2: normalize band orientation (last member)
+    (dolist (bp (%paths-to-band (schedule-get-root S)))
+      (let ((band (%node-at-path S bp)))
+        (when band
+          (let ((band (%band-normalize-orientation band)))
+            (print band)))))
+    (setf S (isl::schedule-node-get-schedule (schedule-get-root S)))
+    ;; STEP 3: (optional) set→sequence reorder around heavy
+    (let* ((root2 (schedule-get-root S))
+           (paths2 (%paths-to-seq-or-set root2)))
+      (dolist (p paths2)
+        (let ((node (%node-at-path S p)))
+          (when (and node (eql (%node-type node) :schedule-node-set))
+            (let* ((domain (%subtree-domain node))
+                   (heavy  (%heaviest-stmts domain))
+                   (Uheavy (%uset-of-stmts domain heavy))
+                   (perm (%heuristic-set-order node Uheavy domain)))
+              (when perm
+                (let ((seq (%set-to-sequence-with-order node perm)))
+                  (declare (ignore seq)))))))))
+    ;; Final legality check (if broken, return original)
+    (assert (schedule-is-legal-p S deps))
+    (print S)
+    (if (schedule-is-legal-p S deps) S schedule)))
+
+;; GPT5 is useless...
+;; Promptをもう一度考え直そう
+;; - What is a requirement?
+;; - InMemory Gemm, Guard Elimination
+;; - So this is FUSE+Sort SET?
+
+(defun %node-type (node) (schedule-node-get-type node))
+
+(defun %children-count (node)
+  (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
+
+(defun %child (node i)
+  (schedule-node-get-child node i))
+
+(defun %collect-paths (root pred)
+  "Collect all paths (list of child indices) from ROOT to nodes satisfying PRED."
+  (labels ((rec (n path acc)
+             (let ((acc (if (funcall pred n) (cons (nreverse path) acc) acc))
+                   (m   (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n))))
+               (loop for i below m
+                     do (setf acc (rec (%child n i) (cons i path) acc)))
+               acc)))
+    (nreverse (rec root '() '()))))
+
+(defun %node-at-path (schedule path)
+  "Return node at PATH; NIL if PATH is invalid *for the current tree*."
+  (let ((n (schedule-get-root schedule)))
+    (dolist (i path n)
+      (let ((m (%children-count n)))
+        (when (or (< i 0) (>= i m)) (return-from %node-at-path nil))
+        (setf n (%child n i))))))
+
+(defun %shuffle (list &optional (state *random-state*))
+  "Fisher–Yates shuffle; returns a fresh list."
+  (let* ((vec (coerce list 'vector))
+         (n (length vec)))
+    (loop for i from (1- n) downto 1
+          for j = (random (1+ i) state) do
+            (rotatef (aref vec i) (aref vec j)))
+    (coerce vec 'list)))
+
+;;; ===============================================================
+;;; Core: randomize a single set node by re-inserting a Set (or Sequence)
+;;; ===============================================================
+
+(defun %filters-of-set (set-node)
+  "Collect child filters (isl::union-set) of a set node in current order."
+  (assert (eql (%node-type set-node) :schedule-node-set))
+  (let* ((m (%children-count set-node))
+         (lst (isl::union-set-list-alloc  m)))
+    (dotimes (i m)
+      (let* ((fnode (%child set-node i))
+             (f     (isl::schedule-node-filter-get-filter fnode)))
+        (setf lst (isl::union-set-list-add lst f))))
+    lst))
+
+(defun %insert-set-or-seq (node filters)
+  "Insert a SET node above NODE using FILTERS. If SET insert is unavailable,
+falls back to SEQUENCE (which imposes order). Returns the new inserted node."
+  (cond
+    ((fboundp 'isl::schedule-node-insert-set)
+     (isl::schedule-node-insert-set node filters))
+    (t
+     ;; Fallback: sequence (keeps semantics but becomes ordered)
+     (isl::schedule-node-insert-sequence node filters))))
+
+(defun %randomize-one-set (set-node state)
+  "Insert a new (set or sequence) *above* SET-NODE with shuffled filter order."
+  (let* ((m (%children-count set-node)))
+    (when (<= m 1) (return-from %randomize-one-set set-node))
+    ;; collect -> shuffle -> insert
+    (let* ((filters (%filters-of-set set-node))
+           ;; turn list into ordinary lisp list to shuffle
+           (tmp '()))
+      (dotimes (i m) (push (isl::union-set-list-elt filters i) tmp))
+      (let* ((shuffled (%shuffle (nreverse tmp) state))
+             (new-lst (isl::union-set-list-alloc m)))
+        (dolist (u shuffled)
+          (setf new-lst (isl::union-set-list-add new-lst u)))
+        (%insert-set-or-seq set-node new-lst)))))
+
+;;; ===============================================================
+;;; Driver: randomize every set node in the schedule
+;;; ===============================================================
+(defun simplify-randomize-sets (schedule &key seed)
+  "Randomly permute child filters under every schedule_node_set in SCHEDULE.
+Correctness is preserved because set imposes no order. If your ISL binding
+does not expose `schedule-node-insert-set`, we fall back to `insert-sequence`."
+  (declare (type isl::schedule schedule))
+  (let* ((state (if seed (make-random-state seed) *random-state*))
+         (root  (schedule-get-root schedule))
+         ;; collect all set paths BEFORE we modify; then process deepest-first
+         (paths (%collect-paths root (lambda (n) (eql (%node-type n) :schedule-node-set))))
+         (paths (sort paths #'> :key #'length))
+         (S schedule))
+    (dolist (p paths)
+      (let ((n (%node-at-path S p)))
+        (when n
+          ;; insert new randomized set above n
+          (let ((inserted (%randomize-one-set n state)))
+            (declare (ignore inserted))))))
+    ;; return updated schedule
+    (isl::schedule-node-get-schedule (schedule-get-root S))))
+

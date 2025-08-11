@@ -123,7 +123,25 @@ options; typically used to seed candidate schedules at the start of search."))
     ;; Coincident/Permutable ParameterをRevisitする
     ;; (Coincident方向のdepがempty -> extra coincident chance)
     ;; (Permutation is worthless -> do not add permutable ...)
-    (setf (psi-theta poly) new-schedule)))
+    (print "Before Simplification")
+    (print "Schedule")
+    (print (isl:schedule-get-root new-schedule))
+    (setf (psi-theta poly) new-schedule)
+    (print "AST")
+    (print poly)
+    (print (psi-verify-legality poly))
+    (setf new-schedule (caten/codegen/search/schedule::simplify-randomize-sets
+                        new-schedule))
+    (setf (psi-theta poly) new-schedule)
+    (print (psi-verify-legality poly))
+    (PRINT "After Simplification")
+    (print "Schedule")
+    (print (isl:schedule-get-root new-schedule))
+    (print "Schedule")
+    (print poly)
+   
+    
+    ))
 ;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Interchange (OptimizationRule)
   ((order :initarg :order :accessor interchange-order :type list)))

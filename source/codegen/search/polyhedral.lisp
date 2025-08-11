@@ -13,6 +13,7 @@
    #:node-to-loops #:all-loops #:exprs #:scal->access
    #:make-scop-ctx-from-blueprint
    #:psi-clone-for-next-generation
+   #:psi-verify-legality
    ))
 (in-package :caten/codegen/search/polyhedral)
 
@@ -52,6 +53,9 @@ Blueprint_optimized = MakeBlueprintFromPolyhedral(Blueprint, θ_0) s.t.: Schedul
 In other words, this class encapsulates both the analysis results and the scheduling state, enabling generation of a valid, optimized Blueprint from the polyhedral representation.
 
 During the optimization, auto scheduler tries to minimize the floating value of psi-evaluation."))
+
+(defmethod psi-verify-legality ((poly Polyhedral-Schedule-Item))
+  (schedule-is-legal-p (psi-theta poly) (psi-dependency-graph poly)))
 
 (defun psi-clone-for-next-generation (psi)
   (declare (type Polyhedral-Schedule-Item psi))
