@@ -16,10 +16,10 @@
    (:file "memory-planner")
    (:file "pprinter")
    ;; AutoSchedulers
-   (:file "search/perf")
    (:file "search/directive")
    (:file "search/schedule")
    (:file "search/polyhedral")
+   (:file "search/perf")
    (:file "search/optimization-rule")
    (:file "search/ast")
    (:file "search/evaluator")

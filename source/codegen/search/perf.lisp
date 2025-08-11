@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/search/perf
-  (:use :cl :caten/air :caten/aasm :caten/codegen/byoc)
+  (:use :cl :caten/air :caten/aasm :caten/codegen/byoc :caten/codegen/search/polyhedral)
   (:import-from :caten/codegen/renderer #:render-node #:Default-Renderer)
   ;; GFlops Mesaurer
   (:export
