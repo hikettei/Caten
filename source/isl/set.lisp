@@ -78,3 +78,7 @@
 
 (defun set-get-dim-id (set type pos)
   (%make-identifier (%isl-set-get-dim-id (set-handle set) type pos)))
+
+(define-isl-function set-get-tuple-id %isl-set-get-tuple-id
+  (:give identifier)
+  (:keep set))
