@@ -104,8 +104,7 @@ options; typically used to seed candidate schedules at the start of search."))
            (compute-schedule-constraints
             (psi-domain poly)
             (psi-dependency-graph poly)))))
-    (setf (psi-theta poly) new-schedule)
-    (print poly)))
+    (setf (psi-theta poly) new-schedule)))
 ;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Interchange (OptimizationRule)
   ((order :initarg :order :accessor interchange-order :type list)))
