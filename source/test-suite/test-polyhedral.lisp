@@ -455,7 +455,7 @@
           (print-blueprint sftmx t))))))
 
 (deftest test-flash-attention-auto-schedule
-  (caten (flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5)))))
+  (caten (flash_attention (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50)) (make-tensor `(100 80 50)))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる
