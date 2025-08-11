@@ -83,13 +83,16 @@ BEAM Search Workflow:
         ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-          (sgt-apply-transformations gen0 :Reschedule)
+          (time (sgt-apply-transformations gen0 :Reschedule))
+          (time (sgt-apply-transformations gen0 :Interchange))
+          (print (sgt-items gen0))
           (print gen0)
-;          (sgt-apply-transformations gen0 :Interchange)
-;          (sgt-apply-transformations gen0 :Parallel :TileGPU)
-          (sgt-add-evaluations gen0 cost1 blueprint)
-          (sgt-prune-topk gen0 3)
-          (print (sgt-make-nextgen gen0))
+          ;; Symbolic
+;;          (sgt-apply-transformations gen0 :Interchange)
+;;          (sgt-apply-transformations gen0 :Parallel :TileGPU)
+;;          (sgt-add-evaluations gen0 cost1 blueprint)
+;;          (sgt-prune-topk gen0 3)
+;;          (print (sgt-make-nextgen gen0))
           ;; 次やること(ちょっとむずい)
           ;; - online-autotune-kernel終了時点で，正しい計算結果をReturnする(Bring Back Replayer)
           ;;  - うまくArrayをCopy

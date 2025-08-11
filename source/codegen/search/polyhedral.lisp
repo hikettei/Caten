@@ -5,6 +5,7 @@
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
    #:dependency-graph #:psi-dependency-graph #:psi-domain
+   #:psi-read-union-map #:psi-write-union-map
    #:opt-history #:psi-opt-history
    #:psi-evaluation
    #:make-polyhedral-schedule-item
@@ -19,7 +20,11 @@
 (defclass Polyhedral-Schedule-Item ()
   ((theta :accessor psi-theta :initarg :initial-theta)
    (domain :accessor psi-domain :initarg :domain)
+   
+   (read-union-map :accessor psi-read-union-map :initarg :read)
+   (write-union-map :accessor psi-write-union-map :initarg :write)
    (dependency-graph :accessor psi-dependency-graph :initarg :dependency-graph)
+   
    (opt-history :accessor psi-opt-history :initform nil :initarg :opt-history)
    (evaluation :accessor psi-evaluation :initform *+inf* :type double-float)
    ;; ctx?
@@ -51,6 +56,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
   (declare (type Polyhedral-Schedule-Item psi))
   (make-instance 'Polyhedral-Schedule-Item
                  :dependency-graph (psi-dependency-graph psi) :domain (psi-domain psi)
+                 :read (psi-read-union-map psi) :write (psi-write-union-map psi)
                  :initial-theta (psi-theta psi) :opt-history (copy-list (psi-opt-history psi))))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
@@ -266,5 +272,5 @@ During the optimization, auto scheduler tries to minimize the floating value of 
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation reads writes schedule)
-                   :initial-theta schedule
+                   :initial-theta schedule :read reads :write writes
                    :domain domain)))

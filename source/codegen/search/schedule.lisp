@@ -466,3 +466,63 @@ Returns:
                   (schedule-node-band-get-depth node)
                   0)))
     (+ self (reduce #'+ (mapcar #'schedule-node-count-bands (schedule-node-get-children node)) :initial-value 0))))
+
+(defun schedule-node-subtree-domain (node)
+  "Return the statement iteration domain of the subtree rooted at NODE.
+Inputs:
+  node : isl::schedule-node
+Returns:
+  isl::union-set U = Dom(Exp(NODE)), i.e., the union of statement domains
+  covered by the subtree expansion of NODE."
+  (caten/isl::union-map-domain (caten/isl::schedule-node-get-subtree-expansion node)))
+
+(defun restrict-umap-to-domain (umap uset)
+  "Intersect the domain of a union map with a given union set.
+Inputs:
+  umap : isl::union-map F
+  uset : isl::union-set U
+Returns:
+  isl::union-map F' = F ∩ (U × Range(F)) = intersect_domain(F, U).
+If U ∩ Dom(F) = ∅, the result is the empty union map."
+  (caten/isl::union-map-intersect-domain (caten/isl::copy umap) (caten/isl::copy uset)))
+
+(defun restrict-umap-to-domain (umap uset)
+  "Intersect the domain of a union map with a given union set.
+Inputs:
+  umap : isl::union-map F
+  uset : isl::union-set U
+Returns:
+  isl::union-map F' = F ∩ (U × Range(F)) = intersect_domain(F, U).
+If U ∩ Dom(F) = ∅, the result is the empty union map."
+  (caten/isl::union-map-intersect-domain (caten/isl::copy umap) (caten/isl::copy uset)))
+
+(defun union-map-same-address-relation (acc)
+  "Build the same-address (alias) relation over iteration points.
+Inputs:
+  acc : isl::union-map A ⊆ Iter × Buf   ; e.g., read/write access relation
+Returns:
+  isl::union-map R ⊆ Iter × Iter defined as R = A ∘ A^{-1}.
+Semantics:
+  (i, j) ∈ R  ⇔  ∃b ∈ Buf s.t. (i, b) ∈ A ∧ (j, b) ∈ A  (i, j access the same address)."
+  (let* ((inv (caten/isl::union-map-reverse acc)))
+    (caten/isl::union-map-apply-range inv acc)))
+
+(defun has-data-reuse-in-subtree (schedule-node reads-umap)
+  "Detect data reuse within the subtree rooted at SCHEDULE-NODE using read accesses.
+Inputs:
+  schedule-node : isl::schedule-node
+  reads-umap    : isl::union-map R ⊆ Iter × Buf   ; read access relation
+Returns:
+  boolean — T iff the restricted same-address relation over the subtree domain
+  is non-empty, i.e., ∃(i, j) within the subtree such that both read the same
+  buffer element.
+Procedure:
+  U := Dom(Exp(schedule-node));
+  R' := intersect_domain(R, U);
+  return (R' = ∅) ? NIL : (A∘A^{-1} over R' is non-empty)."
+  (let* ((subdom (schedule-node-subtree-domain schedule-node))
+         (reads  (restrict-umap-to-domain reads-umap subdom)))
+    (if (caten/isl::union-map-is-empty reads)
+        nil
+        (let ((same (union-map-same-address-relation reads)))
+          (not (caten/isl::union-map-is-empty same))))))

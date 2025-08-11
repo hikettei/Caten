@@ -77,7 +77,10 @@ options; typically used to seed candidate schedules at the start of search."))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of scheduling commands.
+  ;; [TODO] 以下を実施
+  ;; [MEMO] Sum(HasDataReuse(ni)) == 0 --> NoOpt is enough
   (list
+   (make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
    (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
    (make-instance 'Reschedule :outer-coincidence 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
    (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
@@ -104,6 +107,10 @@ options; typically used to seed candidate schedules at the start of search."))
            (compute-schedule-constraints
             (psi-domain poly)
             (psi-dependency-graph poly)))))
+    ;; [TODO]
+    ;; Coincident/Permutable ParameterをRevisitする
+    ;; (Coincident方向のdepがempty -> extra coincident chance)
+    ;; (Permutation is worthless -> do not add permutable ...)
     (setf (psi-theta poly) new-schedule)))
 ;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Interchange (OptimizationRule)
@@ -111,9 +118,14 @@ options; typically used to seed candidate schedules at the start of search."))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Interchange)))
   ;; where each permute has band_depth length list
+;  LoopInterchangeについて整理すると:
+;- HasDataReuse=0 Bands | ==> SIMDのために，Stride=1となるアクセスを最も下にする
+;- HasDataReuse=1  Bands | ==>どのInterchangeが最適かわからない (Device Specific)
   (let ((top (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)))
     ;; If body is a sequence => split to multiple kernel
-
+    (print top)
+    (print poly)
+    nil
     ))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
