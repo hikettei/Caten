@@ -1,5 +1,6 @@
 (defpackage :caten/codegen/search/autotune
-  (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc :caten/codegen/search/evaluator)
+  (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc :caten/codegen/search/evaluator
+        :caten/codegen/search/optimization-rule)
   (:export
    #:online-autotune-kernel
    ))
@@ -33,6 +34,16 @@ pruned (Top-k), and expanded to produce the next generation."))
   "Expand the pruned frontier to form the next generation."
   (declare (type Schedule-Generation-Tree sgt))
   (make-instance 'Schedule-Generation-Tree :items (copy-list (sgt-items sgt)) :depth (1+ (sgt-depth sgt))))
+
+(defun sgt-apply-transformations (sgt &rest optrule-ids)
+  (declare (type Schedule-Generation-Tree sgt))
+  (setf (sgt-items sgt)
+        (loop for optrule-id in optrule-ids
+              append
+              (loop for item in (sgt-items sgt)
+                    append
+                    (loop for space in (optrule-generate-search-space item optrule-id)
+                          collect (apply-optimization item space))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - TILE Parameter Space?
@@ -52,6 +63,8 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;;  - TODO: Two more search command
 ;;   - Coalesce | At which stage?
 ;;   - Skewing  | これはTemplateGen
+  
+;; Reschedule -> Interchange -> Skewing -> PARALLEL/TILE
 (defun online-autotune-kernel (runtime node)
   "
 BEAM Search Workflow:
@@ -70,10 +83,19 @@ BEAM Search Workflow:
         ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
+          (sgt-apply-transformations gen0 :Reschedule)
+          (sgt-apply-transformations gen0 :Interchange)
+          (sgt-apply-transformations gen0 :Parallel :TileGPU)
           (sgt-add-evaluations gen0 cost1 blueprint)
           (sgt-prune-topk gen0 3)
           (print (sgt-make-nextgen gen0))
-
+          ;; 次やること(ちょっとむずい)
+          ;; - online-autotune-kernel終了時点で，正しい計算結果をReturnする(Bring Back Replayer)
+          ;;  - うまくArrayをCopy
+          ;; - First Kernel Generation
+          ;; - Vectorize/Tile etc generation and finish implementing beam search
+          (error "STOP")
+          t
           )))))
 
 ;; 次にやること
@@ -83,3 +105,4 @@ BEAM Search Workflow:
 ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
 ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
 ;; - TensorGraphから演算の可換などを考慮してSHA256 Hash作れないかな？
+;; - Node -> Always IMMUTABLE and singleton, can we do that?

@@ -17,9 +17,10 @@ TODO:
    #:optrule-generate-search-space
    #:optrule-apply-transform-on-polyhedral
    #:optrule-apply-transform-on-blueprint
-
+   #:apply-optimization
+   
    #:Reschedule
-
+   #:Interchange
    ))
 
 (in-package :caten/codegen/search/optimization-rule)
@@ -41,6 +42,13 @@ TODO:
   (:documentation "A callback method for doing `θ_n+1 = apply_optimization(θ_n, optrule)`"))
 (defgeneric optrule-apply-transform-on-blueprint (directive-id bands blueprint)
   (:documentation "A callback for making a transformation to blueprint named as directive-id"))
+
+(defun apply-optimization (polyhedral optrule)
+  (declare (type Polyhedral-Schedule-Item polyhedral) (type OptimizationRule optrule))
+  (let ((polyhedral (psi-clone-for-next-generation polyhedral)))
+    (push optrule (psi-opt-history polyhedral))
+    (optrule-apply-transform-on-polyhedral polyhedral optrule)
+    polyhedral))
 ;; ~~ NoOpt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
@@ -94,7 +102,7 @@ options; typically used to seed candidate schedules at the start of search."))
   (let ((new-schedule
           (isl:schedule-constraints-compute-schedule
            (compute-schedule-constraints
-            (isl:schedule-node-get-domain (psi-theta poly))
+            (psi-domain poly)
             (psi-dependency-graph poly)))))
     (setf (psi-theta poly) new-schedule)))
 ;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -102,9 +110,11 @@ options; typically used to seed candidate schedules at the start of search."))
   ((order :initarg :order :accessor interchange-order :type list)))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Interchange)))
-  ;; [TODO]
-  ;; - MultiKernelの扱いをどうするかを決めないと探索空間を生成できない
-  )
+  ;; where each permute has band_depth length list
+  (let ((top (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)))
+    ;; If body is a sequence => split to multiple kernel
+
+    ))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Interchange))
   (setf (psi-theta poly) (isl:schedule-node-get-schedule (schedule-node-band-permute (optrule-band opt) (interchange-order opt)))))

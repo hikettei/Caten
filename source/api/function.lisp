@@ -871,6 +871,6 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, then 
             (make-instance kernel
                            :name (gensym (format nil "captured_~a" name))
                            :args args
-                           :flops (caten/codegen/polyhedral:schedule-item-gflops blueprint)
+                           :flops (caten/codegen/search/perf:schedule-item-gflops blueprint)
                            :blueprint blueprint)
             :optimized-p nil :out time))))))

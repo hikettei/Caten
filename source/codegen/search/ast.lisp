@@ -560,8 +560,18 @@ Return (value (list kernels) tmp-buffer-allocations)
                      (dolist (a alcs) (push a extra-allocs))
                      k))
              (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
+;; ~~ Printer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ast->str (ast)
+  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+         (str   (isl::%isl-printer-get-str q)))
+    str))
 
-
+(defmethod print-object ((pg Polyhedral-Schedule-Item) stream)
+  (print-unreadable-object (pg stream :type t :identity t)
+    (format stream "~%~a~%  :history ~a" (compute-ast-from-schedule (psi-theta pg)) (psi-opt-history pg))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - 1. Coalesce: ASTNode Levelで絶対やる (Bugが減る，意味が超簡単になる)
 ;;   - CoalesceはMark+ForのParseをTriggerとして実施する？

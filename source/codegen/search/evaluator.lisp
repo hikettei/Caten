@@ -4,9 +4,7 @@
   (:export
    #:Evaluator
    #:DeviceMeasurer
-
-   #:evaluate-polyhedral
-   ))
+   #:evaluate-polyhedral))
 
 (in-package :caten/codegen/search/evaluator)
 
@@ -53,6 +51,7 @@ MeasurerWorkflow
           for kernel-id = (caten/codegen/renderer:make-kernel-description kernel :version (slot-value evaluator 'version) :getraw nil)
           for cache = (gethash kernel-id (dm-cache evaluator))
           if cache sum cache
+            ;; [TODO] True Evaluation!, version --> n_evaluation, etc
             else sum (setf (gethash kernel-id (dm-cache evaluator)) (random 1.0)))))
 
 (defmethod evaluate-polyhedral ((psi Polyhedral-Schedule-Item) (evaluator Proximity) blueprint)

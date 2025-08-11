@@ -4,21 +4,23 @@
    #:*+inf*
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
-   #:dependency-graph #:psi-dependency-graph
+   #:dependency-graph #:psi-dependency-graph #:psi-domain
    #:opt-history #:psi-opt-history
    #:psi-evaluation
    #:make-polyhedral-schedule-item
    #:ctx #:ctx-node-to-loops #:ctx-all-loops #:ctx-exprs #:ctx-scal->access
    #:node-to-loops #:all-loops #:exprs #:scal->access
    #:make-scop-ctx-from-blueprint
+   #:psi-clone-for-next-generation
    ))
 (in-package :caten/codegen/search/polyhedral)
 
 (defparameter *+inf* (coerce (expt 2 32) 'double-float))
 (defclass Polyhedral-Schedule-Item ()
   ((theta :accessor psi-theta :initarg :initial-theta)
+   (domain :accessor psi-domain :initarg :domain)
    (dependency-graph :accessor psi-dependency-graph :initarg :dependency-graph)
-   (opt-history :accessor psi-opt-history :initform nil)
+   (opt-history :accessor psi-opt-history :initform nil :initarg :opt-history)
    (evaluation :accessor psi-evaluation :initform *+inf* :type double-float)
    ;; ctx?
    ;; during transformation blueprint should not be used
@@ -44,6 +46,12 @@ Blueprint_optimized = MakeBlueprintFromPolyhedral(Blueprint, θ_0) s.t.: Schedul
 In other words, this class encapsulates both the analysis results and the scheduling state, enabling generation of a valid, optimized Blueprint from the polyhedral representation.
 
 During the optimization, auto scheduler tries to minimize the floating value of psi-evaluation."))
+
+(defun psi-clone-for-next-generation (psi)
+  (declare (type Polyhedral-Schedule-Item psi))
+  (make-instance 'Polyhedral-Schedule-Item
+                 :dependency-graph (psi-dependency-graph psi) :domain (psi-domain psi)
+                 :initial-theta (psi-theta psi) :opt-history (copy-list (psi-opt-history psi))))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "Context for tracking loop structure during traversal"
@@ -111,9 +119,9 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                       collect (format nil "exists e : ~(~a~) = ~a*e and 0 <= ~(~a~) < ~a" (getf l :idx) (r step) (getf l :idx) (r (getf l :size))))))
         (format nil "~a[~{~a~^, ~}] ~a ~{~a~^ and ~}" (node-id node) (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)) (if constraints ":" "") constraints)))))
 
-;;(defun render-domains (ctx blueprint)
-;;  "Create ISL domain representation from blueprint"
-;;  (format nil "{ ~{~a~^; ~} }" (reverse (map 'list #'(lambda (x) (render-domain-for-node blueprint x (ctx-node-to-loops ctx))) (ctx-exprs ctx)))))
+(defun render-domains (ctx blueprint)
+  "Create ISL domain representation from blueprint"
+  (format nil "{ ~{~a~^; ~} }" (reverse (map 'list #'(lambda (x) (render-domain-for-node blueprint x (ctx-node-to-loops ctx))) (ctx-exprs ctx)))))
 
 (defun extract-buffer-access-info (id blueprint &aux (visited (make-hash-table)) (found))
   ;; Return: a list of (cons (cons visible_name graph_id) access_id)
@@ -249,6 +257,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
 (defun make-polyhedral-schedule-item (blueprint)
   (declare (type FastGraph blueprint))
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
+         (domain (caten/isl:union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
     (handler-case (setf reads (caten/isl:union-map-from-str (car reads/writes))
@@ -257,4 +266,5 @@ During the optimization, auto scheduler tries to minimize the floating value of 
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation reads writes schedule)
-                   :initial-theta schedule)))
+                   :initial-theta schedule
+                   :domain domain)))
