@@ -570,7 +570,7 @@ Return (value (list kernels) tmp-buffer-allocations)
 
 (defmethod print-object ((pg Polyhedral-Schedule-Item) stream)
   (print-unreadable-object (pg stream :type t :identity t)
-    (format stream "~%~a~%  :history ~a" (compute-ast-from-schedule (psi-theta pg)) (psi-opt-history pg))))
+    (format stream "~%~a~%  :history ~a" (ast->str (compute-ast-from-schedule (psi-theta pg))) (psi-opt-history pg))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - 1. Coalesce: ASTNode Levelで絶対やる (Bugが減る，意味が超簡単になる)

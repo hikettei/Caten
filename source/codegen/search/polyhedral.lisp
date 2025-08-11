@@ -257,11 +257,11 @@ During the optimization, auto scheduler tries to minimize the floating value of 
 (defun make-polyhedral-schedule-item (blueprint)
   (declare (type FastGraph blueprint))
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
-         (domain (caten/isl:union-set-from-str (render-domains ctx blueprint)))
+         (domain (isl:union-set-from-str (render-domains ctx blueprint)))
          (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
          (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
-    (handler-case (setf reads (caten/isl:union-map-from-str (car reads/writes))
-                        writes (caten/isl:union-map-from-str (cdr reads/writes)))
+    (handler-case (setf reads (isl:union-map-from-str (car reads/writes))
+                        writes (isl:union-map-from-str (cdr reads/writes)))
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item

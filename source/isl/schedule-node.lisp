@@ -99,7 +99,7 @@
   (when (eql :bool-true (isl::%isl-schedule-node-has-children (schedule-node-handle schedule-node)))
     (let ((n (isl::%isl-schedule-node-n-children (schedule-node-handle schedule-node))))
       (loop for nth upfrom 0 below n
-	    collect (isl::%make-schedule-node (isl::%isl-schedule-node-child (schedule-node-handle schedule-node) nth))))))
+	    collect (isl::%make-schedule-node (isl::%isl-schedule-node-child (schedule-node-handle (copy schedule-node)) nth))))))
 
 (defun schedule-node-get-type (schedule-node)
   (declare (type schedule-node schedule-node))
