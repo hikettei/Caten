@@ -4,7 +4,7 @@
    #:*+inf*
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
-   #:dependency-graph #:psi-dependency-graph #:psi-domain
+   #:dependency-graph #:psi-dependency-graph #:psi-domain #:psi-strategy
    #:psi-read-union-map #:psi-write-union-map
    #:opt-history #:psi-opt-history
    #:psi-evaluation
@@ -24,6 +24,7 @@
    (read-union-map :accessor psi-read-union-map :initarg :read)
    (write-union-map :accessor psi-write-union-map :initarg :write)
    (dependency-graph :accessor psi-dependency-graph :initarg :dependency-graph)
+   (strategy :accessor psi-strategy :initarg :strategy)
    
    (opt-history :accessor psi-opt-history :initform nil :initarg :opt-history)
    (evaluation :accessor psi-evaluation :initform *+inf* :type double-float)
@@ -56,7 +57,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
   (declare (type Polyhedral-Schedule-Item psi))
   (make-instance 'Polyhedral-Schedule-Item
                  :dependency-graph (psi-dependency-graph psi) :domain (psi-domain psi)
-                 :read (psi-read-union-map psi) :write (psi-write-union-map psi)
+                 :read (psi-read-union-map psi) :write (psi-write-union-map psi) :strategy (psi-strategy psi)
                  :initial-theta (psi-theta psi) :opt-history (copy-list (psi-opt-history psi))))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
@@ -260,7 +261,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (assert (= 1 (length (graph-outputs blueprint))))
       (rewrite-node (car (graph-outputs blueprint))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-polyhedral-schedule-item (blueprint)
+(defun make-polyhedral-schedule-item (blueprint &key (strategy))
   (declare (type FastGraph blueprint))
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
          (domain (isl:union-set-from-str (render-domains ctx blueprint)))
@@ -273,4 +274,4 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation reads writes schedule)
                    :initial-theta schedule :read reads :write writes
-                   :domain domain)))
+                   :domain domain :strategy strategy)))

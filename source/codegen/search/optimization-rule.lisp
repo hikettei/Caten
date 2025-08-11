@@ -77,8 +77,6 @@ options; typically used to seed candidate schedules at the start of search."))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of scheduling commands.
-  ;; [TODO] 以下を実施
-  ;; [MEMO] Sum(HasDataReuse(ni)) == 0 --> NoOpt is enough
   (list
    (make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
    (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)

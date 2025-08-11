@@ -1,7 +1,10 @@
 (defpackage :caten/test-suite/polyhedral
   (:use :cl :rove :caten/api :caten/air :caten/aasm :caten/lang :caten/runtime :caten/codegen/byoc
-        :caten/codegen/polyhedral
-        :caten/codegen/blueprint)
+        :caten/codegen/search/polyhedral
+   :caten/codegen/search/schedule
+   :caten/codegen/search/optimization-rule
+   :caten/codegen/search/ast
+   :caten/codegen/blueprint)
   (:export))
 
 (in-package :caten/test-suite/polyhedral)
@@ -9,14 +12,14 @@
 (in-caten-toplevel)
 
 (defun psched (poly)
-  (format t "~a~%" (caten/codegen/pprinter:pprint-isl-schedule (caten/codegen/polyhedral::poly-schedule poly))))
+  (format t "~a~%" (caten/codegen/pprinter:pprint-isl-schedule (psi-theta poly))))
 
 (defun getband (poly idx)
   (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
 
 (defun expr-val (expr) (caten/aasm/expr:expr-realize-as-value expr))
 
-(defun get-depth (band) (caten/codegen/polyhedral::schedule-node-get-band-depth band))
+(defun get-depth (band) (schedule-node-band-get-depth band))
 
 (defmacro bp-match-p (graph pattern &aux (match-p (gensym)))
   `(let ((,match-p nil))
@@ -53,16 +56,19 @@
                    "Runtime should only schedule a single kernel!")
            (let ((kernel (find :KERNEL (graph-nodes (runtime-graph runtime)) :key #'node-type)))
              (assert kernel)
-             (caten/codegen/polyhedral::make-polyhedral-from-blueprint
-              (kernel-blueprint (getattr kernel :kernel-info))
-              :strategy ,strategy)))))))
+             (values
+              (make-polyhedral-schedule-item
+               (kernel-blueprint (getattr kernel :kernel-info))
+               :strategy ,strategy)
+              (kernel-blueprint (getattr kernel :kernel-info)))))))))
 
 (defmacro with-polyhedral (((bind polyhedral) &rest optimizations) ((bind1 &optional (allocs (gensym))) &body body))
-  `(let ((,bind ,polyhedral))
+  (let ((bp (gensym)))
+  `(multiple-value-bind (,bind ,bp) ,polyhedral
      ,@optimizations
-     (multiple-value-bind (,bind1 ,allocs) (caten/codegen/polyhedral::get-blueprint-from-polyhedral ,bind)
+     (multiple-value-bind (,bind1 ,allocs) (apply-schedule (psi-theta ,bind) ,bp)
        (declare (ignorable ,allocs))
-       ,@body)))
+       ,@body))))
 
 (with-traced-polyhedral ($gemm gemm *strategy*)
   @caten.jit () {
@@ -340,6 +346,7 @@
          (print gemm))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
+          (print (caten/codegen/renderer::make-kernel-description (car new-kernels)))
           (ok (= 1 (length new-kernels)))
           (ok (= 0 (length extra-allocs)))
   )))
@@ -446,6 +453,9 @@
         (assert (= 1 (length softmax-kernels)))
         (let ((sftmx (car softmax-kernels)))
           (print-blueprint sftmx t))))))
+
+(deftest test-flash-attention-auto-schedule
+  (caten (flash_attention (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5 10)) (make-tensor `(10 8 5)) (make-tensor `(10 8 5)))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる
