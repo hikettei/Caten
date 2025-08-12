@@ -616,24 +616,21 @@ Procedure:
     ;; Sort Topologically?
     ))
 
-(defun compute-fuse-pairs-from-sequence (schedule-node-sequence read-umap write-umap sched)
+(defun compute-fuse-pairs-on-sequence (schedule-node-sequence read-umap write-umap sched)
   "Return (list (cons absolute_path_from_seq1 absolute_path_from_seq2))"
   ;; TODO(optimize): pairs are static on each exploration
   (let ((pairs (compute-scc-pairs read-umap write-umap sched))
-        (filter2path (make-hash-table :test 'equal)))
-    (schedule-gather-path
-     schedule-node-sequence
-     #'(lambda (node path)
-         (when (and
-                (eql (schedule-node-get-type node) :schedule-node-filter)
-                (let ((c (schedule-node-get-child node 0)))
-                  (not (eql :schedule-node-leaf (schedule-node-get-type c)))))
-           (let ((filters (union-set-get-statements (isl::schedule-node-filter-get-filter node))))
-             (dolist (f filters)
-               (setf (gethash f filter2path)
-                     (let ((c1 (gethash f filter2path)))
-                       (if (> (length c1) (length path)) c1 path))))))))
-    pairs))
+        (filters (loop for i upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle schedule-node-sequence))
+                       for filter-node = (schedule-node-get-child schedule-node-sequence i)
+                       collect (union-set-get-statements (isl::schedule-node-filter-get-filter filter-node)))))
+    (values
+     filters
+     (loop for (dst . src) in pairs
+           for dst1 = (find dst filters :test #'(lambda (x y) (find x y :test #'string=)))
+           for src1 = (find src filters :test #'(lambda (x y) (find x y :test #'string=)))
+           if (and dst1 src1)
+             collect (cons dst src)))))
+          
 ;    (loop for (dst . src) in pairs
 ;          for dst-path = (gethash dst filter2path)
 ;          for src-path = (gethash src filter2path)
@@ -712,8 +709,14 @@ Procedure:
     schedule))
 
 (defun schedule-sort-sequence (components read-umap write-umap)
-  (let ((pair (compute-fuse-pairs-from-sequence components read-umap write-umap (schedule-node-get-schedule components))))
-    (print pair)
+  (multiple-value-bind (nodes graph)
+      (compute-fuse-pairs-on-sequence components read-umap write-umap (schedule-node-get-schedule components))
+    (print nodes)
+    (print graph)
+    ;; 1. ReadyForPlace Filters ...
+    ;; 2. ReadyForPlace Bands   ...
+    ;; 3. ReadyForPlace Filters ...
+    ;; 4. ReadyForPlace Bands   ...
     ;; LOAD
     ;; COMPUTE
     ;; STORE

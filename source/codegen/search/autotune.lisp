@@ -81,7 +81,8 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sgt-prepare-for-sketch-generation (sgt)
   (sgt-apply-transformations sgt :Serialize)
-  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
+  (sgt-apply-transformations sgt :Maximize-Filter-Candidates)
+  )
 
 (defun sgt-finalize-sketch (sgt)
   (sgt-apply-transformations sgt :Coincidence)
@@ -184,6 +185,7 @@ BEAM Search Workflow:
 ;; - OPTIMIZE=0
 ;; - FuseALL
 ;; ==> Eazy to get FlashAttention?
+;; (caten (!matmul (make-tensor `(512 512)) (!relu (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))))))
 (defun merge-items (src parents)
   ;; How many nodes can we fuse
   (when (null parents)
@@ -193,10 +195,13 @@ BEAM Search Workflow:
            (root (reduce #'psi. items))
            (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
       (sgt-prepare-for-sketch-generation gen0)
-      ;; tile?
-      (time (sgt-apply-transformations gen0 :Fuse))
-      (time (sgt-apply-transformations gen0 :Fuse))
-      (time (sgt-apply-transformations gen0 :Fuse))
+      ;; recollapse = tile?
+     ; (time (sgt-apply-transformations gen0 :Fuse))
+      ;(time (sgt-apply-transformations gen0 :Fuse))
+      ;(time (sgt-apply-transformations gen0 :Fuse))
+      ;(time (sgt-apply-transformations gen0 :Fuse))
+;      (time (sgt-apply-transformations gen0 :Fuse))
+;      (time (sgt-apply-transformations gen0 :Fuse))
       (print (sgt-items gen0))
       )))
 

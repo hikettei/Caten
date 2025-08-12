@@ -136,13 +136,13 @@ options; typically used to seed candidate schedules at the start of search."))
   ;; Reschedule can be placed on the top of scheduling commands.
   (list
    ;(make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   (make-instance 'Reschedule :serialize-scc 1) ;; Maximize Fusion Chance!
+   (make-instance 'Reschedule :serialize-sccs 1) ;; Maximize Fusion Chance!
    ;; Locality Strategy
-   ;(make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
-   ;(make-instance 'Reschedule :outer-coincidence 1 :schedule-whole-component 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
-   ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
-   ;(make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+   (make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
+   (make-instance 'Reschedule :outer-coincidence 1 :schedule-whole-component 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
+   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
+   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
+   (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
    ))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
