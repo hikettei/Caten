@@ -18,7 +18,10 @@ TODO:
    #:optrule-apply-transform-on-polyhedral
    #:optrule-apply-transform-on-blueprint
    #:apply-optimization
-   
+
+   #:NoOpt
+   #:RewriteTree
+   #:Fuse
    #:Reschedule
    #:Interchange
    ))
@@ -66,8 +69,7 @@ TODO:
         (ecase (rt-rule optrule)
           (:Maximize-Filter-Candidates (schedule-split-all-band (psi-theta poly)))
           (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly)))))
-  (print (isl::schedule-get-root (psi-theta poly)))
-  )
+  (print (isl::schedule-get-root (psi-theta poly))))
 ;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; At this stage, we assume the initial polyhedral looks like (by applying :Serialize+)
 ;; [DOMAIN]
@@ -76,13 +78,18 @@ TODO:
 ;;   - filter1
 ;;   - filter2
 ;;   ...
+;; [MEMO] もしこれができたら，TensorGraph-LevelでのLoop Collapse, Loop Fusionを削除し，ISLへ統合する。
+;; [MEMO] Sequenceではあるが，Tree構造のはず
+(defclass Fuse (OptimizationRule) nil
+  (:documentation "`Fuse`は同一のSequenceにする二つのFilterNodeを一つに融合する, Scheduleは"))
 
-(defclass Fuse (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
   ;; Fuseで，異なるDepthのが同一のSequenceにないと。。。
   ;; serialize-sccs最強か？
   nil)
+
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
+  
   )
 
 ;; Jump?
@@ -113,14 +120,10 @@ Effect: computes θ := schedule-constraints-compute-schedule(C) under these
 options; typically used to seed candidate schedules at the start of search."))
 (defmethod optrule-generate-search-space (poly (id (eql :Serialize)))
   (list (make-instance 'Reschedule :serialize-sccs 1)))
-
+;; [TODO]Remove
 (defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of scheduling commands.
-  ;; [TODO] Scheduled Graph is random?
-  ;; [TODO] 最初Rescheduleするなら, Read/Write Accessだけで良いのでは？
-  ;; --> FUSE, など，Filterを移動する操作が欲しくなる。
   (list
-   (make-instance 'Reschedule :serialize-sccs 1) ;; Maximize Fusion Chance!
    ;(make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
    (make-instance 'Reschedule :serialize-sccs 1) ;; Maximize Fusion Chance!
    ;; Locality Strategy

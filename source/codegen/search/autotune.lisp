@@ -103,6 +103,9 @@ BEAM Search Workflow:
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
           ;; [Template Construction]
+          ;; - Option1: BEAM Search + LightWeight Cost Function
+          ;; - Option2: ISL Reschedule
+          ;; - Option3: No Template Search
           (sgt-prepare-for-sketch-generation gen0)
           
           ;; [TODO]
