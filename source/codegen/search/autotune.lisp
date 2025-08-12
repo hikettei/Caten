@@ -180,7 +180,10 @@ BEAM Search Workflow:
           (error "STOP")
           t
           )))))
-      
+;; [Note]
+;; - OPTIMIZE=0
+;; - FuseALL
+;; ==> Eazy to get FlashAttention?
 (defun merge-items (src parents)
   ;; How many nodes can we fuse
   (when (null parents)
@@ -190,6 +193,9 @@ BEAM Search Workflow:
            (root (reduce #'psi. items))
            (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
       (sgt-prepare-for-sketch-generation gen0)
+      ;; tile?
+      (time (sgt-apply-transformations gen0 :Fuse))
+      (time (sgt-apply-transformations gen0 :Fuse))
       (time (sgt-apply-transformations gen0 :Fuse))
       (print (sgt-items gen0))
       )))
