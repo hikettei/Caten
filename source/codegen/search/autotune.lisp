@@ -69,6 +69,7 @@ pruned (Top-k), and expanded to produce the next generation."))
   (labels ((n (sgt) (apply #'sgt-find-legal-transformation sgt optrule-ids) sgt))
     (let ((curr-items (sgt-items sgt))
           (next-gen (n sgt)))
+      (print (sgt-items next-gen))
       (if (sgt-items next-gen)
           (apply #'sgt-apply-until-saturated next-gen optrule-ids)
           (progn
@@ -81,8 +82,7 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sgt-prepare-for-sketch-generation (sgt)
   (sgt-apply-transformations sgt :Serialize)
-  (sgt-apply-transformations sgt :Maximize-Filter-Candidates)
-  )
+  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
 
 (defun sgt-finalize-sketch (sgt)
 ;;  (sgt-apply-transformations sgt :Coincidence)
@@ -129,7 +129,7 @@ BEAM Search Workflow:
         ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-          ;; [Template Construction]
+          ;; [Template Construction] (Which is the best?)
           ;; - Option1: BEAM Search + LightWeight Cost Function
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search

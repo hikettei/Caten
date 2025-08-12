@@ -81,26 +81,40 @@ TODO:
 ;; [MEMO] Sequenceではあるが，Tree構造のはず
 ;; [MEMO] This SHOULD SUPER SIMPLIFY SCHEDULER IMPLEMENTATION
 ;; [MEMO] SYMBOLIC!!
-(defclass Fuse (OptimizationRule) ((dst :initarg :dst) (src :initarg :src))
+;; [TODO] FUSE :MAP Optionを追加する？
+(defclass Fuse (OptimizationRule) ((dst :initarg :dst) (src :initarg :src) (path :initarg :path))
   (:documentation "`Fuse`は同一のSequenceにする二つのFilterNodeを一つに融合する, Scheduleは"))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
-  (let ((pairs
-          (caten/codegen/search/schedule::compute-fuse-pairs-on-sequence
-           (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)
-           (psi-read-union-map poly)
-           (psi-write-union-map poly)
+  (let ((path-candidates
+          (caten/codegen/search/schedule::schedule-gather-sequence/set
            (psi-theta poly))))
-    (loop for (dst . src) in pairs
-          collect (make-instance 'Fuse :dst dst :src src)
-          collect (make-instance 'Fuse :dst src :src dst))))
+    (dolist (path (reverse path-candidates))
+      (let* ((seq (caten/codegen/search/schedule::schedule-node-at-path (psi-theta poly) path))
+             (pairs
+               (caten/codegen/search/schedule::compute-fuse-pairs-on-sequence
+                seq
+                (psi-read-union-map poly)
+                (psi-write-union-map poly)
+                (psi-theta poly)))
+             (pairs
+               (loop for (dst . src) in pairs
+                     if (caten/codegen/search/schedule::schedule-fusable-p seq dst src)
+                       collect (cons dst src))))
+        (when (and pairs (= (length path) 1))
+          (return-from optrule-generate-search-space
+            (loop for (dst . src) in pairs
+                  collect (make-instance 'Fuse :dst dst :src src :path path)
+                  collect (make-instance 'Fuse :dst src :src dst :path path)))))
+      nil)))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
-  (with-slots ((dst dst) (src src)) optrule
+  (with-slots ((dst dst) (src src) (path path)) optrule
     (let ((theta-fused
             (caten/codegen/search/schedule::schedule-fuse
-             (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)
+             (caten/codegen/search/schedule::schedule-node-at-path (psi-theta poly) path)
              dst src)))
+      (print (isl:schedule-get-root theta-fused))
       (setf (psi-theta poly) theta-fused))))
 ;; Jump?
 (defclass Reshape (OptimizationRule) nil) ;; Reshapeは不要，しかしCoalesce/Paddingはいるかも

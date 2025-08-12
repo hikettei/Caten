@@ -638,6 +638,37 @@ Procedure:
     (let ((seq (isl::schedule-node-parent (isl::schedule-node-parent (schedule-node-delete band)))))
       (assert (find (schedule-node-get-type seq) '(:schedule-node-sequence :schedule-node-set)))
       seq)))
+
+(defun schedule-node-at-path (schedule path)
+  "PATH = (i0 i1 ... ik) from root->child(0)."
+  (labels ((n-children (n)
+             (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n)))
+           (child (n i)
+             (let ((cnt (n-children n)))
+               (assert (and (>= i 0) (< i cnt))
+                       () "child index ~a out of [0,~a)" i cnt))
+             (schedule-node-get-child n i)))
+    (let ((node (schedule-get-root schedule)))
+      (dolist (idx path node) (setf node (child node idx))))))
+
+(defun schedule-gather-path (schedule f &aux (results))
+  (labels ((explore (node path)
+             (when (eql (schedule-node-get-type node) :schedule-node-leaf)
+               (return-from explore))
+             (when (funcall f node)
+               (push path results))
+             (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
+               (dotimes (i n-child)
+                 (explore (schedule-node-get-child node i) (append path (list i)))))))
+    (explore (schedule-get-root schedule) nil)
+    (nreverse results)))
+
+(defun schedule-gather-sequence/set (schedule)
+  (schedule-gather-path
+   schedule
+   #'(lambda (node)
+       (and (find (schedule-node-get-type node) '(:schedule-node-sequence :schedule-node-set))
+            (> (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)) 1)))))
 ;; Goal: FlashAttentionに相当する区間をまとめてBEAM SearchしちゃえばFlashAttentionまで探索できる
 ;; 1. SCCS同士のdst <- srcのPairを求め，そこから計算していく
 ;; 2.
@@ -647,12 +678,38 @@ Procedure:
 ;; - Interchange: (BandのSequenceを上から下へと持っていく)
 ;; - Expand:      (1次元でCoalesceされたBandを複数のBandへと分割する)
 ;; - 3次元と2次元
-;; get-sequence-rank = 1次元，2次元, ...と繰り返す
-;; まずは外側のループを合わせる Interchange = {0, 0, 0, 1}
-;; 次にn-1側のループを...       Interchange = {0, 0, 0, 0}
 ;; (caten (!add (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))) (!matmul (make-tensor `(512 512)) (!t (make-tensor `(512 512))))))
-;; ^ これ
-(defun schedule-fuse (components dst src) ;; src = single filterというassumptionが必要か？
+(defun schedule-fusable-p (components dst src)
+  (declare (type isl::schedule-node components) (type fixnum dst src))
+  (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
+    (assert (> n-child 1))
+    (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set))
+            ()
+            "schedule-fuse: The given schedule should be scheduled w/ :Serialize+:Maximize-Filter-Candidates")
+    (assert (and (>= dst 0) (>= src 0)
+                 (<= dst n-child) (<= src n-child)
+                 (not (= src dst))))
+    (let* ((dst-filter-node (schedule-node-get-child components dst)) ;; ISL asserts this is a filter.
+           (src-filter-node (schedule-node-get-child components src))
+           (dst-band (schedule-node-get-child dst-filter-node 0))
+           (src-band (schedule-node-get-child src-filter-node 0)))
+      (and (eql (schedule-node-get-type dst-band) :schedule-node-band)
+           (eql (schedule-node-get-type src-band) :schedule-node-band)
+           (let* ((dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
+                  (src-filter (isl::schedule-node-filter-get-filter src-filter-node))
+                  (dst-sched (schedule-node-band-get-partial-schedule dst-band))
+                  (src-sched (schedule-node-band-get-partial-schedule src-band))
+                  (dst-i (isl::multi-union-pw-aff-reset-tuple-id
+                          (isl::multi-union-pw-aff-intersect-domain dst-sched dst-filter)
+                          :dim-out))
+                  (src-i (isl::multi-union-pw-aff-reset-tuple-id
+                          (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
+                          :dim-out)))
+             (and
+              (= 1 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
+              (= 1 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out))))))))
+
+(defun schedule-fuse (components dst src)
   "Fuse two filters like:
 ```
 components = schedule.child(0) // schedule_node_sequence
@@ -735,10 +792,6 @@ where dst and src is strongly-connected components.
       ;; [SimpleFuse | InterchangeFuse | CoalesceFuse | ...]
       ;;   V
       ;; SelectBestOne
-      ;;(print components)
-      ;;(print dst-i)
-      ;;(print src-i)
-      ;;(print new-sequence)
       (let ((fused-band
               (schedule-node-get-child
                (schedule-node-get-child
@@ -749,9 +802,8 @@ where dst and src is strongly-connected components.
         (setf fused-band (schedule-node-insert-partial-schedule fused-band new-mupa))
         (let ((children (schedule-node-get-child fused-band 0)))
           (setf children (schedule-node-band-delete-on-sequence children 0)  ;; Index is always valid?
-                children (schedule-node-band-delete-on-sequence children 1)) ;; 
+                children (schedule-node-band-delete-on-sequence children 1)) ;;
           (schedule-node-get-schedule children))))))
-;; tmp allocを最小化するspaceを求めるというのでいけるかも，相当遅そうだけど。。。
 
 ;; Goal
 ;;   Given a schedule S over an iteration domain D and memory accesses
@@ -842,18 +894,6 @@ where dst and src is strongly-connected components.
 ;; Polyhedral Modelを使ってるんだから，探索空間がもっと広くないといけないし，コスト関数がdeterministic...
 ;; filterの移動
 
-(defun schedule-node-at-path (schedule path)
-  "PATH = (i0 i1 ... ik) from root->child(0)."
-  (labels ((n-children (n)
-             (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n)))
-           (child (n i)
-             (let ((cnt (n-children n)))
-               (assert (and (>= i 0) (< i cnt))
-                       () "child index ~a out of [0,~a)" i cnt))
-             (schedule-node-get-child n i)))
-    (let ((node (schedule-node-get-child (schedule-get-root schedule) 0)))
-      (dolist (idx path node) (setf node (child node idx))))))
-
 (defun %node-type (n) (schedule-node-get-type n))
 
 (defun uset-filter-by-stmt-names (universe names)
@@ -865,8 +905,6 @@ where dst and src is strongly-connected components.
       (let* ((s (isl::set-list-get-at sl i))
              (nm (or (isl::set-get-tuple-name s) "")))
         (when (find i names);;(member nm names :test #'string=)
-          (print "Reorder ID")
-          (print nm)
           (setf acc (if acc
                         (isl::union-set-union acc (isl::union-set-from-set s))
                         (isl::union-set-from-set s))))))
