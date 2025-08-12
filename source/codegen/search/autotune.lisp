@@ -53,10 +53,20 @@ pruned (Top-k), and expanded to produce the next generation."))
 (defun sgt-improvements (old-sgt new-sgt)
   (assert (and (sgt-best-score old-sgt) (sgt-best-score new-sgt)))
   (/ (sgt-best-score new-sgt) (sgt-best-score old-sgt)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun sgt-prepare-for-sketch-generation (sgt)
+  (sgt-apply-transformations sgt :Serialize)
+  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
+
+(defun sgt-finalize-sketch (sgt)
+;;  (sgt-apply-transformations sgt :Coincidence)
+  (sgt-apply-transformations sgt :Maximize-Band-Depth))
+
+(defun sgt-prepare-for-device-optimization (sgt)
+  (sgt-apply-transformations sgt :Interchange :Tile :Vectorize :SplitReduce))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - TILE Parameter Space?
-;; - 
 (defun setup-autotune (runtime blueprint)
   (values
    (ctx:getenv :BEAM)
@@ -93,8 +103,8 @@ BEAM Search Workflow:
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
           ;; [Template Construction]
-          (sgt-apply-transformations gen0 :Serialize)
-          (sgt-apply-transformations gen0 :Maximize-Filter-Candidates)
+          (sgt-prepare-for-sketch-generation gen0)
+          
           ;; [TODO]
           ;; - 1. Symbolic Tileができないかやっぱり検証する
           ;; - 2. Parametricができるようにして，後からLocalSize変えれるようにしたい

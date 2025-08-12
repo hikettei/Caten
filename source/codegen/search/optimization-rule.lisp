@@ -53,7 +53,7 @@ TODO:
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
-;; ~~ Template Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass RewriteTree (OptimizationRule) ((rule :initarg :rule :reader rt-rule)))
 (macrolet ((add-rule (name)
              `(defmethod optrule-generate-search-space (poly (id (eql ,name)))
@@ -68,6 +68,14 @@ TODO:
           (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly)))))
   (print (isl::schedule-get-root (psi-theta poly)))
   )
+;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; At this stage, we assume the initial polyhedral looks like (by applying :Serialize+)
+;; [DOMAIN]
+;; CHILD:
+;;   SEQUENCE:
+;;   - filter1
+;;   - filter2
+;;   ...
 
 (defclass Fuse (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
