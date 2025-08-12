@@ -554,7 +554,7 @@ Procedure:
   (declare (ignore user))
   (if (eql (isl::%isl-schedule-node-get-type band) :schedule-node-band)
       (let ((depth (schedule-node-band-get-depth (isl::%%make-schedule-node-band band))))
-        ;; [TODO]
+        ;; [TODO] 
         band)
       band))
 
@@ -564,6 +564,67 @@ Procedure:
 (defun schedule-fuse-all-band (schedule)
   "band+child+band ==> [band+band]"
   (schedule-map schedule (cffi:callback rewrite/fuse-band)))
+;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Problem Setting:
+;; Given View = {shape, stride, mask}, computes the beneficial loop generation path {view1.view2}
+;; - This should work on different ranked views.
+;; - 事前に解を与える？->後の探索で困ってしまう。
+(defun multi-union-pw-aff-reshape-to-nd (mupa n)
+
+  )
+
+(defun schedule-fuse (schedule dst src)
+  "Fuse two filters like:
+```
+components = schedule.child(0) // schedule_node_sequence
+schedule_get_child(components, dst) += schedule_get_child(components, src)
+```"
+  (declare (type isl::schedule schedule) (type fixnum dst src))
+  (print (schedule-get-root schedule))
+  (let ((components (schedule-node-get-child (schedule-get-root schedule) 0)))
+    (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set))
+            ()
+            "schedule-fuse: The given schedule should be scheduled w/ :Serialize+:Maximize-Filter-Candidates")
+    (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
+      (assert (and (>= dst 0) (>= src 0)
+                   (<= dst n-child) (<= src n-child)
+                   (not (= src dst)))))
+    ;; 1. domainを書き換えないといけない。
+    ;; 2. BandSplitの意味はあったのかな？
+    ;; 3. Rootに到達するまで再帰的に探索というのが必要かも
+    (let* ((dst-filter-node (schedule-node-get-child components dst)) ;; ISL asserts this is a filter.
+           (src-filter-node (schedule-node-get-child components src))
+           (dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
+           (src-filter (isl::schedule-node-filter-get-filter src-filter-node))
+           (dst-band (schedule-node-get-child dst-filter-node 0))
+           (src-band (schedule-node-get-child src-filter-node 0))
+           (dst-sched (schedule-node-band-get-partial-schedule dst-band))
+           (src-sched (schedule-node-band-get-partial-schedule src-band))
+           (dst-i (isl::multi-union-pw-aff-reset-tuple-id
+                   (isl::multi-union-pw-aff-intersect-domain dst-sched dst-filter)
+                   :dim-out))
+           (src-i (isl::multi-union-pw-aff-reset-tuple-id
+                   (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
+                   :dim-out)))
+      ;; 数理的には二つの部分スケジュールの出力空間 (Arity, 順序，基底)を一致させる写像fを見つける操作をする。
+      ;; Transform SRC matching to DST space.
+      ;; Result = DST<MUPA> + f(SRC<MUPA>)
+      ;; Find best θ s.t.: schedule_is_valid_p(Result, D)
+      ;; θ is a list of:
+      ;; - Interchange
+      ;; - Reshape
+      ;; - Padding
+      ;; もっと単純に解けない？
+      ;; これはPerformanceをMeasureする。
+      ;; 全パターンのValidなスケジュールをリストとして返して，一番評価が高いやつを選ぶ，というのでもいい。
+      (print dst-i)
+      (print src-i)
+      (print (isl::multi-union-pw-aff-get-space dst-i))
+      (print (isl::multi-union-pw-aff-get-space src-i))
+      ;; ここでSpaceのPadding, Reshape, Coalesceを考え，Validなものを求める...
+      
+      (print (isl::multi-union-pw-aff-union-add dst-i src-i))
+      )))
 
 ;; Goal
 ;;   Given a schedule S over an iteration domain D and memory accesses

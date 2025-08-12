@@ -80,20 +80,25 @@ TODO:
 ;;   ...
 ;; [MEMO] もしこれができたら，TensorGraph-LevelでのLoop Collapse, Loop Fusionを削除し，ISLへ統合する。
 ;; [MEMO] Sequenceではあるが，Tree構造のはず
-(defclass Fuse (OptimizationRule) nil
+;; [MEMO] This SHOULD SUPER SIMPLIFY SCHEDULER IMPLEMENTATION
+;; [MEMO] SYMBOLIC!!
+(defclass Fuse (OptimizationRule) ((dst :initarg :dst) (src :initarg :src))
   (:documentation "`Fuse`は同一のSequenceにする二つのFilterNodeを一つに融合する, Scheduleは"))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
-  ;; Fuseで，異なるDepthのが同一のSequenceにないと。。。
-  ;; serialize-sccs最強か？
-  nil)
+  (list
+   (make-instance 'Fuse :dst 0 :src 1)))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
-  
-  )
+  (with-slots ((dst dst) (src src)) optrule
+    (print "Fusion")
+    (caten/codegen/search/schedule::schedule-fuse
+     (psi-theta poly)
+     dst src)
+    ))
 
 ;; Jump?
-(defclass Reshape (OptimizationRule) nil)
+(defclass Reshape (OptimizationRule) nil) ;; Reshapeは不要，しかしCoalesce/Paddingはいるかも
 (defclass Padding (OptimizationRule) nil)
 (defclass Shift (OptimizationRule) nil)
 

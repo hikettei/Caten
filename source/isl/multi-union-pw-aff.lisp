@@ -174,4 +174,7 @@
   (:give multi-union-pw-aff)
   (:take multi-union-pw-aff)
   (:take multi-union-pw-aff))
-  
+
+(define-isl-function multi-union-pw-aff-get-space %isl-multi-union-pw-aff-get-space
+  (:give space)
+  (:keep multi-union-pw-aff))

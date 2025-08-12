@@ -56,11 +56,13 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sgt-prepare-for-sketch-generation (sgt)
   (sgt-apply-transformations sgt :Serialize)
-  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
+  ;;(sgt-apply-transformations sgt :Maximize-Filter-Candidates)
+  )
 
 (defun sgt-finalize-sketch (sgt)
 ;;  (sgt-apply-transformations sgt :Coincidence)
-  (sgt-apply-transformations sgt :Maximize-Band-Depth))
+  (sgt-apply-transformations sgt :Maximize-Band-Depth)
+  )
 
 (defun sgt-prepare-for-device-optimization (sgt)
   (sgt-apply-transformations sgt :Interchange :Tile :Vectorize :SplitReduce))
@@ -107,6 +109,7 @@ BEAM Search Workflow:
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search
           (sgt-prepare-for-sketch-generation gen0)
+          (sgt-apply-transformations gen0 :Fuse)
           
           ;; [TODO]
           ;; - 1. Symbolic Tileができないかやっぱり検証する
