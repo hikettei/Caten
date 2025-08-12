@@ -86,12 +86,24 @@ TODO:
   (:documentation "`Fuse`は同一のSequenceにする二つのFilterNodeを一つに融合する, Scheduleは"))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
-  (list
-   (make-instance 'Fuse :dst 0 :src 1)))
+  (let ((pairs
+          (caten/codegen/search/schedule::compute-fuse-pairs-on-sequence
+           (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)
+           (psi-read-union-map poly)
+           (psi-write-union-map poly)
+           (psi-theta poly))))
+    (let ((s1 (car pairs))) ;; TODO: Solve until saturated?
+      (print "PAIRS")
+      (print pairs)
+      (list
+       (make-instance 'Fuse :dst (cdr s1) :src (car s1))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
   (with-slots ((dst dst) (src src)) optrule
-    (let ((theta-fused (caten/codegen/search/schedule::schedule-fuse (psi-theta poly) dst src)))
+    (let ((theta-fused
+            (caten/codegen/search/schedule::schedule-fuse
+             (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)
+             dst src)))
       (setf (psi-theta poly) theta-fused)
       (print "isLegal")
       (print (psi-verify-legality poly)))))

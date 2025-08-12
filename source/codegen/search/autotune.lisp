@@ -109,7 +109,10 @@ BEAM Search Workflow:
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search
           (sgt-prepare-for-sketch-generation gen0)
-          (sgt-apply-transformations gen0 :Fuse)
+          (sgt-apply-transformations gen0 :Fuse) ;; ApplyUntilSaturated
+          (sgt-apply-transformations gen0 :Fuse) ;; ApplyUntilSaturated
+;          (sgt-apply-transformations gen0 :Fuse)
+;          (sgt-apply-transformations gen0 :Fuse)
           
           ;; [TODO]
           ;; - 1. Symbolic Tileができないかやっぱり検証する

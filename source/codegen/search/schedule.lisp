@@ -25,6 +25,7 @@
    #:schedule-get-roots
    #:schedule-split-all-band
    #:schedule-fuse-all-band))
+
 (in-package :caten/codegen/search/schedule)
 
 (defun compute-dependence-relation (read write schedule)
@@ -54,7 +55,7 @@ that y precedes x under S and their memory accesses form flow/output/antidepende
            (WaW    (union-flow-get-must-dependence flow))
            (WaR    (union-flow-get-may-dependence flow))
            (dependencies (union-map-union (union-map-union WaR RaW) WaW)))
-      dependencies))
+      (values dependencies RaW WaW WaR)))
 
 (defun compute-schedule-constraints (domain dependencies)
   "Build scheduling constraints C over an iteration domain D given a dependence relation Δ.
@@ -568,26 +569,88 @@ Procedure:
 ;; Problem Setting:
 ;; Given View = {shape, stride, mask}, computes the beneficial loop generation path {view1.view2}
 ;; - This should work on different ranked views.
-;; - 事前に解を与える？->後の探索で困ってしまう。
-(defun multi-union-pw-aff-reshape-to-nd (mupa n)
+(defparameter *stmt-pair-result* nil)
+(cffi:defcallback push-umap-pair :int
+    ((map :pointer) (user :pointer))
+  (declare (ignore user))
+  (let ((map (isl::%make-map map)))
+    (let ((dom-name (isl::set-get-tuple-name (isl::map-domain map)))
+          (ran-name (isl::set-get-tuple-name (isl::map-range map))))
+      (when (not (string= dom-name ran-name))
+        (push (cons dom-name ran-name) *stmt-pair-result*))))
+  0)
+(defun umap->stmt-pairs (umap)
+  (declare (type isl::union-map umap))
+  (let ((*stmt-pair-result*))
+    (isl::%isl-union-map-foreach-map
+     (isl::union-map-handle umap)
+     (cffi:callback push-umap-pair)
+     (cffi:null-pointer))
+    *stmt-pair-result*))
 
-  )
+(defparameter *filter-names-result* nil)
+(cffi:defcallback push-filter-name :int
+    ((set :pointer) (user :pointer))
+  (declare (ignore user))
+  (push (isl::%isl-set-get-tuple-name set) *filter-names-result*)
+  0)
 
-(defun align-src/dst (dst-mupa src-mupa)
-  (declare (type isl::multi-union-pw-aff dst-mupa src-mupa))
+(defun union-set-get-statements (union-set)
+  (let ((*filter-names-result* nil))
+    (isl::%isl-union-set-foreach-set
+     (isl::union-set-handle union-set)
+     (cffi:callback push-filter-name)
+     (cffi:null-pointer))
+    (nreverse *filter-names-result*)))
 
-  )
+(defun schedule-node-sequence-get-filter-names (schedule-node)
+  (assert (find (schedule-node-get-type schedule-node) '(:schedule-node-set :schedule-node-sequence)))
+  (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle schedule-node))))
+    (loop for i upfrom 0 below n-child
+          for filter = (schedule-node-get-child schedule-node i)
+          collect (union-set-get-statements (isl::schedule-node-filter-get-filter filter)))))
 
-(defun schedule-fuse (schedule dst src)
+(defun scc-pairs-on-sequence (schedule-node sccs)
+  (assert (find (schedule-node-get-type schedule-node) '(:schedule-node-set :schedule-node-sequence)))
+  (let ((namespace (schedule-node-sequence-get-filter-names schedule-node)))
+    (loop for (dst . src) in sccs
+          for dst-id = (position dst namespace :test #'(lambda (x y) (find x y :test #'string=)))
+          for src-id = (position src namespace :test #'(lambda (x y) (find x y :test #'string=)))
+          if (and dst-id src-id (not (= dst-id src-id)))
+            collect (cons dst-id src-id))))
+
+(defun compute-scc-pairs (read-umap write-umap sched)
+  ;; return ((cons S1 S2)) S1 depends on S2
+  (multiple-value-bind (_ raw waw war) (compute-dependence-relation read-umap write-umap sched)
+    (declare (ignore _))
+    (remove-duplicates
+     (append (umap->stmt-pairs raw) (umap->stmt-pairs waw) (umap->stmt-pairs war))
+     :test #'equal)))
+
+(defun compute-fuse-pairs-on-sequence (schedule-node-sequence read-umap write-umap sched)
+  (scc-pairs-on-sequence
+   schedule-node-sequence
+   (compute-scc-pairs read-umap write-umap sched)))
+
+(defun schedule-node-band-delete-on-sequence (sequence pos)
+  (let ((band (schedule-node-get-child (schedule-node-get-child sequence pos) 0)))
+    (assert (eql (schedule-node-get-type band) :schedule-node-band))
+    (let ((seq (isl::schedule-node-parent (isl::schedule-node-parent (schedule-node-delete band)))))
+      (assert (find (schedule-node-get-type seq) '(:schedule-node-sequence :schedule-node-set)))
+      seq)))
+;; 1. SCCS同士のdst <- srcのPairを求め，そこから計算していく
+;; 2. 
+(defun schedule-fuse (components dst src)
   "Fuse two filters like:
 ```
 components = schedule.child(0) // schedule_node_sequence
 schedule_get_child(components, dst) += schedule_get_child(components, src)
-```"
-  (declare (type isl::schedule schedule) (type fixnum dst src))
-  (print (schedule-get-root schedule))
-  (let* ((components (schedule-node-get-child (schedule-get-root schedule) 0))
-         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
+```
+where dst and src is strongly-connected components.
+"
+  (declare (type isl::schedule-node components) (type fixnum dst src))
+  (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
+    (assert (> n-child 1))
     (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set))
             ()
             "schedule-fuse: The given schedule should be scheduled w/ :Serialize+:Maximize-Filter-Candidates")
@@ -598,6 +661,7 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
     ;; 2. BandSplitの意味はあったのかな？=>ある
     ;; 3. Rootに到達するまで再帰的に探索というのが必要かも
     ;; 4. Outermost loopsから，再起的に任意のポジションのsequenceをfuseを繰り返す...というのができるかも
+    ;; Guard on different rankが生成されたら，1D -> 2DにSplit, ...
     (let* ((dst-filter-node (schedule-node-get-child components dst)) ;; ISL asserts this is a filter.
            (src-filter-node (schedule-node-get-child components src))
            (dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
@@ -612,10 +676,17 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
            (src-i (isl::multi-union-pw-aff-reset-tuple-id
                    (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
                    :dim-out))
-           (new-sequence (isl::union-set-list-alloc 0)))
+           (new-sequence (isl::union-set-list-alloc 0))
+           (dst-pos nil))
+      
+      (when (or (= 0 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
+                (= 0 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out)))
+        (return-from schedule-fuse (schedule-node-get-schedule components)))
       (dotimes (i n-child)
         (cond
-          ((= i dst) (setf new-sequence (isl::union-set-list-add new-sequence (isl::union-set-union dst-filter src-filter))))
+          ((= i dst)
+           (setf new-sequence (isl::union-set-list-add new-sequence (isl::union-set-union dst-filter src-filter))
+                 dst-pos (1- (isl::union-set-list-size new-sequence))))
           ((= i src))
           (T
            (setf new-sequence
@@ -623,6 +694,14 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
                   new-sequence
                   (isl::schedule-node-filter-get-filter
                    (schedule-node-get-child components i)))))))
+      ;; [MEMO]
+      ;; - コスト関数: tmp_allocの個数 (but it is sparse?)
+      ;; - Fuseが利益にならないときはFissionするPathも用意しないといけない。
+      ;; - 操作1: 二つのBandを頑張ってFuseする人 (これ) TODO: Childまで完璧に面倒を見る。
+      ;;    - 次元0でサイズを合わせる。次元1に帳尻を持って来させる，これを繰り返す
+      ;;    - Memo: これはアクセスが簡単だからできること
+      ;; - 操作2: Interchange
+      ;; [TODO] Assert Arity is one.
       ;; 数理的には二つの部分スケジュールの出力空間 (Arity, 順序，基底)を一致させる写像fを見つける操作をする。
       ;; Transform SRC matching to DST space.
       ;; Result = DST<MUPA> + f(SRC<MUPA>)
@@ -634,23 +713,44 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
       ;; もっと単純に解けない？
       ;; これはPerformanceをMeasureする。
       ;; 全パターンのValidなスケジュールをリストとして返して，一番評価が高いやつを選ぶ，というのでもいい。
-      (print dst-i)
-      (print src-i)
+
+      ;; dst <- srcのペアの生成。これ必ずValidになる方法というのを考える
       ;; ここでSpaceのPadding, Reshape, Coalesceを考え，Validなものを求める..
       ;; DomainをMergeしないと。。。
-      (print new-sequence)
+      ;; childのband deletion
+      ;; [Tree1]
+      ;;   V
+      ;; [SimpleFuse | InterchangeFuse | CoalesceFuse | ...]
+      ;;   V
+      ;; SelectBestOne
+      ;;(print components)
+      ;;(print dst-i)
+      ;;(print src-i)
+      ;;(print new-sequence)
       (let ((fused-band
               (schedule-node-get-child
                (schedule-node-get-child
                 (isl::schedule-node-insert-sequence components new-sequence)
-                dst)
+                dst-pos)
                0))
             (new-mupa (isl::multi-union-pw-aff-union-add dst-i src-i)))
-        (schedule-node-get-schedule
-         (print
-          (schedule-node-insert-partial-schedule
-           fused-band
-           new-mupa)))))))
+        (setf fused-band (schedule-node-insert-partial-schedule fused-band new-mupa))
+        (let ((children (schedule-node-get-child fused-band 0)))
+          (setf children (schedule-node-band-delete-on-sequence children 0)  ;; Index is always valid?
+                children (schedule-node-band-delete-on-sequence children 1)) ;; 
+          (print children)
+          (if (find (schedule-node-get-type children) `(:schedule-node-sequence :schedule-node-set))
+              (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle children))))
+                (if (and (> n-child 1))
+                    (progn
+                      (PRINT "FUSE")
+                      (schedule-fuse children 0 1)
+                      )
+                    (progn
+                      (schedule-node-get-schedule fused-band))))
+              (schedule-node-get-schedule fused-band)))))))
+;; tmp allocを最小化するspaceを求めるというのでいけるかも，相当遅そうだけど。。。
+
 ;; Goal
 ;;   Given a schedule S over an iteration domain D and memory accesses
 ;;   (R: reads, W: writes), rewrite S into S' that is *never worse* and
