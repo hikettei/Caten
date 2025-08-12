@@ -190,3 +190,26 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take union-set-list))
+
+(define-isl-function schedule-node-insert-set %isl-schedule-node-insert-set
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set-list))
+
+(define-isl-function schedule-node-filter-get-filter %isl-schedule-node-filter-get-filter
+  (:give union-set)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-next-sibling %isl-schedule-node-next-sibling
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-order-before %isl-schedule-node-order-before
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
+(define-isl-function schedule-node-order-after %isl-schedule-node-order-after
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))

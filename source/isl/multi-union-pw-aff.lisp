@@ -162,3 +162,16 @@
 (define-isl-function pw-aff-domain %isl-pw-aff-domain
   (:give set)
   (:take pw-aff))
+
+(define-isl-function pw-aff-neg %isl-pw-aff-neg
+  (:give pw-aff)
+  (:take pw-aff))
+
+(defun multi-union-pw-aff-reset-tuple-id (mupa type)
+  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (copy mupa)) type)))
+
+(define-isl-function multi-union-pw-aff-union-add %isl-multi-union-pw-aff-union-add
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))
+  

@@ -82,3 +82,6 @@
 (define-isl-function set-get-tuple-id %isl-set-get-tuple-id
   (:give identifier)
   (:keep set))
+
+(defun set-get-tuple-name (set)
+  (%isl-set-get-tuple-name (set-handle set)))
