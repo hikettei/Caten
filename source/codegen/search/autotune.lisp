@@ -92,7 +92,8 @@ BEAM Search Workflow:
         ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-          (sgt-apply-transformations gen0 :Reschedule)
+          ;; [Template Construction]
+          (sgt-apply-transformations gen0 :Serialize)
           (sgt-apply-transformations gen0 :Maximize-Filter-Candidates)
           ;; [TODO]
           ;; - 1. Symbolic Tileができないかやっぱり検証する

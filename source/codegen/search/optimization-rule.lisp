@@ -103,6 +103,8 @@ Parameters (0/1 unless stated):
   max-coefficient, max-constant-term ∈ ℤ≥0  — bounds on affine coefficients.
 Effect: computes θ := schedule-constraints-compute-schedule(C) under these
 options; typically used to seed candidate schedules at the start of search."))
+(defmethod optrule-generate-search-space (poly (id (eql :Serialize)))
+  (list (make-instance 'Reschedule :serialize-sccs 1)))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
   ;; Reschedule can be placed on the top of scheduling commands.
@@ -110,8 +112,9 @@ options; typically used to seed candidate schedules at the start of search."))
   ;; [TODO] 最初Rescheduleするなら, Read/Write Accessだけで良いのでは？
   ;; --> FUSE, など，Filterを移動する操作が欲しくなる。
   (list
+   (make-instance 'Reschedule :serialize-sccs 1) ;; Maximize Fusion Chance!
    ;(make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
+   (make-instance 'Reschedule :serialize-sccs 1) ;; Maximize Fusion Chance!
    ;; Locality Strategy
    ;(make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
    ;(make-instance 'Reschedule :outer-coincidence 1 :schedule-whole-component 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
