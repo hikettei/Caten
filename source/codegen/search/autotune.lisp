@@ -180,25 +180,19 @@ BEAM Search Workflow:
           (error "STOP")
           t
           )))))
-
-(defun merge-blueprints (blueprints)
-  (let ((g (caten/aasm:with-blueprint (:noopt t) (apply #'caten/aasm::%progn (apply #'append (map 'list #'graph-outputs blueprints))))))
-    (dolist (bp blueprints)
-      (insert-nodes g (graph-nodes bp)))
-    g))
       
 (defun merge-items (src parents)
   ;; How many nodes can we fuse
-  (let* ((bps (append (list (kernel-blueprint (getattr src :kernel-info)))
-                      (map 'list #'(lambda (x) (kernel-blueprint (getattr x :kernel-info))) parents)))
-         (bp* (merge-blueprints bps))
-         (root (make-polyhedral-schedule-item bp*))
-         (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-
-    (sgt-prepare-for-sketch-generation gen0)
-    (time (sgt-apply-transformations gen0 :Fuse))
-    (print (sgt-items gen0))
-    ))
+  (when (null parents)
+    (return-from merge-items nil))
+  (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
+    (let* ((items (append (list (m src)) (map 'list #'m parents)))
+           (root (reduce #'psi. items))
+           (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
+      (sgt-prepare-for-sketch-generation gen0)
+      (time (sgt-apply-transformations gen0 :Fuse))
+      (print (sgt-items gen0))
+      )))
 
 (defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
   (declare (type Graph graph))
