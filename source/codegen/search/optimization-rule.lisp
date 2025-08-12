@@ -82,37 +82,37 @@ TODO:
 ;; [MEMO] This SHOULD SUPER SIMPLIFY SCHEDULER IMPLEMENTATION
 ;; [MEMO] SYMBOLIC!!
 ;; [TODO] FUSE :MAP Optionを追加する？
-(defclass Fuse (OptimizationRule) ((dst :initarg :dst) (src :initarg :src) (path :initarg :path))
+;; [TODO] :best-path-p Tを追加，なければSearch
+(defclass Fuse (OptimizationRule) ((dst :initarg :dst) (src :initarg :src) (at :initarg :at))
   (:documentation "`Fuse`は同一のSequenceにする二つのFilterNodeを一つに融合する, Scheduleは"))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
-  (let ((path-candidates
+  (let ((path-candidates ;; a list of sequence/set
           (caten/codegen/search/schedule::schedule-gather-sequence/set
            (psi-theta poly))))
-    (dolist (path (reverse path-candidates))
-      (let* ((seq (caten/codegen/search/schedule::schedule-node-at-path (psi-theta poly) path))
+    (dolist (path (reverse path-candidates)) ;; from root to leaves
+      (let* ((seq
+               (caten/codegen/search/schedule::schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) path))
              (pairs
-               (caten/codegen/search/schedule::compute-fuse-pairs-on-sequence
+               (caten/codegen/search/schedule::compute-fuse-pairs-from-sequence
                 seq
                 (psi-read-union-map poly)
                 (psi-write-union-map poly)
-                (psi-theta poly)))
-             (pairs
-               (loop for (dst . src) in pairs
-                     if (caten/codegen/search/schedule::schedule-fusable-p seq dst src)
-                       collect (cons dst src))))
-        (when (and pairs (= (length path) 1))
+                (psi-theta poly))))
+        (print "PairCandidates")
+        (print pairs)
+        (when pairs
           (return-from optrule-generate-search-space
-            (loop for (dst . src) in pairs
-                  collect (make-instance 'Fuse :dst dst :src src :path path)
-                  collect (make-instance 'Fuse :dst src :src dst :path path)))))
+            (loop for pair in pairs for dst = (first pair) for src = (second pair)
+                  collect (make-instance 'Fuse :dst dst :src src :at path)
+                  collect (make-instance 'Fuse :dst src :src dst :at path)))))
       nil)))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
-  (with-slots ((dst dst) (src src) (path path)) optrule
+  (with-slots ((dst dst) (src src) (at at)) optrule
     (let ((theta-fused
             (caten/codegen/search/schedule::schedule-fuse
-             (caten/codegen/search/schedule::schedule-node-at-path (psi-theta poly) path)
+             (caten/codegen/search/schedule::schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
              dst src)))
       (print (isl:schedule-get-root theta-fused))
       (setf (psi-theta poly) theta-fused))))

@@ -594,7 +594,6 @@ Procedure:
   (declare (ignore user))
   (push (isl::%isl-set-get-tuple-name set) *filter-names-result*)
   0)
-
 (defun union-set-get-statements (union-set)
   (let ((*filter-names-result* nil))
     (isl::%isl-union-set-foreach-set
@@ -602,22 +601,6 @@ Procedure:
      (cffi:callback push-filter-name)
      (cffi:null-pointer))
     (nreverse *filter-names-result*)))
-
-(defun schedule-node-sequence-get-filter-names (schedule-node)
-  (assert (find (schedule-node-get-type schedule-node) '(:schedule-node-set :schedule-node-sequence)))
-  (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle schedule-node))))
-    (loop for i upfrom 0 below n-child
-          for filter = (schedule-node-get-child schedule-node i)
-          collect (union-set-get-statements (isl::schedule-node-filter-get-filter filter)))))
-
-(defun scc-pairs-on-sequence (schedule-node sccs)
-  (assert (find (schedule-node-get-type schedule-node) '(:schedule-node-set :schedule-node-sequence)))
-  (let ((namespace (schedule-node-sequence-get-filter-names schedule-node)))
-    (loop for (dst . src) in sccs
-          for dst-id = (position dst namespace :test #'(lambda (x y) (find x y :test #'string=)))
-          for src-id = (position src namespace :test #'(lambda (x y) (find x y :test #'string=)))
-          if (and dst-id src-id (not (= dst-id src-id)))
-            collect (cons dst-id src-id))))
 
 (defun compute-scc-pairs (read-umap write-umap sched)
   ;; return ((cons S1 S2)) S1 depends on S2
@@ -627,10 +610,28 @@ Procedure:
      (append (umap->stmt-pairs raw) (umap->stmt-pairs waw) (umap->stmt-pairs war))
      :test #'equal)))
 
-(defun compute-fuse-pairs-on-sequence (schedule-node-sequence read-umap write-umap sched)
-  (scc-pairs-on-sequence
-   schedule-node-sequence
-   (compute-scc-pairs read-umap write-umap sched)))
+(defun compute-fuse-pairs-from-sequence (schedule-node-sequence read-umap write-umap sched)
+  "Return (list (cons absolute_path_from_seq1 absolute_path_from_seq2))"
+  ;; TODO(optimize): pairs are static on each exploration
+  (let ((pairs (compute-scc-pairs read-umap write-umap sched))
+        (filter2path (make-hash-table :test 'equal)))
+    (schedule-gather-path
+     schedule-node-sequence
+     #'(lambda (node path)
+         (when (and
+                (eql (schedule-node-get-type node) :schedule-node-filter)
+                (let ((c (schedule-node-get-child node 0)))
+                  (not (eql :schedule-node-leaf (schedule-node-get-type c)))))
+           (let ((filters (union-set-get-statements (isl::schedule-node-filter-get-filter node))))
+             (dolist (f filters)
+               (if (gethash f filter2path) ;; If there's duplication in filters => the filter was already fused on this dimension.
+                   (return-from compute-fuse-pairs-from-sequence nil)
+                   (setf (gethash f filter2path) path)))))))
+    (loop for (dst . src) in pairs
+          for dst-path = (gethash dst filter2path)
+          for src-path = (gethash src filter2path)
+          if (and dst-path src-path (not (equal dst-path src-path)))
+            collect (list dst-path src-path))))
 
 (defun schedule-node-band-delete-on-sequence (sequence pos)
   (let ((band (schedule-node-get-child (schedule-node-get-child sequence pos) 0)))
@@ -639,7 +640,7 @@ Procedure:
       (assert (find (schedule-node-get-type seq) '(:schedule-node-sequence :schedule-node-set)))
       seq)))
 
-(defun schedule-node-at-path (schedule path)
+(defun schedule-node-at-path (node path)
   "PATH = (i0 i1 ... ik) from root->child(0)."
   (labels ((n-children (n)
              (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n)))
@@ -648,25 +649,25 @@ Procedure:
                (assert (and (>= i 0) (< i cnt))
                        () "child index ~a out of [0,~a)" i cnt))
              (schedule-node-get-child n i)))
-    (let ((node (schedule-get-root schedule)))
-      (dolist (idx path node) (setf node (child node idx))))))
+    (dolist (idx path node) (setf node (child node idx)))))
 
-(defun schedule-gather-path (schedule f &aux (results))
+(defun schedule-gather-path (schedule-node f &aux (results))
   (labels ((explore (node path)
              (when (eql (schedule-node-get-type node) :schedule-node-leaf)
                (return-from explore))
-             (when (funcall f node)
+             (when (funcall f node path)
                (push path results))
              (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
                (dotimes (i n-child)
                  (explore (schedule-node-get-child node i) (append path (list i)))))))
-    (explore (schedule-get-root schedule) nil)
+    (explore schedule-node nil)
     (nreverse results)))
 
 (defun schedule-gather-sequence/set (schedule)
   (schedule-gather-path
-   schedule
-   #'(lambda (node)
+   (schedule-get-root schedule)
+   #'(lambda (node path)
+       (declare (ignore path))
        (and (find (schedule-node-get-type node) '(:schedule-node-sequence :schedule-node-set))
             (> (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)) 1)))))
 ;; Goal: FlashAttentionに相当する区間をまとめてBEAM SearchしちゃえばFlashAttentionまで探索できる
@@ -679,201 +680,96 @@ Procedure:
 ;; - Expand:      (1次元でCoalesceされたBandを複数のBandへと分割する)
 ;; - 3次元と2次元
 ;; (caten (!add (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))) (!matmul (make-tensor `(512 512)) (!t (make-tensor `(512 512))))))
-(defun schedule-fusable-p (components dst src)
-  (declare (type isl::schedule-node components) (type fixnum dst src))
-  (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
-    (assert (> n-child 1))
-    (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set))
-            ()
-            "schedule-fuse: The given schedule should be scheduled w/ :Serialize+:Maximize-Filter-Candidates")
-    (assert (and (>= dst 0) (>= src 0)
-                 (<= dst n-child) (<= src n-child)
-                 (not (= src dst))))
-    (let* ((dst-filter-node (schedule-node-get-child components dst)) ;; ISL asserts this is a filter.
-           (src-filter-node (schedule-node-get-child components src))
-           (dst-band (schedule-node-get-child dst-filter-node 0))
-           (src-band (schedule-node-get-child src-filter-node 0)))
-      (and (eql (schedule-node-get-type dst-band) :schedule-node-band)
-           (eql (schedule-node-get-type src-band) :schedule-node-band)
-           (let* ((dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
-                  (src-filter (isl::schedule-node-filter-get-filter src-filter-node))
-                  (dst-sched (schedule-node-band-get-partial-schedule dst-band))
-                  (src-sched (schedule-node-band-get-partial-schedule src-band))
-                  (dst-i (isl::multi-union-pw-aff-reset-tuple-id
-                          (isl::multi-union-pw-aff-intersect-domain dst-sched dst-filter)
-                          :dim-out))
-                  (src-i (isl::multi-union-pw-aff-reset-tuple-id
-                          (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
-                          :dim-out)))
-             (and
-              (= 1 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
-              (= 1 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out))))))))
+;; Rename: ScheduleFuse => ScheduleFilterMove?
+;; [TODO]
+;; - Interchange
+;; - Reshape (ScheduleBandScale)を探索対象として追加することでCostmodelを使って探索できるように！
+;; - 10*10, 10*10のCoalesceされたBand同士もExploreできる？
+;; ==> UnitTest
+(defun schedule-remove-empty-schedule (schedule)
+  (let ((paths
+          (schedule-gather-path
+           (schedule-get-root schedule)
+           #'(lambda (node path)
+               (declare (ignore path))
+               (when (eql (schedule-node-get-type node) :schedule-node-band)
+                 (let ((p (schedule-node-band-get-partial-schedule node)))
+                   (= 0 (space-dim (isl::multi-union-pw-aff-get-space p) :dim-out))))))))
+    (dolist (path paths)
+      (setf schedule
+            (schedule-node-get-schedule
+             (isl::schedule-node-delete
+              (schedule-node-at-path (schedule-get-root schedule) path)))))
+    schedule))
 
-(defun schedule-fuse (components dst src)
+(defun schedule-fuse (components dst-path src-path) ;; dst -> srcはFilterを示す？PATHにする？
+  ;; TODO Support DST/SRC Sequence Pattern
   "Fuse two filters like:
 ```
 components = schedule.child(0) // schedule_node_sequence
-schedule_get_child(components, dst) += schedule_get_child(components, src)
+schedule_node_at_path(components, dst) += schedule_node_at_path(components, src)
 ```
 where dst and src is strongly-connected components.
+dst/src[list] an absolute path from components.
 "
-  (declare (type isl::schedule-node components) (type fixnum dst src))
+  ;; [TODO] duplicationの条件は，直下にBandがあるかとも読めるかも
+  (declare (type isl::schedule-node components) (type list dst-path src-path))
   (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
-    (assert (> n-child 1))
-    (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set))
-            ()
-            "schedule-fuse: The given schedule should be scheduled w/ :Serialize+:Maximize-Filter-Candidates")
-    (assert (and (>= dst 0) (>= src 0)
-                 (<= dst n-child) (<= src n-child)
-                 (not (= src dst))))
-    ;; 1. domainを書き換えないといけない。
-    ;; 2. BandSplitの意味はあったのかな？=>ある
-    ;; 3. Rootに到達するまで再帰的に探索というのが必要かも
-    ;; 4. Outermost loopsから，再起的に任意のポジションのsequenceをfuseを繰り返す...というのができるかも
-    ;; Guard on different rankが生成されたら，1D -> 2DにSplit, ...
-    (let* ((dst-filter-node (schedule-node-get-child components dst)) ;; ISL asserts this is a filter.
-           (src-filter-node (schedule-node-get-child components src))
-           (dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
-           (src-filter (isl::schedule-node-filter-get-filter src-filter-node))
-           (dst-band (schedule-node-get-child dst-filter-node 0))
-           (src-band (schedule-node-get-child src-filter-node 0))
-           (dst-sched (schedule-node-band-get-partial-schedule dst-band))
-           (src-sched (schedule-node-band-get-partial-schedule src-band))
-           (dst-i (isl::multi-union-pw-aff-reset-tuple-id
-                   (isl::multi-union-pw-aff-intersect-domain dst-sched dst-filter)
-                   :dim-out))
-           (src-i (isl::multi-union-pw-aff-reset-tuple-id
-                   (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
-                   :dim-out))
-           (new-sequence (isl::union-set-list-alloc 0))
-           (dst-pos nil))
-      
-      (when (or (= 0 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
-                (= 0 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out)))
-        (return-from schedule-fuse (schedule-node-get-schedule components)))
-      (dotimes (i n-child)
-        (cond
-          ((= i dst)
-           (setf new-sequence (isl::union-set-list-add new-sequence (isl::union-set-union dst-filter src-filter))
-                 dst-pos (1- (isl::union-set-list-size new-sequence))))
-          ((= i src))
-          (T
-           (setf new-sequence
-                 (isl::union-set-list-add
-                  new-sequence
-                  (isl::schedule-node-filter-get-filter
-                   (schedule-node-get-child components i)))))))
-      ;; [MEMO]
-      ;; - コスト関数: tmp_allocの個数 (but it is sparse?)
-      ;; - Fuseが利益にならないときはFissionするPathも用意しないといけない。
-      ;; - 操作1: 二つのBandを頑張ってFuseする人 (これ) TODO: Childまで完璧に面倒を見る。
-      ;;    - 次元0でサイズを合わせる。次元1に帳尻を持って来させる，これを繰り返す
-      ;;    - Memo: これはアクセスが簡単だからできること
-      ;; - 操作2: Interchange
-      ;; [TODO] Assert Arity is one.
-      ;; 数理的には二つの部分スケジュールの出力空間 (Arity, 順序，基底)を一致させる写像fを見つける操作をする。
-      ;; Transform SRC matching to DST space.
-      ;; Result = DST<MUPA> + f(SRC<MUPA>)
-      ;; Find best θ s.t.: schedule_is_valid_p(Result, D)
-      ;; θ is a list of:
-      ;; - Interchange
-      ;; - Reshape
-      ;; - Padding
-      ;; もっと単純に解けない？
-      ;; これはPerformanceをMeasureする。
-      ;; 全パターンのValidなスケジュールをリストとして返して，一番評価が高いやつを選ぶ，というのでもいい。
-
-      ;; dst <- srcのペアの生成。これ必ずValidになる方法というのを考える
-      ;; ここでSpaceのPadding, Reshape, Coalesceを考え，Validなものを求める..
-      ;; DomainをMergeしないと。。。
-      ;; childのband deletion
-      ;; [Tree1]
-      ;;   V
-      ;; [SimpleFuse | InterchangeFuse | CoalesceFuse | ...]
-      ;;   V
-      ;; SelectBestOne
-      (let ((fused-band
-              (schedule-node-get-child
-               (schedule-node-get-child
-                (isl::schedule-node-insert-sequence components new-sequence)
-                dst-pos)
-               0))
-            (new-mupa (isl::multi-union-pw-aff-union-add dst-i src-i)))
-        (setf fused-band (schedule-node-insert-partial-schedule fused-band new-mupa))
-        (let ((children (schedule-node-get-child fused-band 0)))
-          (setf children (schedule-node-band-delete-on-sequence children 0)  ;; Index is always valid?
-                children (schedule-node-band-delete-on-sequence children 1)) ;;
-          (schedule-node-get-schedule children))))))
-
-;; Goal
-;;   Given a schedule S over an iteration domain D and memory accesses
-;;   (R: reads, W: writes), rewrite S into S' that is *never worse* and
-;;   often better for SRAM↔DRAM traffic, while preserving all dependences Δ.
-;;
-;; Inputs / Outputs
-;;   Simplify(S, R, W) → S'
-;;   where Δ := RAW_must(R,W,S) ∪ WAW_must(W,S) ∪ WAR_may(R,W,S).
-;;
-;; Core Idea
-;;   We identify a “group” G (a node and its subtree) that is heavy and
-;;   its dependent front/back neighbors, then *deterministically* reorder
-;;   them by inserting a sequence at a band: sequence([affected, unaffected])
-;;   or its reverse. The subtree schedules are restricted by union-set
-;;   filters, so no explicit stmt splitting is required—ISL limits domains.
-;;
-;; Heavy / Front / Back (automatic)
-;;   Let T = schedule map of S (Dom(T)=D). A statement s is “heavy” if
-;;     ∃(x→y) ∈ Δ_s.t. T(x) ≠ T(y)  (i.e., the time delta Δt ≠ 0).
-;;   Define:
-;;     front := { s | ∃(s→h) ∈ Δ for some heavy h },
-;;     back  := { s | ∃(h→s) ∈ Δ for some heavy h }.
-;;   affected := heavy ∪ front ∪ back, unaffected := D_subtree \ affected.
-;;
-;; Legality
-;;   We only accept rewrites that keep S' legal:
-;;     ∀(x→y) ∈ Δ,  T'(x) ≥_lex T'(y).
-;;   This is checked with schedule-is-legal-p over Δ.
-;;
-;; Benefit (communication proxy via reuse/fusion)
-;;   Use *same-address* relation over reads:
-;;     SameAddr(R) := R ∘ R^{-1}  ⊆ D × D.
-;;   For a pair of stmt sets A,B, restrict domain/range of SameAddr(R) and
-;;   embed into time using T:
-;;     Δ_reuse(A→B) := deltas( T ∘ (SameAddr|_{A×B}) ∘ T ).
-;;   We say “perfect fusion” holds if:
-;;     Δ_reuse ≠ ∅  and  Δ_reuse ⊆ {0⃗}.
-;;   The objective here is a discrete “fusion score”:
-;;     score := 1{front→heavy fused} + 1{heavy→back fused} ∈ {0,1,2}.
-;;   We prefer the rewrite (affected-first or -last) that maximizes score.
-;;
-;; Search Strategy (complete but local)
-;;   Enumerate all band nodes; at each band, try two candidates:
-;;     sequence([affected,unaffected])  and  sequence([unaffected,affected]).
-;;   Evaluate score for each candidate; pick the single global best gain.
-;;   If no candidate improves the score, return the original S (monotone).
-;;
-;; Why it helps (e.g., FlashAttention)
-;;   Heavy kernels (e.g., GEMM/WMMA) surrounded by pre/post transforms gain
-;;   when reuse becomes *same-time* (Δt=0), keeping tiles hot in SRAM and
-;;   removing redundant DRAM round-trips. This pass enforces such proximity
-;;   without guessing cache sizes or tile factors.
-;;
-;; Extensibility
-;;   - Replace the discrete score with a richer cost (e.g., L₁-distance of
-;;     Δ_reuse to 0⃗, or weighted reuse across dimensions).
-;;   - Generalize placement from {front/back} to n-way sibling reordering.
-;;   - Combine with later tiling/parallel passes once proximity is improved.
-;;
-;; Invariants
-;;   (1) Dependence legality is never violated.  (2) Score never decreases.
-;;   Hence, Simplify is a safe, deterministic pre-optimization for beam search.
+    (multiple-value-bind (dst-filter-node src-filter-node)
+        (values (schedule-node-at-path components dst-path) (schedule-node-at-path components src-path))
+      (assert (eql (schedule-node-get-type dst-filter-node) :schedule-node-filter))
+      (assert (eql (schedule-node-get-type src-filter-node) :schedule-node-filter))
+      (let ((dst-band (schedule-node-get-child dst-filter-node 0))
+            (src-band (schedule-node-get-child src-filter-node 0)))
+        (assert (eql (schedule-node-get-type dst-band) :schedule-node-band))
+        (assert (eql (schedule-node-get-type src-band) :schedule-node-band))
+        (let* ((dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
+               (src-filter (isl::schedule-node-filter-get-filter src-filter-node))
+               (dst-sched (schedule-node-band-get-partial-schedule dst-band))
+               (src-sched (schedule-node-band-get-partial-schedule src-band))
+               (dst-i (isl::multi-union-pw-aff-reset-tuple-id
+                       (isl::multi-union-pw-aff-intersect-domain dst-sched dst-filter)
+                       :dim-out))
+               (src-i (isl::multi-union-pw-aff-reset-tuple-id
+                       (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
+                       :dim-out))
+               (new-components (isl::union-set-list-alloc 0))
+               (dst-pos-on-component (car dst-path))
+               (src-pos-on-component (car src-path))
+               (dst-pos nil))
+          (when (or (= 0 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
+                    (= 0 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out)))
+            (warn "STUCK")
+            (return-from schedule-fuse (schedule-node-get-schedule components)))
+          (dotimes (i n-child)
+            (cond
+              ((= i dst-pos-on-component)
+               (setf new-components (isl::union-set-list-add new-components (isl::union-set-union dst-filter src-filter))
+                     dst-pos (1- (isl::union-set-list-size new-components))))
+              ((= i src-pos-on-component))
+              (T
+               (setf new-components
+                     (isl::union-set-list-add
+                      new-components
+                      (isl::schedule-node-filter-get-filter
+                       (schedule-node-get-child components i)))))))
+          (assert dst-pos () "schedule-fuse: dst-pos was not appeared in the components?")
+          (let ((fused-band
+                  (schedule-node-get-child
+                   (schedule-node-get-child (isl::schedule-node-insert-sequence components new-components) dst-pos)
+                   0))
+                (new-mupa (isl::multi-union-pw-aff-union-add dst-i src-i)))
+            (setf fused-band (schedule-node-insert-partial-schedule fused-band new-mupa))
+            (let ((children (schedule-node-get-child fused-band 0)))
+              (setf children (schedule-node-band-delete-on-sequence children 0)  ;; Index is always valid?
+                    children (schedule-node-band-delete-on-sequence children 1)) ;;
+              (schedule-remove-empty-schedule (schedule-node-get-schedule children)))))))))
 ;; -----------------------------------------------------------------------------
 ;; - [ ] Filter Relocate Concepts
 ;; - [ ] Maximize Locality Rewriting
 ;; - [ ] Rebundant Guard Elimination
 ;; - [ ] Post Tile Fusion
 ;; --- Small helpers -----------------------------------------------------------
-;; 少し議論しよう。上のScheduleNode/ASTと下のScheduleNode/ASTの違いはなんだろう？どうして違うASTを生成して，下のASTはメモリアクセスが遅いのだろう？
 ;; - 下のASTについて，どのようにfilterを操作したら上のASTに近いASTを生成できる？(with maximizing bands)
 ;; - 入力のASTがもっと乱雑だったとして，決定論的に上の完璧なAST/ScheduleTreeを得る方法を考えているんだ
 ;; What I wanted to do:
