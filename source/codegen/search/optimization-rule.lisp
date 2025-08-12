@@ -53,7 +53,36 @@ TODO:
 (defclass NoOpt (OptimizationRule) nil)
 (defmethod optrule-generate-search-space (poly (id (eql :NoOpt))) (list (make-instance 'NoOpt)))
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule NoOpt)) poly)
-;; ~~ Reschedule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Template Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass RewriteTree (OptimizationRule) ((rule :initarg :rule :reader rt-rule)))
+(macrolet ((add-rule (name)
+             `(defmethod optrule-generate-search-space (poly (id (eql ,name)))
+                (list (make-instance 'RewriteTree :rule id)))))
+  (add-rule :Maximize-Filter-Candidates)
+  (add-rule :Maximize-Band-Depth))
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule RewriteTree))
+  (assert (rt-rule optrule))
+  (setf (psi-theta poly)
+        (ecase (rt-rule optrule)
+          (:Maximize-Filter-Candidates (schedule-split-all-band (psi-theta poly)))
+          (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly)))))
+  (print (isl::schedule-get-root (psi-theta poly)))
+  )
+
+(defclass Fuse (OptimizationRule) nil)
+(defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
+  ;; Fuseで，異なるDepthのが同一のSequenceにないと。。。
+  ;; serialize-sccs最強か？
+  nil)
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
+  )
+
+;; Jump?
+(defclass Reshape (OptimizationRule) nil)
+(defclass Padding (OptimizationRule) nil)
+(defclass Shift (OptimizationRule) nil)
+
+;; ~~ Reschedule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Reschedule (OptimizationRule)
   ((outer-coincidence :initarg :outer-coincidence :initform 0)
    (maximize-coincidence :initarg :maximize-coincidence :initform 0)
@@ -82,9 +111,9 @@ options; typically used to seed candidate schedules at the start of search."))
   ;; --> FUSE, など，Filterを移動する操作が欲しくなる。
   (list
    ;(make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   ;(make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
+   (make-instance 'Reschedule :serialize-sccs 1) ;; Loop Fission (GEMM)
    ;; Locality Strategy
-   (make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
+   ;(make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
    ;(make-instance 'Reschedule :outer-coincidence 1 :schedule-whole-component 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
    ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
    ;(make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
@@ -114,37 +143,7 @@ options; typically used to seed candidate schedules at the start of search."))
              (psi-read-union-map poly)
              (psi-write-union-map poly)
              (psi-theta poly))))))
-    (print poly)
-    ;; [TODO] Two strategyの雛形を用意する
-    ;; - Coincident | 一時Bufferを大量に作っておk                      (COINCIDENT)
-    ;; - Locality   | 一時Bufferの読み出しでSRAM<->DRAMの通信回数を減らす (FLASH)
-    ;; これは，Simplifierみたいに，機械的にScheduleTreeを書き換えれるようにする
-    ;; - Best way to keep fusion?
-    ;; Coincident/Permutable ParameterをRevisitする
-    ;; (Coincident方向のdepがempty -> extra coincident chance)
-    ;; (Permutation is worthless -> do not add permutable ...)
-    (print "Before Simplification")
-    (print (isl:schedule-get-root (psi-theta poly)))
-    (print "Schedule")
-    (print (isl:schedule-get-root new-schedule))
-    (setf (psi-theta poly) new-schedule)
-    (print "AST")
-    (print poly)
-    (print (psi-verify-legality poly))
-    (setf new-schedule (caten/codegen/search/schedule::simplify-schedule
-                        new-schedule))
-    (setf (psi-theta poly) new-schedule)
-    (print (psi-verify-legality poly))
-    (PRINT "After Simplification")
-    (print "Schedule")
-    (print (isl:schedule-get-root new-schedule))
-    (print "Schedule")
-    (print poly)
-    (print "ISVALID")
-    (print (psi-verify-legality poly))
-   
-    
-    ))
+    (setf (psi-theta poly) new-schedule)))
 ;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Interchange (OptimizationRule)
   ((order :initarg :order :accessor interchange-order :type list)))

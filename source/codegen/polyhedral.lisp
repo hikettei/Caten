@@ -262,16 +262,6 @@ if (not ensure_domain_is_right)
 ;; - [x] Vectorize   Tile+Sink, later mapped w/ TensorCore
 ;; - [x] SplitReduce Tile+Sink, this is the optimization for reduction and it has two mode: :warp and :block
 
-(defun schedule-get-roots (schedule)
-  (declare (type isl::schedule schedule))
-  (let ((root (schedule-node-get-child (schedule-get-root schedule) 0)))
-    (case (schedule-node-get-type root)
-      (:schedule-node-sequence
-       (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle root))))
-         (loop for i upfrom 0 below n-child
-               collect (schedule-node-get-child root i))))
-      (otherwise (list root)))))
-
 (defun schedule-get-band-and-kernel (schedule)
   (let ((roots (schedule-get-roots schedule)))
     (loop for ith upfrom 0 for root in roots

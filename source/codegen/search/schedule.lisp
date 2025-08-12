@@ -22,7 +22,9 @@
    #:partial-schedule-get-involved-dims
    #:tiling-size
    #:schedule-node-count-bands
-   #:schedule-get-roots))
+   #:schedule-get-roots
+   #:schedule-split-all-band
+   #:schedule-fuse-all-band))
 (in-package :caten/codegen/search/schedule)
 
 (defun compute-dependence-relation (read write schedule)
@@ -530,6 +532,39 @@ Procedure:
 ;; -----------------------------------------------------------------------------
 ;;  ISL ScheduleTree Deterministic Optimization
 ;; -----------------------------------------------------------------------------
+(defun schedule-map (schedule callback &optional (user (cffi:null-pointer)))
+  (isl::%make-schedule
+   (isl::%isl-schedule-map-schedule-node-bottom-up
+    (isl::schedule-handle (copy schedule))
+    callback
+    user)))
+
+(cffi:defcallback rewrite/split-band :pointer
+    ((band :pointer) (user :pointer))
+  (declare (ignore user))
+  (if (eql (isl::%isl-schedule-node-get-type band) :schedule-node-band)
+      (let ((depth (schedule-node-band-get-depth (isl::%%make-schedule-node-band band))))
+        (dotimes (i depth)
+          (setf band (isl::%isl-schedule-node-band-split band (- depth i))))
+        band)
+      band))
+
+(cffi:defcallback rewrite/fuse-band :pointer
+    ((band :pointer) (user :pointer))
+  (declare (ignore user))
+  (if (eql (isl::%isl-schedule-node-get-type band) :schedule-node-band)
+      (let ((depth (schedule-node-band-get-depth (isl::%%make-schedule-node-band band))))
+        ;; [TODO]
+        band)
+      band))
+
+(defun schedule-split-all-band (schedule)
+  (schedule-map schedule (cffi:callback rewrite/split-band)))
+
+(defun schedule-fuse-all-band (schedule)
+  "band+child+band ==> [band+band]"
+  (schedule-map schedule (cffi:callback rewrite/fuse-band)))
+
 ;; Goal
 ;;   Given a schedule S over an iteration domain D and memory accesses
 ;;   (R: reads, W: writes), rewrite S into S' that is *never worse* and
@@ -597,7 +632,7 @@ Procedure:
 ;; - [ ] Maximize Locality Rewriting
 ;; - [ ] Rebundant Guard Elimination
 ;; - [ ] Post Tile Fusion
-;; --- Small helpers ------------------------------------------------
+;; --- Small helpers -----------------------------------------------------------
 ;; 少し議論しよう。上のScheduleNode/ASTと下のScheduleNode/ASTの違いはなんだろう？どうして違うASTを生成して，下のASTはメモリアクセスが遅いのだろう？
 ;; - 下のASTについて，どのようにfilterを操作したら上のASTに近いASTを生成できる？(with maximizing bands)
 ;; - 入力のASTがもっと乱雑だったとして，決定論的に上の完璧なAST/ScheduleTreeを得る方法を考えているんだ
@@ -695,6 +730,8 @@ Return new schedule."
 ;; - Coincident付与
 ;; - BandFusion
 ;; - Late Fission
+;; - 極論, serialize-sccs ==> FlashAttentionが組み立てられたらいい
+;; - permutableは使わない
 
 (defun ->str (sched)
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))

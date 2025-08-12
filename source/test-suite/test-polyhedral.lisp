@@ -15,7 +15,8 @@
   (format t "~a~%" (caten/codegen/pprinter:pprint-isl-schedule (psi-theta poly))))
 
 (defun getband (poly idx)
-  (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
+  ;; (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx)
+  )
 
 (defun expr-val (expr) (caten/aasm/expr:expr-realize-as-value expr))
 
@@ -86,6 +87,7 @@
                           (Pointer O Type (Batch Head N D))
                           (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
     (let ((scale (/ 1.0 (sqrt (scast D :float32)))))
+      (for index = (Range (* batch head N) 1) do (setf (aref M index) 0.0)) ;; Caten should fuse this M initialization loop!
       (for b = (Range BATCH 1) do
            (for h = (Range Head 1) do
                 (for i = (Range N 1) do
@@ -455,7 +457,7 @@
           (print-blueprint sftmx t))))))
 
 (deftest test-flash-attention-auto-schedule
-  (caten (flash_attention (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50 256)) (make-tensor `(100 80 50)) (make-tensor `(100 80 50)))))
+  (caten (flash_attention (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50)) (make-tensor `(100 16 50)))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる
