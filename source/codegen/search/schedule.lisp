@@ -624,18 +624,20 @@ Procedure:
                   (not (eql :schedule-node-leaf (schedule-node-get-type c)))))
            (let ((filters (union-set-get-statements (isl::schedule-node-filter-get-filter node))))
              (dolist (f filters)
-               (if (gethash f filter2path) ;; If there's duplication in filters => the filter was already fused on this dimension.
-                   (return-from compute-fuse-pairs-from-sequence nil)
-                   (setf (gethash f filter2path) path)))))))
+               (setf (gethash f filter2path)
+                     (let ((c1 (gethash f filter2path)))
+                       (if (> (length c1) (length path)) c1 path))))))))
     (loop for (dst . src) in pairs
           for dst-path = (gethash dst filter2path)
           for src-path = (gethash src filter2path)
-          if (and dst-path src-path (not (equal dst-path src-path)))
+          for min = (min (length dst-path) (length src-path))
+          if (and dst-path src-path (not (equal (subseq dst-path 0 min) (subseq src-path 0 min))))
             collect (list dst-path src-path))))
 
 (defun schedule-node-band-delete-on-sequence (sequence pos)
   (let ((band (schedule-node-get-child (schedule-node-get-child sequence pos) 0)))
-    (assert (eql (schedule-node-get-type band) :schedule-node-band))
+    (unless (eql (schedule-node-get-type band) :schedule-node-band)
+      (return-from schedule-node-band-delete-on-sequence sequence))
     (let ((seq (isl::schedule-node-parent (isl::schedule-node-parent (schedule-node-delete band)))))
       (assert (find (schedule-node-get-type seq) '(:schedule-node-sequence :schedule-node-set)))
       seq)))
@@ -714,6 +716,10 @@ dst/src[list] an absolute path from components.
 "
   ;; [TODO] duplicationの条件は，直下にBandがあるかとも読めるかも
   (declare (type isl::schedule-node components) (type list dst-path src-path))
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
+  (print "INTERCHANGE")
+  (print dst-path)
+  (print src-path)
   (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
     (multiple-value-bind (dst-filter-node src-filter-node)
         (values (schedule-node-at-path components dst-path) (schedule-node-at-path components src-path))
@@ -739,8 +745,8 @@ dst/src[list] an absolute path from components.
                (dst-pos nil))
           (when (or (= 0 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
                     (= 0 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out)))
-            (warn "STUCK")
-            (return-from schedule-fuse (schedule-node-get-schedule components)))
+            (return-from schedule-fuse (schedule-node-get-schedule components))
+            (error "stuck ..."))
           (dotimes (i n-child)
             (cond
               ((= i dst-pos-on-component)
@@ -755,15 +761,18 @@ dst/src[list] an absolute path from components.
                        (schedule-node-get-child components i)))))))
           (assert dst-pos () "schedule-fuse: dst-pos was not appeared in the components?")
           (let ((fused-band
-                  (schedule-node-get-child
-                   (schedule-node-get-child (isl::schedule-node-insert-sequence components new-components) dst-pos)
-                   0))
-                (new-mupa (isl::multi-union-pw-aff-union-add dst-i src-i)))
-            (setf fused-band (schedule-node-insert-partial-schedule fused-band new-mupa))
-            (let ((children (schedule-node-get-child fused-band 0)))
-              (setf children (schedule-node-band-delete-on-sequence children 0)  ;; Index is always valid?
-                    children (schedule-node-band-delete-on-sequence children 1)) ;;
-              (schedule-remove-empty-schedule (schedule-node-get-schedule children)))))))))
+                  (schedule-node-get-child (isl::schedule-node-insert-sequence components new-components) dst-pos))
+                (new-mupa (isl::multi-union-pw-aff-union-add src-i dst-i)))
+            (assert (eql :schedule-node-filter (schedule-node-get-type fused-band)))
+            (setf fused-band (schedule-node-insert-partial-schedule (schedule-node-get-child fused-band 0) new-mupa))
+            (let ((children fused-band))
+              (loop until (eql (schedule-node-get-type children) :schedule-node-sequence)
+                    do (setf children (schedule-node-get-child children 0)))
+              (loop for i upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle children))
+                    do (setf children (schedule-node-band-delete-on-sequence children 0)))
+;              (print "Interchanged")
+;              (print children)
+              (progn (schedule-node-get-schedule children)))))))))
 ;; -----------------------------------------------------------------------------
 ;; - [ ] Filter Relocate Concepts
 ;; - [ ] Maximize Locality Rewriting
@@ -855,13 +864,12 @@ Return new schedule."
 ;; - 極論, serialize-sccs ==> FlashAttentionが組み立てられたらいい
 ;; - permutableは使わない
 
-(defun ->str (sched)
-  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (caten/codegen/search/ast::compute-ast-from-schedule sched))
-         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
-         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
-         (str   (isl::%isl-printer-get-str q)))
-    str))
-(defparameter *sched* "")
-
-(defun test () (->str (isl::schedule-read-from-str *sched*)))
+;(defun ->str (sched)
+;  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+;         (ast   (caten/codegen/search/ast::compute-ast-from-schedule sched))
+;         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+;         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+;         (str   (isl::%isl-printer-get-str q)))
+;    str))
+;(defparameter *sched* "")
+;(defun test () (->str (isl::schedule-read-from-str *sched*)))

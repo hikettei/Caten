@@ -49,7 +49,7 @@ pruned (Top-k), and expanded to produce the next generation."))
                     append
                     (loop for space in (optrule-generate-search-space item optrule-id)
                           for transformed = (apply-optimization item space)
-                          if (psi-verify-legality transformed)
+                          if t;(psi-verify-legality transformed)
                             collect transformed)))))
 
 (defun sgt-find-legal-transformation (sgt &rest optrule-ids)
@@ -134,7 +134,24 @@ BEAM Search Workflow:
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search
           (sgt-prepare-for-sketch-generation gen0)
-          (time (sgt-apply-until-saturated gen0 :Fuse))
+          (time (sgt-apply-transformations gen0 :Fuse))
+          (time (sgt-apply-transformations gen0 :Fuse))
+          (time (sgt-apply-transformations gen0 :Fuse))
+;;          (let ((item (car (sgt-items gen0))))
+;            (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0))))
+;            (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0))))
+
+;            (print (isl:schedule-get-root (psi-theta item)));
+ ;           (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0 0 0 0 0 0 0 0 0 0 0))))
+  ;          (print item)
+   ;         )
+;;          (PRINT "++++++++++++++")
+;          (time (sgt-apply-transformations gen0 :Fuse))
+;          (time (sgt-apply-transformations gen0 :Fuse))
+;          (time (sgt-apply-transformations gen0 :Fuse))
+          
+          
+;;          (print (isl:schedule-get-root(psi-theta(car(sgt-items gen0)))))
 ;          (sgt-apply-transformations gen0 :Fuse)
 ;          (sgt-apply-transformations gen0 :Fuse)
           
@@ -145,7 +162,7 @@ BEAM Search Workflow:
 ;;          (time (sgt-apply-transformations gen0 :Parallel :TileGPU))
 ;;          (time (sgt-apply-transformations gen0 :Interchange))
           (print (sgt-items gen0))
-          (print gen0)
+;          (print gen0)
 ;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
           ;; Symbolic
 ;;          (sgt-apply-transformations gen0 :Interchange)

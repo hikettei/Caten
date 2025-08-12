@@ -90,7 +90,9 @@ TODO:
   (let ((path-candidates ;; a list of sequence/set
           (caten/codegen/search/schedule::schedule-gather-sequence/set
            (psi-theta poly))))
-    (dolist (path (reverse path-candidates)) ;; from root to leaves
+    (print "SequenceDetected")
+    (print path-candidates)
+    (dolist (path path-candidates) ;; from root to leaves
       (let* ((seq
                (caten/codegen/search/schedule::schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) path))
              (pairs
@@ -102,11 +104,14 @@ TODO:
         (print "PairCandidates")
         (print pairs)
         (when pairs
+          (print "OnSeq")
+          (print path)
+          (print seq)
           (return-from optrule-generate-search-space
             (loop for pair in pairs for dst = (first pair) for src = (second pair)
                   collect (make-instance 'Fuse :dst dst :src src :at path)
-                  collect (make-instance 'Fuse :dst src :src dst :at path)))))
-      nil)))
+                  collect (make-instance 'Fuse :dst src :src dst :at path)))))))
+  nil)
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
   (with-slots ((dst dst) (src src) (at at)) optrule
@@ -114,12 +119,11 @@ TODO:
             (caten/codegen/search/schedule::schedule-fuse
              (caten/codegen/search/schedule::schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
              dst src)))
-      (print (isl:schedule-get-root theta-fused))
       (setf (psi-theta poly) theta-fused))))
 ;; Jump?
 (defclass Reshape (OptimizationRule) nil) ;; Reshapeは不要，しかしCoalesce/Paddingはいるかも
 (defclass Padding (OptimizationRule) nil)
-(defclass Shift (OptimizationRule) nil)
+(defclass Shift (OptimizationRule) nil) ;; Skewing
 
 ;; ~~ Reschedule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Reschedule (OptimizationRule)
