@@ -56,7 +56,7 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sgt-prepare-for-sketch-generation (sgt)
   (sgt-apply-transformations sgt :Serialize)
-  ;;(sgt-apply-transformations sgt :Maximize-Filter-Candidates)
+  (sgt-apply-transformations sgt :Maximize-Filter-Candidates)
   )
 
 (defun sgt-finalize-sketch (sgt)

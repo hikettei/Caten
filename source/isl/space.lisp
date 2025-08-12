@@ -47,3 +47,8 @@
 (define-isl-function multi-aff-zero %isl-multi-aff-zero
   (:give multi-aff)
   (:take space))
+
+(define-isl-function isl-space-range-product %isl-space-range-product
+  (:give space)
+  (:take space)
+  (:take space))

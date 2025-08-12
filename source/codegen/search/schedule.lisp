@@ -573,6 +573,11 @@ Procedure:
 
   )
 
+(defun align-src/dst (dst-mupa src-mupa)
+  (declare (type isl::multi-union-pw-aff dst-mupa src-mupa))
+
+  )
+
 (defun schedule-fuse (schedule dst src)
   "Fuse two filters like:
 ```
@@ -581,17 +586,18 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
 ```"
   (declare (type isl::schedule schedule) (type fixnum dst src))
   (print (schedule-get-root schedule))
-  (let ((components (schedule-node-get-child (schedule-get-root schedule) 0)))
+  (let* ((components (schedule-node-get-child (schedule-get-root schedule) 0))
+         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
     (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set))
             ()
             "schedule-fuse: The given schedule should be scheduled w/ :Serialize+:Maximize-Filter-Candidates")
-    (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
-      (assert (and (>= dst 0) (>= src 0)
-                   (<= dst n-child) (<= src n-child)
-                   (not (= src dst)))))
+    (assert (and (>= dst 0) (>= src 0)
+                 (<= dst n-child) (<= src n-child)
+                 (not (= src dst))))
     ;; 1. domainを書き換えないといけない。
-    ;; 2. BandSplitの意味はあったのかな？
+    ;; 2. BandSplitの意味はあったのかな？=>ある
     ;; 3. Rootに到達するまで再帰的に探索というのが必要かも
+    ;; 4. Outermost loopsから，再起的に任意のポジションのsequenceをfuseを繰り返す...というのができるかも
     (let* ((dst-filter-node (schedule-node-get-child components dst)) ;; ISL asserts this is a filter.
            (src-filter-node (schedule-node-get-child components src))
            (dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
@@ -605,7 +611,18 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
                    :dim-out))
            (src-i (isl::multi-union-pw-aff-reset-tuple-id
                    (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
-                   :dim-out)))
+                   :dim-out))
+           (new-sequence (isl::union-set-list-alloc 0)))
+      (dotimes (i n-child)
+        (cond
+          ((= i dst) (setf new-sequence (isl::union-set-list-add new-sequence (isl::union-set-union dst-filter src-filter))))
+          ((= i src))
+          (T
+           (setf new-sequence
+                 (isl::union-set-list-add
+                  new-sequence
+                  (isl::schedule-node-filter-get-filter
+                   (schedule-node-get-child components i)))))))
       ;; 数理的には二つの部分スケジュールの出力空間 (Arity, 順序，基底)を一致させる写像fを見つける操作をする。
       ;; Transform SRC matching to DST space.
       ;; Result = DST<MUPA> + f(SRC<MUPA>)
@@ -619,13 +636,21 @@ schedule_get_child(components, dst) += schedule_get_child(components, src)
       ;; 全パターンのValidなスケジュールをリストとして返して，一番評価が高いやつを選ぶ，というのでもいい。
       (print dst-i)
       (print src-i)
-      (print (isl::multi-union-pw-aff-get-space dst-i))
-      (print (isl::multi-union-pw-aff-get-space src-i))
-      ;; ここでSpaceのPadding, Reshape, Coalesceを考え，Validなものを求める...
-      
-      (print (isl::multi-union-pw-aff-union-add dst-i src-i))
-      )))
-
+      ;; ここでSpaceのPadding, Reshape, Coalesceを考え，Validなものを求める..
+      ;; DomainをMergeしないと。。。
+      (print new-sequence)
+      (let ((fused-band
+              (schedule-node-get-child
+               (schedule-node-get-child
+                (isl::schedule-node-insert-sequence components new-sequence)
+                dst)
+               0))
+            (new-mupa (isl::multi-union-pw-aff-union-add dst-i src-i)))
+        (schedule-node-get-schedule
+         (print
+          (schedule-node-insert-partial-schedule
+           fused-band
+           new-mupa)))))))
 ;; Goal
 ;;   Given a schedule S over an iteration domain D and memory accesses
 ;;   (R: reads, W: writes), rewrite S into S' that is *never worse* and

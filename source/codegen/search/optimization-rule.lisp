@@ -91,12 +91,10 @@ TODO:
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
   (with-slots ((dst dst) (src src)) optrule
-    (print "Fusion")
-    (caten/codegen/search/schedule::schedule-fuse
-     (psi-theta poly)
-     dst src)
-    ))
-
+    (let ((theta-fused (caten/codegen/search/schedule::schedule-fuse (psi-theta poly) dst src)))
+      (setf (psi-theta poly) theta-fused)
+      (print "isLegal")
+      (print (psi-verify-legality poly)))))
 ;; Jump?
 (defclass Reshape (OptimizationRule) nil) ;; Reshapeは不要，しかしCoalesce/Paddingはいるかも
 (defclass Padding (OptimizationRule) nil)
