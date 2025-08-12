@@ -48,7 +48,32 @@ pruned (Top-k), and expanded to produce the next generation."))
               (loop for item in (sgt-items sgt)
                     append
                     (loop for space in (optrule-generate-search-space item optrule-id)
-                          collect (apply-optimization item space))))))
+                          for transformed = (apply-optimization item space)
+                          if (psi-verify-legality transformed)
+                            collect transformed)))))
+
+(defun sgt-find-legal-transformation (sgt &rest optrule-ids)
+  (declare (type Schedule-Generation-Tree sgt))
+  (loop for optrule-id in optrule-ids
+        append
+        (loop for item in (sgt-items sgt)
+              append
+              (loop for space in (optrule-generate-search-space item optrule-id)
+                    for transformed = (apply-optimization item space)
+                    if (psi-verify-legality transformed)
+                      do (setf (sgt-items sgt) (list transformed))
+                         (return-from sgt-find-legal-transformation (list transformed)))))
+  (setf (sgt-items sgt) nil))
+
+(defun sgt-apply-until-saturated (sgt &rest optrule-ids)
+  (labels ((n (sgt) (apply #'sgt-find-legal-transformation sgt optrule-ids) sgt))
+    (let ((curr-items (sgt-items sgt))
+          (next-gen (n sgt)))
+      (if (sgt-items next-gen)
+          (apply #'sgt-apply-until-saturated next-gen optrule-ids)
+          (progn
+            (setf (sgt-items sgt) curr-items)
+            sgt)))))
 
 (defun sgt-improvements (old-sgt new-sgt)
   (assert (and (sgt-best-score old-sgt) (sgt-best-score new-sgt)))
@@ -109,8 +134,7 @@ BEAM Search Workflow:
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search
           (sgt-prepare-for-sketch-generation gen0)
-          (sgt-apply-transformations gen0 :Fuse) ;; ApplyUntilSaturated
-          (sgt-apply-transformations gen0 :Fuse) ;; ApplyUntilSaturated
+          (time (sgt-apply-until-saturated gen0 :Fuse))
 ;          (sgt-apply-transformations gen0 :Fuse)
 ;          (sgt-apply-transformations gen0 :Fuse)
           

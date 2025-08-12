@@ -68,8 +68,7 @@ TODO:
   (setf (psi-theta poly)
         (ecase (rt-rule optrule)
           (:Maximize-Filter-Candidates (schedule-split-all-band (psi-theta poly)))
-          (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly)))))
-  (print (isl::schedule-get-root (psi-theta poly))))
+          (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly))))))
 ;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; At this stage, we assume the initial polyhedral looks like (by applying :Serialize+)
 ;; [DOMAIN]
@@ -92,11 +91,9 @@ TODO:
            (psi-read-union-map poly)
            (psi-write-union-map poly)
            (psi-theta poly))))
-    (let ((s1 (car pairs))) ;; TODO: Solve until saturated?
-      (print "PAIRS")
-      (print pairs)
-      (list
-       (make-instance 'Fuse :dst (cdr s1) :src (car s1))))))
+    (loop for (dst . src) in pairs
+          collect (make-instance 'Fuse :dst dst :src src)
+          collect (make-instance 'Fuse :dst src :src dst))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
   (with-slots ((dst dst) (src src)) optrule
@@ -104,9 +101,7 @@ TODO:
             (caten/codegen/search/schedule::schedule-fuse
              (isl:schedule-node-get-child (isl:schedule-get-root (psi-theta poly)) 0)
              dst src)))
-      (setf (psi-theta poly) theta-fused)
-      (print "isLegal")
-      (print (psi-verify-legality poly)))))
+      (setf (psi-theta poly) theta-fused))))
 ;; Jump?
 (defclass Reshape (OptimizationRule) nil) ;; Reshapeは不要，しかしCoalesce/Paddingはいるかも
 (defclass Padding (OptimizationRule) nil)

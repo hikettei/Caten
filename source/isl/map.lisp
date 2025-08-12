@@ -25,6 +25,10 @@
   (:give map)
   (:take set))
 
+(define-isl-function map-domain %isl-map-domain
+  (:give set)
+  (:take map))
+
 (define-isl-function map-range %isl-map-range
   (:give set)
   (:take map))

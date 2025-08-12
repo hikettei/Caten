@@ -638,9 +638,21 @@ Procedure:
     (let ((seq (isl::schedule-node-parent (isl::schedule-node-parent (schedule-node-delete band)))))
       (assert (find (schedule-node-get-type seq) '(:schedule-node-sequence :schedule-node-set)))
       seq)))
+;; Goal: FlashAttentionに相当する区間をまとめてBEAM SearchしちゃえばFlashAttentionまで探索できる
 ;; 1. SCCS同士のdst <- srcのPairを求め，そこから計算していく
-;; 2. 
-(defun schedule-fuse (components dst src)
+;; 2.
+;; 1DまでFlatにされたLoop二つの融合を考える？
+;; 
+;; 理論上必要な操作の集合はこれ:
+;; - Interchange: (BandのSequenceを上から下へと持っていく)
+;; - Expand:      (1次元でCoalesceされたBandを複数のBandへと分割する)
+;; - 3次元と2次元
+;; get-sequence-rank = 1次元，2次元, ...と繰り返す
+;; まずは外側のループを合わせる Interchange = {0, 0, 0, 1}
+;; 次にn-1側のループを...       Interchange = {0, 0, 0, 0}
+;; (caten (!add (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))) (!matmul (make-tensor `(512 512)) (!t (make-tensor `(512 512))))))
+;; ^ これ
+(defun schedule-fuse (components dst src) ;; src = single filterというassumptionが必要か？
   "Fuse two filters like:
 ```
 components = schedule.child(0) // schedule_node_sequence
@@ -738,17 +750,7 @@ where dst and src is strongly-connected components.
         (let ((children (schedule-node-get-child fused-band 0)))
           (setf children (schedule-node-band-delete-on-sequence children 0)  ;; Index is always valid?
                 children (schedule-node-band-delete-on-sequence children 1)) ;; 
-          (print children)
-          (if (find (schedule-node-get-type children) `(:schedule-node-sequence :schedule-node-set))
-              (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle children))))
-                (if (and (> n-child 1))
-                    (progn
-                      (PRINT "FUSE")
-                      (schedule-fuse children 0 1)
-                      )
-                    (progn
-                      (schedule-node-get-schedule fused-band))))
-              (schedule-node-get-schedule fused-band)))))))
+          (schedule-node-get-schedule children))))))
 ;; tmp allocを最小化するspaceを求めるというのでいけるかも，相当遅そうだけど。。。
 
 ;; Goal
