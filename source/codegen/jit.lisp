@@ -128,6 +128,9 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   ;; - Implement HashedGraph
   ;; - 入力のSymbolicに応じて変動する。
   (let ((*autotune-node-callback*))
+    ;; PostLoopFusion
+    (caten/codegen/search/autotune::runtime-graph-fuse-all (runtime-graph runtime))
+    ;; AutoScheduler
     (%autotune runtime)
     (when (typep (runtime-graph runtime) 'Graph) ;; TODO: Delete this after everything is DAG refactor
       (setf (graph-nodes (runtime-graph runtime))

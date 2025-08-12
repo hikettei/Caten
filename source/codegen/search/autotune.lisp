@@ -49,7 +49,7 @@ pruned (Top-k), and expanded to produce the next generation."))
                     append
                     (loop for space in (optrule-generate-search-space item optrule-id)
                           for transformed = (apply-optimization item space)
-                          if t;(psi-verify-legality transformed)
+                          if (psi-verify-legality transformed)
                             collect transformed)))))
 
 (defun sgt-find-legal-transformation (sgt &rest optrule-ids)
@@ -69,7 +69,6 @@ pruned (Top-k), and expanded to produce the next generation."))
   (labels ((n (sgt) (apply #'sgt-find-legal-transformation sgt optrule-ids) sgt))
     (let ((curr-items (sgt-items sgt))
           (next-gen (n sgt)))
-      (print (sgt-items next-gen))
       (if (sgt-items next-gen)
           (apply #'sgt-apply-until-saturated next-gen optrule-ids)
           (progn
@@ -85,9 +84,8 @@ pruned (Top-k), and expanded to produce the next generation."))
   (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
 
 (defun sgt-finalize-sketch (sgt)
-;;  (sgt-apply-transformations sgt :Coincidence)
-  (sgt-apply-transformations sgt :Maximize-Band-Depth)
-  )
+  (sgt-apply-transformations sgt :Coincidence)
+  (sgt-apply-transformations sgt :Maximize-Band-Depth))
 
 (defun sgt-prepare-for-device-optimization (sgt)
   (sgt-apply-transformations sgt :Interchange :Tile :Vectorize :SplitReduce))
@@ -109,7 +107,6 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;;  - TODO: Two more search command
 ;;   - Coalesce | At which stage?
 ;;   - Skewing  | これはTemplateGen
-  
 ;; Reschedule -> Interchange -> Skewing -> PARALLEL/TILE
 (defun online-autotune-kernel (runtime node)
   "
@@ -121,6 +118,7 @@ BEAM Search Workflow:
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
   (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
+  (print runtime)
   (let ((blueprint (kernel-blueprint (getattr node :kernel-info))))
     (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime blueprint)
       (caten/isl::with-isl-context
@@ -137,6 +135,10 @@ BEAM Search Workflow:
           (time (sgt-apply-transformations gen0 :Fuse))
           (time (sgt-apply-transformations gen0 :Fuse))
           (time (sgt-apply-transformations gen0 :Fuse))
+          (time (sgt-apply-transformations gen0 :Fuse))
+          
+         ; (time (sgt-apply-transformations gen0 :Fuse))
+         ; (time (sgt-apply-transformations gen0 :Fuse))
 ;;          (let ((item (car (sgt-items gen0))))
 ;            (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0))))
 ;            (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0))))
@@ -179,7 +181,52 @@ BEAM Search Workflow:
           t
           )))))
 
-;; 次にやること
+(defun merge-blueprints (blueprints)
+  (let ((g (caten/aasm:with-blueprint (:noopt t) (apply #'caten/aasm::%progn (apply #'append (map 'list #'graph-outputs blueprints))))))
+    (dolist (bp blueprints)
+      (insert-nodes g (graph-nodes bp)))
+    g))
+      
+(defun merge-items (src parents)
+  ;; How many nodes can we fuse
+  (let* ((bps (append (list (kernel-blueprint (getattr src :kernel-info)))
+                      (map 'list #'(lambda (x) (kernel-blueprint (getattr x :kernel-info))) parents)))
+         (bp* (merge-blueprints bps))
+         (root (make-polyhedral-schedule-item bp*))
+         (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
+
+    (sgt-prepare-for-sketch-generation gen0)
+    (time (sgt-apply-transformations gen0 :Fuse))
+    (print (sgt-items gen0))
+    ))
+
+(defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
+  (declare (type Graph graph))
+  (labels ((mergeable-item-p (id)
+             (let ((node (id->value graph id)))
+               (and
+                (eql (node-type node) :KERNEL)
+                (= 1 (length (id->users graph id))))))
+           (explore (id &aux (node (id->value graph id)))
+             (when (or (null node) (gethash (node-id node) seen))
+               (return-from explore))
+             (when (eql (node-type node) :KERNEL)
+               (let* ((items (loop for r in (node-reads node)
+                                   if (mergeable-item-p r) collect (id->value graph r)))
+                      (fused (merge-items node items)))
+                 ;; TODO: Replace myself w/ new kernel
+                 ))
+             (mapc #'explore (node-reads node))))
+    (mapc #'explore (graph-outputs graph))
+    (print graph)
+    (error "STOP")))
+
+;; [Workload]
+;; - 100% LoopFusion (FlashX Generation)
+;; - 
+;; TensorGraphからFlashAttention行けそうなんだよなぁ
+;; SequenceにFilter/Bandが混在するとき，Topological Sortをする。
+;; 次にやること 
 ;; タイルアクセスを解析して、インターチェンジが有効な次元がどれか列挙する方法はないか考える
 ;; はじめにテンプレート生成(実行なし)
 ;; 次にタイルなど細かい最適化

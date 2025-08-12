@@ -87,7 +87,7 @@
                           (Pointer O Type (Batch Head N D))
                           (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
     (let ((scale (/ 1.0 (sqrt (scast D :float32)))))
-      (for index = (Range (* batch head N) 1) do (setf (aref M index) 0.0)) ;; Caten should fuse this M initialization loop!
+      ;(for index = (Range (* batch head N) 1) do (setf (aref M index) 0.0)) ;; Caten should fuse this M initialization loop!
       (for b = (Range BATCH 1) do
            (for h = (Range Head 1) do
                 (for i = (Range N 1) do
@@ -458,6 +458,14 @@
 
 (deftest test-flash-attention-auto-schedule
   (caten (flash_attention (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50)) (make-tensor `(100 16 50)))))
+
+(defun scaled-dot-product-attention (query key value &optional mask)
+  (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
+    (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
+
+(deftest test-flash-attention-from-tensor
+  (caten (scaled-dot-product-attention (make-tensor `(4 8 8)) (make-tensor `(4 8 8)) (make-tensor `(4 8 8)))))
+                                       
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる

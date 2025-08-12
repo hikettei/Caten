@@ -607,8 +607,14 @@ Procedure:
   (multiple-value-bind (_ raw waw war) (compute-dependence-relation read-umap write-umap sched)
     (declare (ignore _))
     (remove-duplicates
-     (append (umap->stmt-pairs raw) (umap->stmt-pairs waw) (umap->stmt-pairs war))
+     (append (umap->stmt-pairs raw));; (umap->stmt-pairs waw) (umap->stmt-pairs war))
      :test #'equal)))
+
+(defun compute-scc-pairs-on-sequence (sequence read-umap write-umap sched)
+  (let ((pairs (compute-scc-pairs read-umap write-umap sched))
+        (n-sched (isl::%isl-schedule-node-n-children (isl::schedule-node-handle sequence))))
+    ;; Sort Topologically?
+    ))
 
 (defun compute-fuse-pairs-from-sequence (schedule-node-sequence read-umap write-umap sched)
   "Return (list (cons absolute_path_from_seq1 absolute_path_from_seq2))"
@@ -627,12 +633,13 @@ Procedure:
                (setf (gethash f filter2path)
                      (let ((c1 (gethash f filter2path)))
                        (if (> (length c1) (length path)) c1 path))))))))
-    (loop for (dst . src) in pairs
-          for dst-path = (gethash dst filter2path)
-          for src-path = (gethash src filter2path)
-          for min = (min (length dst-path) (length src-path))
-          if (and dst-path src-path (not (equal (subseq dst-path 0 min) (subseq src-path 0 min))))
-            collect (list dst-path src-path))))
+    pairs))
+;    (loop for (dst . src) in pairs
+;          for dst-path = (gethash dst filter2path)
+;          for src-path = (gethash src filter2path)
+;          for min = (min (length dst-path) (length src-path))
+;          if (and dst-path src-path (not (equal (subseq dst-path 0 min) (subseq src-path 0 min))))
+;            collect (list dst-path src-path))))
 
 (defun schedule-node-band-delete-on-sequence (sequence pos)
   (let ((band (schedule-node-get-child (schedule-node-get-child sequence pos) 0)))
@@ -704,75 +711,43 @@ Procedure:
               (schedule-node-at-path (schedule-get-root schedule) path)))))
     schedule))
 
-(defun schedule-fuse (components dst-path src-path) ;; dst -> srcはFilterを示す？PATHにする？
-  ;; TODO Support DST/SRC Sequence Pattern
-  "Fuse two filters like:
-```
-components = schedule.child(0) // schedule_node_sequence
-schedule_node_at_path(components, dst) += schedule_node_at_path(components, src)
-```
-where dst and src is strongly-connected components.
-dst/src[list] an absolute path from components.
-"
-  ;; [TODO] duplicationの条件は，直下にBandがあるかとも読めるかも
-  (declare (type isl::schedule-node components) (type list dst-path src-path))
+(defun schedule-sort-sequence (components read-umap write-umap)
+  (let ((pair (compute-fuse-pairs-from-sequence components read-umap write-umap (schedule-node-get-schedule components))))
+    (print pair)
+    ;; LOAD
+    ;; COMPUTE
+    ;; STORE
+    (print "COMPONENTS")
+    (schedule-node-get-schedule components)))
+;; FULL_FUSE, NO_FUSEのTreeでいいのか。
+(defun schedule-full-fuse (components read-umap write-umap)
   (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
-  (print "INTERCHANGE")
-  (print dst-path)
-  (print src-path)
-  (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components))))
-    (multiple-value-bind (dst-filter-node src-filter-node)
-        (values (schedule-node-at-path components dst-path) (schedule-node-at-path components src-path))
-      (assert (eql (schedule-node-get-type dst-filter-node) :schedule-node-filter))
-      (assert (eql (schedule-node-get-type src-filter-node) :schedule-node-filter))
-      (let ((dst-band (schedule-node-get-child dst-filter-node 0))
-            (src-band (schedule-node-get-child src-filter-node 0)))
-        (assert (eql (schedule-node-get-type dst-band) :schedule-node-band))
-        (assert (eql (schedule-node-get-type src-band) :schedule-node-band))
-        (let* ((dst-filter (isl::schedule-node-filter-get-filter dst-filter-node))
-               (src-filter (isl::schedule-node-filter-get-filter src-filter-node))
-               (dst-sched (schedule-node-band-get-partial-schedule dst-band))
-               (src-sched (schedule-node-band-get-partial-schedule src-band))
-               (dst-i (isl::multi-union-pw-aff-reset-tuple-id
-                       (isl::multi-union-pw-aff-intersect-domain dst-sched dst-filter)
-                       :dim-out))
-               (src-i (isl::multi-union-pw-aff-reset-tuple-id
-                       (isl::multi-union-pw-aff-intersect-domain src-sched src-filter)
-                       :dim-out))
-               (new-components (isl::union-set-list-alloc 0))
-               (dst-pos-on-component (car dst-path))
-               (src-pos-on-component (car src-path))
-               (dst-pos nil))
-          (when (or (= 0 (space-dim (isl::multi-union-pw-aff-get-space dst-i) :dim-out))
-                    (= 0 (space-dim (isl::multi-union-pw-aff-get-space src-i) :dim-out)))
-            (return-from schedule-fuse (schedule-node-get-schedule components))
-            (error "stuck ..."))
-          (dotimes (i n-child)
-            (cond
-              ((= i dst-pos-on-component)
-               (setf new-components (isl::union-set-list-add new-components (isl::union-set-union dst-filter src-filter))
-                     dst-pos (1- (isl::union-set-list-size new-components))))
-              ((= i src-pos-on-component))
-              (T
-               (setf new-components
-                     (isl::union-set-list-add
-                      new-components
-                      (isl::schedule-node-filter-get-filter
-                       (schedule-node-get-child components i)))))))
-          (assert dst-pos () "schedule-fuse: dst-pos was not appeared in the components?")
-          (let ((fused-band
-                  (schedule-node-get-child (isl::schedule-node-insert-sequence components new-components) dst-pos))
-                (new-mupa (isl::multi-union-pw-aff-union-add src-i dst-i)))
-            (assert (eql :schedule-node-filter (schedule-node-get-type fused-band)))
-            (setf fused-band (schedule-node-insert-partial-schedule (schedule-node-get-child fused-band 0) new-mupa))
-            (let ((children fused-band))
-              (loop until (eql (schedule-node-get-type children) :schedule-node-sequence)
-                    do (setf children (schedule-node-get-child children 0)))
-              (loop for i upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle children))
-                    do (setf children (schedule-node-band-delete-on-sequence children 0)))
-;              (print "Interchanged")
-;              (print children)
-              (progn (schedule-node-get-schedule children)))))))))
+;;  (print components)
+  (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
+         (node (isl:schedule-node-first-child components))
+         (mupa))
+    (loop for i upfrom 0 below n-child do
+      (let ((filter (isl::schedule-node-filter-get-filter node)))
+        (setf node (schedule-node-first-child node))
+        (when (not (eql (schedule-node-get-type node) :schedule-node-band))
+          (return-from schedule-full-fuse (schedule-sort-sequence components read-umap write-umap)))
+        (let* ((tmp (schedule-node-band-get-partial-schedule node))
+               (tmp (isl::multi-union-pw-aff-intersect-domain tmp filter))
+               (tmp (isl::multi-union-pw-aff-reset-tuple-id tmp :dim-out)))
+          (if (null mupa)
+              (setf mupa tmp)
+              (progn
+                ;; [TODO] TMPをExpand?
+                (setf mupa (isl::multi-union-pw-aff-union-add mupa tmp))))
+          (setf node (schedule-node-delete node)
+                node (isl::schedule-node-parent node))
+          (if (= i (1- n-child))
+              (setf node (isl::schedule-node-parent node))
+              (setf node (isl::schedule-node-next-sibling node))))))
+    (when mupa
+      (setf node (schedule-node-insert-partial-schedule node mupa)))
+;;    (print node)
+    (schedule-remove-empty-schedule (schedule-node-get-schedule node))))
 ;; -----------------------------------------------------------------------------
 ;; - [ ] Filter Relocate Concepts
 ;; - [ ] Maximize Locality Rewriting
