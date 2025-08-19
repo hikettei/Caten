@@ -3,6 +3,7 @@
         :caten/codegen/search/optimization-rule)
   (:export
    #:online-autotune-kernel
+   #:fuse
    ))
 
 (in-package :caten/codegen/search/autotune)
@@ -119,7 +120,6 @@ BEAM Search Workflow:
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
   (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
-  (print runtime)
   (let ((blueprint (kernel-blueprint (getattr node :kernel-info))))
     (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime blueprint)
       (caten/isl::with-isl-context
@@ -165,7 +165,6 @@ BEAM Search Workflow:
 ;;          (time (sgt-apply-transformations gen0 :Parallel :TileGPU))
 ;;          (time (sgt-apply-transformations gen0 :Interchange))
           (print (sgt-items gen0))
-;          (print gen0)
 ;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
           ;; Symbolic
 ;;          (sgt-apply-transformations gen0 :Interchange)
@@ -186,23 +185,41 @@ BEAM Search Workflow:
 ;; - FuseALL
 ;; ==> Eazy to get FlashAttention?
 ;; (caten (!matmul (make-tensor `(512 512)) (!relu (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))))))
-(defun merge-items (src parents)
-  ;; How many nodes can we fuse
-  (when (null parents)
-    (return-from merge-items nil))
+(defun fuse (src parents)
+  (when (null parents) (return-from fuse nil))
   (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
     (let* ((items (append (list (m src)) (map 'list #'m parents)))
            (root (reduce #'psi. items))
            (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-      (sgt-prepare-for-sketch-generation gen0)
+      (print "DEBUG")
+      (dolist (item (append (list src) parents))
+        (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
+      ;; [Memo]
+      ;; STEP1. Pool側のacc=-INFをどうやってFuseするかを考える。
+      ;; STEP2. Pool側もDAG
+      ;; STEP3. Sequence DAG Sorting?
+;;      (sgt-prepare-for-sketch-generation gen0)
       ;; recollapse = tile?
-     ; (time (sgt-apply-transformations gen0 :Fuse))
-      ;(time (sgt-apply-transformations gen0 :Fuse))
-      ;(time (sgt-apply-transformations gen0 :Fuse))
-      ;(time (sgt-apply-transformations gen0 :Fuse))
-;      (time (sgt-apply-transformations gen0 :Fuse))
-;      (time (sgt-apply-transformations gen0 :Fuse))
       (print (sgt-items gen0))
+      (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
+      (print (psi-read-union-map (car (sgt-items gen0))))
+      (print (psi-write-union-map (car (sgt-items gen0))))
+      (sgt-apply-transformations gen0 :Fuse)
+      (sgt-apply-transformations gen0 :Fuse)
+      (sgt-apply-transformations gen0 :Fuse)
+      (sgt-apply-transformations gen0 :Fuse)
+      (sgt-apply-transformations gen0 :Fuse)
+      ;;(sgt-apply-transformations gen0 :Fuse)
+      (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
+      (print (sgt-items gen0))
+      ;; Two considerable patterns:
+      ;; - One is reduction
+      ;; - While another is elwise
+      ;; ==> Tile elwise until matched reduction
+      ;; - Conv+Padding (???)
+      ;; -
+      ;; - One sized loop is eliminated
+      nil
       )))
 
 (defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
@@ -218,7 +235,8 @@ BEAM Search Workflow:
              (when (eql (node-type node) :KERNEL)
                (let* ((items (loop for r in (node-reads node)
                                    if (mergeable-item-p r) collect (id->value graph r)))
-                      (fused (merge-items node items)))
+                      (fused (fuse node items)))
+                 (print (length fused))
                  ;; TODO: Replace myself w/ new kernel
                  ))
              (mapc #'explore (node-reads node))))

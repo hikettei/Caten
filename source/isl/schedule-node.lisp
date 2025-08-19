@@ -213,3 +213,10 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take union-set))
+
+(defun schedule-node-sequence-splice-child (node pos)
+  (%make-schedule-node (%isl-schedule-node-sequence-splice-child (schedule-node-handle (copy node)) pos)))
+
+(define-isl-function schedule-node-cut %isl-schedule-node-cut
+  (:give schedule-node)
+  (:take schedule-node))

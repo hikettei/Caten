@@ -87,3 +87,7 @@
 
 (defun union-set-list-add (lst uset)
   (%make-union-set-list (%isl-union-set-list-add (union-set-list-handle (copy lst)) (union-set-handle (copy uset)))))
+
+(define-isl-function union-set-coalesce %isl-union-set-coalesce
+  (:give union-set)
+  (:take union-set))

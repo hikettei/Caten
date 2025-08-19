@@ -144,9 +144,11 @@ Returns:
          (domain (union-map-apply-domain dep map))
          (domain (union-map-apply-range domain map))
          (delta (union-map-deltas domain))
+         (_ (when (union-set-is-empty delta) (return-from schedule-is-legal-p nil)))
          (zeros (zero-vector-union-set delta))
          (le (union-set-lex-le-union-set delta zeros))
          (retval (union-set-is-empty le)))
+    (declare (ignore _))
     retval))
 
 (defun permutations (lst)
@@ -698,9 +700,11 @@ Procedure:
            (schedule-get-root schedule)
            #'(lambda (node path)
                (declare (ignore path))
-               (when (eql (schedule-node-get-type node) :schedule-node-band)
-                 (let ((p (schedule-node-band-get-partial-schedule node)))
-                   (= 0 (space-dim (isl::multi-union-pw-aff-get-space p) :dim-out))))))))
+               (or
+                (when (eql (schedule-node-get-type node) :schedule-node-band)
+                  (let ((p (schedule-node-band-get-partial-schedule node)))
+                    (= 0 (space-dim (isl::multi-union-pw-aff-get-space p) :dim-out))))
+                (eql (schedule-node-get-type node) :schedule-node-leaf))))))
     (dolist (path paths)
       (setf schedule
             (schedule-node-get-schedule
@@ -708,9 +712,92 @@ Procedure:
               (schedule-node-at-path (schedule-get-root schedule) path)))))
     schedule))
 
+(defun schedule-node-sequence-splice-children (node)
+  (declare (type isl::schedule-node node))
+  (assert (eql :schedule-node-sequence (schedule-node-get-type node)))
+  (loop for i upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
+        for c = (schedule-node-get-child node i)
+        if (eql (schedule-node-get-type (schedule-node-get-child c 0)) :schedule-node-sequence) do
+          (return-from schedule-node-sequence-splice-children
+            (schedule-node-sequence-splice-children
+             (isl::schedule-node-sequence-splice-child node i))))
+  node)
+
+(defun schedule-node-insert-subtree (node subtree)
+  (labels ((rollback (schedule size)
+             (dotimes (i size schedule)
+               (setf schedule (isl::schedule-node-parent schedule))))
+           (explore (schedule tree depth)
+             (ecase (schedule-node-get-type tree)
+               ((:schedule-node-set :schedule-node-sequence)
+                (let ((filter (isl::union-set-list-alloc 0))
+                      (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle tree)))
+                      (f (case (schedule-node-get-type tree)
+                           (:schedule-node-set #'isl::schedule-node-insert-set)
+                           (:schedule-node-sequence #'isl::schedule-node-insert-sequence))))
+                  (loop for i upfrom 0 below n-child do
+                    (setf filter (isl::union-set-list-add filter (isl::schedule-node-filter-get-filter (schedule-node-get-child tree i)))))
+                  (setf schedule (funcall f schedule filter))
+                  (loop for i upfrom 0 below n-child
+                        for child = (schedule-node-get-child (schedule-node-get-child tree i) 0)
+                        if (not (eql (schedule-node-get-type child) :schedule-node-leaf)) do
+                          (multiple-value-bind (new-schedule new-depth)
+                              (explore (schedule-node-get-child (schedule-node-get-child schedule i) 0)
+                                       (schedule-node-get-child (schedule-node-get-child tree i) 0)
+                                       depth)
+                            (assert new-depth)
+                            (setf schedule (rollback new-schedule (1+ (- depth new-depth))))))
+                  schedule))
+               (:schedule-node-filter
+                (let* ((filter (isl::union-set-list-alloc 0)))
+                  (setf filter (isl::union-set-list-add filter (isl::schedule-node-filter-get-filter tree))
+                        schedule (schedule-node-get-child (isl::schedule-node-insert-sequence schedule filter) 0))
+                  (explore (schedule-node-get-child schedule 0) (schedule-node-get-child tree 0) (+ 2 depth))))
+               (:schedule-node-band
+                (let* ((mupa (schedule-node-band-get-partial-schedule tree)))
+                  (setf schedule (schedule-node-insert-partial-schedule schedule mupa)))
+                (explore (schedule-node-get-child schedule 0) (schedule-node-get-child tree 0) (1+ depth)))
+               (:schedule-node-leaf (values schedule depth)))))
+    (explore node subtree 0)))
+;; A minimal subset for finding the "best" fused kernel.
+;; - Permute  : ==> Interchange bands to find FusionEdge
+;; - MOD      : ==> Create a new band (to find coalesce)
+;; - OnTheFly : ==> Combine Multiple Reduction Ops
+;; - TODO: CreateFusionConflictGraph (by using AST?)
+;; Find the best schedule on Polynomial Time! ==> SOTA
+(defun schedule-sequence-pick-up (components filter-dst filter-src)
+  "Relocates filter-src into filter-dst, if there's missing dependencies, adds a new tile bands to satisfy them"
+  (declare (type isl::schedule-node-filter filter-dst filter-src))
+  (assert (find (schedule-node-get-type components) '(:schedule-node-set :schedule-node-sequence)))
+  (let ((parent-filter (isl::union-set-list-alloc 0)))
+    (print components)
+    (setf parent-filter (isl::union-set-list-add parent-filter (isl::schedule-node-filter-get-filter filter-src)))
+    ;; parent-filter: filter-dstのfiltersも追加？
+    ;; 
+    (let ((sched (schedule-node-get-child
+                  (schedule-node-get-child (isl::schedule-node-insert-sequence components parent-filter) 0)
+                  0))
+          (band nil))
+      (print sched)
+      (loop for i upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle sched))
+            for c = (schedule-node-get-child sched i)
+            if (eql (schedule-node-get-type (schedule-node-get-child c 0)) :schedule-node-band) do
+              (setf band (schedule-node-get-child c 0)))
+      (assert band)
+      (loop until (eql :schedule-node-leaf (schedule-node-get-type (schedule-node-get-child band 0))) do
+        (setf band (schedule-node-get-child band 0)))
+      (setf band (schedule-node-get-child band 0))
+      (print "DST")
+      (print band)
+      (print "Insert TGT")
+      (print filter-dst)
+      (PRINT "FINAL SCHED")
+      (print (schedule-node-insert-subtree band filter-dst)))))
+
 (defun schedule-sort-sequence (components read-umap write-umap)
   (multiple-value-bind (nodes graph)
       (compute-fuse-pairs-on-sequence components read-umap write-umap (schedule-node-get-schedule components))
+    (print "SORTING")
     (print nodes)
     (print graph)
     ;; 1. ReadyForPlace Filters ...
@@ -721,7 +808,14 @@ Procedure:
     ;; COMPUTE
     ;; STORE
     (print "COMPONENTS")
-    (schedule-node-get-schedule components)))
+    ;; TODO: GraphのWrite/Readの関係からPickUpする
+    (schedule-remove-empty-schedule 
+     (schedule-node-get-schedule
+      (print
+       (schedule-sequence-pick-up
+        components
+        (schedule-node-get-child components 0)
+        (schedule-node-get-child components 1)))))))
 ;; FULL_FUSE, NO_FUSEのTreeでいいのか。
 (defun schedule-full-fuse (components read-umap write-umap)
   (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
@@ -749,7 +843,6 @@ Procedure:
               (setf node (isl::schedule-node-next-sibling node))))))
     (when mupa
       (setf node (schedule-node-insert-partial-schedule node mupa)))
-;;    (print node)
     (schedule-remove-empty-schedule (schedule-node-get-schedule node))))
 ;; -----------------------------------------------------------------------------
 ;; - [ ] Filter Relocate Concepts
@@ -842,12 +935,45 @@ Return new schedule."
 ;; - 極論, serialize-sccs ==> FlashAttentionが組み立てられたらいい
 ;; - permutableは使わない
 
-;(defun ->str (sched)
-;  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-;         (ast   (caten/codegen/search/ast::compute-ast-from-schedule sched))
-;         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
-;         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
-;         (str   (isl::%isl-printer-get-str q)))
-;    str))
-;(defparameter *sched* "")
-;(defun test () (->str (isl::schedule-read-from-str *sched*)))
+;;(defun ->str (sched)
+;;  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+;;         (ast   (caten/codegen/search/ast::compute-ast-from-schedule sched))
+;;         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+;;         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+;;         (str   (isl::%isl-printer-get-str q)))
+;;    str))
+;;(defparameter *sched* "")
+;;(defun test () (->str (isl::schedule-read-from-str *sched*)))
+
+
+;; for (int i=0; i<60; i++)
+;;   S1(i)
+;;
+;; for (int i=0; i<10; i++)
+;;   for (int j=0; j<6; j++)
+;;     S2(i, j)
+;; 1. Can assert S1 == S2
+;; 2. Can tile S1
+
+
+(defun test-dep-extract ()
+  (let* ((pool (union-map-from-str "{ [x] -> [x] : 0 <= x < 60 }"))
+         (relu (union-map-from-str "{ [a, b] -> [6a+b] : 0 <= a < 9 and 0 <= b < 6 }")))
+    (union-set-subtract (union-map-range pool) (union-map-range relu))))
+
+(defun test-dep-extract ()
+  (let ((relu (union-map-from-str "{ [_gid0, _gid2, _gid3, _gid4] -> [((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 <= 9 and 0 <= _gid2 <= 5 and 0 <= _gid3 <= 20 and 0 <= _gid4 <= 20; }")) ;; write
+        (pool (union-map-from-str "{ [_gid0, _gid1, _gid2, _gid3_1, _gid4_1] -> [(((((_gid0*441)+(42*_gid1))+(2*_gid2))+(21*_gid3_1))+_gid4_1)] : 0 <= _gid0 <= 59 and 0 <= _gid1 <= 9 and 0 <= _gid2 <= 9 and 0 <= _gid3_1 <= 1 and 0 <= _gid4_1 <= 1; }"))) ;; read
+    (print (isl::union-map-detect-equalities (isl::union-map-flat-domain-product pool relu)))
+    ;; (print (union-map-intersect-range pool (union-map-range relu)))
+    ))
+
+;; NID(g1, g2 ,g3, g4)に対して
+;; NID(g1, g2, g3~g3+2, g4~g4+2)を読んでいる
+;;             -------  -------
+;;                ^ TILE  ^ TILE
+(defun test-dep-extract ()
+  (let ((relu (union-map-from-str "{ [_gid0, _gid2, _gid3, _gid4] -> [((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 < 1 and 0 <= _gid2 < 1 and 0 <= _gid3 < 1 and 0 <= _gid4 < 1; }"))
+        (pool (union-map-from-str "{ [_gid0, _gid1, _gid2, _gid3_1, _gid4_1] -> [(((((_gid0*441)+(42*_gid1))+(2*_gid2))+(21*_gid3_1))+_gid4_1)] : 0 <= _gid0 < 1 and 0 <= _gid1 < 1 and 0 <= _gid2 < 1 and 0 <= _gid3_1 <= 1 and 0 <= _gid4_1 <= 1; }")))
+    (let ((d (union-map-lex-gt-union-map pool relu)))
+      (union-map-apply-domain pool d))))
