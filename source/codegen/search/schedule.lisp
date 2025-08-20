@@ -745,6 +745,7 @@ Procedure:
     (unless (= n 1) (error "union-set must contain exactly one set."))
     (let* ((s   (isl::set-list-get-at sl 0))
            (dim (isl::set-dim s :dim-set)))
+      (print uset)
       (unless (= dim 1) (error "set must be 1-dimensional."))
       (values (isl::set-dim-max-val s 0) (isl::set-dim-min-val s 0)))))
 
@@ -778,8 +779,7 @@ Procedure:
     (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
            (node components))
       (loop for i upfrom 0 below n-child
-            for size = (pop sizes)
-            if (not (value= size max-band)) do
+            for size = (pop sizes) do
               (setf node (schedule-node-get-child node i)
                     node (schedule-node-first-child node))
               (when (not (eql (schedule-node-get-type node) :schedule-node-band))

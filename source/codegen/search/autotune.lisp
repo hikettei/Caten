@@ -208,8 +208,14 @@ BEAM Search Workflow:
     (sgt-apply-transformations
      gen0
      '(:Fission :Fuse)
-     '(:Scoop :Fission :Fuse))
+     '(:Scoop :Fission :Fuse)) ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
     (print "+++++++++++++++")
+    (print (sgt-items gen0))
+    (print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
+    (sgt-apply-transformations
+     gen0
+     '(:Fission :Fuse)
+     '(:Scoop :Fission :Fuse))
     (print (sgt-items gen0))
     ;; apply evaluation
     ;; sort topK
