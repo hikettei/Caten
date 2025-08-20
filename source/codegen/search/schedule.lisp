@@ -746,8 +746,10 @@ Procedure:
     (let* ((s   (isl::set-list-get-at sl 0))
            (dim (isl::set-dim s :dim-set)))
       (print uset)
-      (unless (= dim 1) (error "set must be 1-dimensional."))
-      (values (isl::set-dim-max-val s 0) (isl::set-dim-min-val s 0)))))
+      (print dim)
+      ;; (unless (= dim 1) (error "set must be 1-dimensional."))
+      ;; always refer to the last dimension?
+      (values (isl::set-dim-max-val s (1- dim)) (isl::set-dim-min-val s (1- dim))))))
 
 (defun schedule-node-sequence-get-band-sizes (domain components)
   "Enumerates all childrens domain size"
@@ -779,7 +781,8 @@ Procedure:
     (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
            (node components))
       (loop for i upfrom 0 below n-child
-            for size = (pop sizes) do
+            for size = (pop sizes)
+            if (not (value= size max-band)) do
               (setf node (schedule-node-get-child node i)
                     node (schedule-node-first-child node))
               (when (not (eql (schedule-node-get-type node) :schedule-node-band))
