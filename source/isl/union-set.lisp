@@ -91,3 +91,11 @@
 (define-isl-function union-set-coalesce %isl-union-set-coalesce
   (:give union-set)
   (:take union-set))
+
+(define-isl-function union-set-lexmin %isl-union-set-lexmin
+  (:give union-set)
+  (:take union-set))
+
+(define-isl-function union-set-lexmax %isl-union-set-lexmax
+  (:give union-set)
+  (:take union-set))

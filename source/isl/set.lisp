@@ -92,3 +92,17 @@
 
 (defun set-is-empty (set)
   (eql :bool-true (%isl-set-is-empty (set-handle set))))
+
+(define-isl-function set-align-params %isl-set-align-params
+  (:give set)
+  (:take set)
+  (:take space))
+
+(cffi:defcfun ("isl_set_dim_max_val" %isl-set-dim-max-val) :pointer (x :pointer) (pos :int))
+(cffi:defcfun ("isl_set_dim_min_val" %isl-set-dim-min-val) :pointer (x :pointer) (pos :int))
+
+(defun set-dim-max-val (set pos)
+  (%make-value (%isl-set-dim-max-val (set-handle (copy set)) pos)))
+
+(defun set-dim-min-val (set pos)
+  (%make-value (%isl-set-dim-min-val (set-handle (copy set)) pos)))

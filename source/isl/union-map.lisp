@@ -51,6 +51,7 @@
   (def union-map-product %isl-union-map-product)
   (def union-map-domain-product %isl-union-map-domain-product)
   (def union-map-flat-domain-product %isl-union-map-flat-domain-product)
+  (def union-map-flat-range-product %isl-union-map-flat-range-product)
   (def union-map-lex-lt-union-map %isl-union-map-lex-lt-union-map)
   (def union-map-lex-le-union-map %isl-union-map-lex-le-union-map)
   (def union-map-lex-gt-union-map %isl-union-map-lex-gt-union-map)
@@ -155,3 +156,7 @@
 (define-isl-function union-map-detect-equalities %isl-union-map-detect-equalities
   (:give union-map)
   (:take union-map))
+
+(define-isl-function union-map-get-space %isl-union-map-get-space
+  (:give space)
+  (:keep union-map))

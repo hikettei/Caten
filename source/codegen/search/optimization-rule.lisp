@@ -104,14 +104,16 @@ TODO:
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fission)))
   (let ((pos (psi-get-first-unoptimized-sequence poly)))
+    ;; [TODO] Only fuse when gcd is found
     (when pos
       (let ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))
-        (multiple-value-bind (sizes min max min-equals-to-max-p)
+        (multiple-value-bind (sizes min max min-equals-to-max-p fuse-legal-p)
             (schedule-node-sequence-get-band-sizes (psi-domain poly) seq)
           (declare (ignore min max))
-          (if min-equals-to-max-p
-              (list (make-instance 'NoOpt))
-              (list (make-instance 'Fission :at pos :sizes sizes))))))))
+          (when fuse-legal-p
+            (if min-equals-to-max-p
+                (list (make-instance 'NoOpt))
+                (list (make-instance 'Fission :at pos :sizes sizes)))))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
   (with-slots ((at at) (sizes sizes)) optrule

@@ -45,3 +45,8 @@
 (define-isl-function map-wrap %isl-map-wrap
   (:give set)
   (:take map))
+
+(define-isl-function map-align-params %isl-map-align-params
+  (:give map)
+  (:take map)
+  (:take space))

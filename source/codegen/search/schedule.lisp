@@ -767,7 +767,8 @@ Procedure:
           (setf node (isl::schedule-node-parent node))
           (setf node (isl::schedule-node-next-sibling node))))
     (multiple-value-bind (min max) (values (reduce #'value-min sizes) (reduce #'value-max sizes))
-      (values sizes min max (value= min max)))))
+      (values sizes min max (value= min max)
+              (every #'(lambda (x) (value= (value 0) (value-mod x min))) sizes)))))
 
 (defun schedule-node-sequence-align-band-size (components sizes)
   (let* ((min-band (reduce #'value-min sizes))

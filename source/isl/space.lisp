@@ -52,3 +52,8 @@
   (:give space)
   (:take space)
   (:take space))
+
+(define-isl-function space-align-params %isl-space-align-params
+  (:give space)
+  (:take space)
+  (:take space))
