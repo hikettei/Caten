@@ -41,6 +41,19 @@ pruned (Top-k), and expanded to produce the next generation."))
   (declare (type Schedule-Generation-Tree sgt))
   (make-instance 'Schedule-Generation-Tree :items (copy-list (sgt-items sgt)) :depth (1+ (sgt-depth sgt))))
 
+(defun psi-apply-optimization-space (item optrule-id)
+  (let ((optrule-id (etypecase optrule-id (keyword (list optrule-id)) (list optrule-id)))
+        (items (list item)))
+    (dolist (id optrule-id)
+      (setf items
+            (loop for item in items
+                  append
+                  (loop for space in (optrule-generate-search-space item id)
+                        for transformed = (apply-optimization item space)
+                        if (psi-verify-legality transformed)
+                          collect transformed))))
+    items))
+
 (defun sgt-apply-transformations (sgt &rest optrule-ids)
   (declare (type Schedule-Generation-Tree sgt))
   (setf (sgt-items sgt)
@@ -48,11 +61,8 @@ pruned (Top-k), and expanded to produce the next generation."))
               append
               (loop for item in (sgt-items sgt)
                     append
-                    (loop for space in (optrule-generate-search-space item optrule-id)
-                          for transformed = (apply-optimization item space)
-                          if (psi-verify-legality transformed)
-                            collect transformed)))))
-
+                    (psi-apply-optimization-space item optrule-id)))))
+;; is it used?
 (defun sgt-find-legal-transformation (sgt &rest optrule-ids)
   (declare (type Schedule-Generation-Tree sgt))
   (loop for optrule-id in optrule-ids
@@ -65,7 +75,7 @@ pruned (Top-k), and expanded to produce the next generation."))
                       do (setf (sgt-items sgt) (list transformed))
                          (return-from sgt-find-legal-transformation (list transformed)))))
   (setf (sgt-items sgt) nil))
-
+;; is it used?
 (defun sgt-apply-until-saturated (sgt &rest optrule-ids)
   (labels ((n (sgt) (apply #'sgt-find-legal-transformation sgt optrule-ids) sgt))
     (let ((curr-items (sgt-items sgt))
@@ -82,8 +92,7 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sgt-prepare-for-sketch-generation (sgt)
   (sgt-apply-transformations sgt :Serialize)
-  (sgt-apply-transformations sgt :Maximize-Filter-Candidates)
-  )
+  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
 
 (defun sgt-finalize-sketch (sgt)
   (sgt-apply-transformations sgt :Coincidence)
@@ -132,6 +141,7 @@ BEAM Search Workflow:
           ;; - Option1: BEAM Search + LightWeight Cost Function
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search
+          (print (car (sgt-items gen0)))
           (sgt-prepare-for-sketch-generation gen0)
           (time (sgt-apply-transformations gen0 :Fuse))
           (time (sgt-apply-transformations gen0 :Fuse))
@@ -185,6 +195,28 @@ BEAM Search Workflow:
 ;; - FuseALL
 ;; ==> Eazy to get FlashAttention?
 ;; (caten (!matmul (make-tensor `(512 512)) (!relu (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))))))
+;; Early BEAM Search for
+;; [FUSE TILE{ANOTHER_LOOP_SIZE} REORDER]
+;; maximizing MemoryLocality(G)
+(defun ApplyReschedule (polyhedral &key (cost-model))
+  "Generates a maximum fused graph"
+  (declare (type Polyhedral-Schedule-Item polyhedral))
+  ;; [TODO]
+  ;; - RescheduleSeenをMarkする
+  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
+    
+    (sgt-apply-transformations
+     gen0
+     '(:Fission :Fuse)
+     '(:Scoop :Fission :Fuse))
+    (print "+++++++++++++++")
+    (print (sgt-items gen0))
+    ;; apply evaluation
+    ;; sort topK
+    ;; apply until saturated
+    ;; return best kernel
+    ))
+
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
   (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
@@ -198,42 +230,17 @@ BEAM Search Workflow:
       ;; STEP1. Pool側のacc=-INFをどうやってFuseするかを考える。
       ;; STEP2. Pool側もDAG
       ;; STEP3. Sequence DAG Sorting?
-      (sgt-prepare-for-sketch-generation gen0)
+      ;; BEAM Searchでやる
+      ;; - Guardを生成するSchedule => Invaildにする
+      ;; - Sequenceを上から下に綺麗にFusionしたい。
       ;; recollapse = tile?
-      (print (sgt-items gen0))
-      (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
-      (print (psi-read-union-map (car (sgt-items gen0))))
-      (print (psi-write-union-map (car (sgt-items gen0))))
-      (let ((sched (psi-theta (car (sgt-items gen0))))
-            (r (psi-read-union-map (car (sgt-items gen0))))
-            (w (psi-write-union-map (car (sgt-items gen0))))
-            (d (psi-domain (car (sgt-items gen0)))))
-        (let* ((g (caten/fcg:build-fcg sched r w :clustered t :typed t)))
-          (print g)
-          ;; FCGの構築を頑張る
-          ;; 1 vs NでFusionを目指す
-;          (print "LEVELS")
-;          (print levels)
- ;         (caten/fcg:assign-shifts-and-skews g d r w :verbose t)
-  ;        (format t "~&~A~%" g)
-          ))
+;      (print (sgt-items gen0))
+;      (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
+;      (print (psi-read-union-map (car (sgt-items gen0))))
+;      (print (psi-write-union-map (car (sgt-items gen0))))
+;      (print (sgt-items gen0))
+      (ApplyReschedule root)
       (error "STOP")
-      (sgt-apply-transformations gen0 :Fuse)
-      ;(sgt-apply-transformations gen0 :Fuse)
-      ;(sgt-apply-transformations gen0 :Fuse)
-      ;(sgt-apply-transformations gen0 :Fuse)
-      ;(sgt-apply-transformations gen0 :Fuse)
-      ;;(sgt-apply-transformations gen0 :Fuse)
-     ; (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
-      (print (sgt-items gen0))
-      ;; Two considerable patterns:
-      ;; - One is reduction
-      ;; - While another is elwise
-      ;; ==> Tile elwise until matched reduction
-      ;; - Conv+Padding (???)
-      ;; -
-      ;; - One sized loop is eliminated
-      nil
       )))
 
 (defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
@@ -256,7 +263,8 @@ BEAM Search Workflow:
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
     (print graph)
-    (error "STOP")))
+    ;(error "STOP")
+    ))
 
 ;; [Workload]
 ;; - 100% LoopFusion (FlashX Generation)

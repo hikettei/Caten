@@ -24,7 +24,14 @@
    #:schedule-node-count-bands
    #:schedule-get-roots
    #:schedule-split-all-band
-   #:schedule-fuse-all-band))
+   #:schedule-fuse-all-band
+   #:schedule-gather-path
+   #:schedule-node-at-path
+   #:schedule-get-non-marked-sequence/set
+   #:schedule-node-sequence-check-fusible
+   #:schedule-node-sequence-full-fuse
+   #:schedule-node-sequence-get-band-sizes
+   #:schedule-node-sequence-align-band-size))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -197,7 +204,7 @@ Notes:
   (loop for i upfrom 0 below (schedule-node-band-get-depth band)
         if (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle band) i))
           collect 1 else collect 0))
-;; [TODO] upasの操作 => Macroにする？
+
 (defun schedule-node-band-permute (band order)
   "Permute the dimensions of a permutable band by a permutation π.
 Let d be the band depth. Given π = [i₀,…,i_{d−1}] a permutation of {0,…,d−1},
@@ -420,7 +427,7 @@ Returns:
   isl::multi-val m of length d, where d = dim(space(B), out) and
   m = (w,…,w) ∈ ℤ^d embedded in the band’s schedule space. This is the
   per-dimension tile width vector used by ISL band tiling."
-  (declare (type fixnum size) (type isl::schedule-node-band band))
+  (declare (type (or isl::value fixnum) size) (type isl::schedule-node-band band))
   ;; [TODO] Support Symbolic Tile
   (let* ((band-space (schedule-node-band-get-space band))
          (dim (space-dim band-space 3)))
@@ -445,7 +452,7 @@ Returns:
               (mupa (schedule-node-band-get-partial-schedule tiled))
               (tiled-ids (partial-schedule-get-involved-dims mupa)))
          (when (null tiled-ids) (return-from schedule-node-band-tile* tiled))
-         (let* ((maxima (extract-domain-maxima (isl::schedule-node-get-prefix-schedule-relation tiled)))
+         (let* ((maxima (domain-dimension-maxima-from-union-map (isl::schedule-node-get-prefix-schedule-relation tiled)))
                 (width  (value size))
                 (affected
                   (reduce
@@ -454,7 +461,7 @@ Returns:
                    :initial-value (isl::union-set-from-str "{}")))
                 (unaffected (isl::union-set-subtract subdom affected)))
            (multiple-value-bind (full tail)
-               (%make-full/partial-filters affected tiled-ids maxima width)
+               (make-full/partial-filters affected tiled-ids maxima width)
              (let* ((lst (isl::union-set-list-alloc 0))
                     (lst (union-set-list-add-nonempty lst unaffected))
                     (lst (union-set-list-add-nonempty lst full))
@@ -464,6 +471,13 @@ Returns:
       (:padding tiled)
       (:atomic  tiled)
       (:guard   tiled))))
+
+
+(defun schedule-node-band-separate (band size)
+  (let ((size (tiling-size band size)))
+    (isl::schedule-node-band-scale-down
+     (isl::schedule-node-band-tile band size)
+     size)))
 
 (defun schedule-node-count-bands (node)
   "Count how many band nodes exist in the subtree rooted at NODE."
@@ -532,9 +546,9 @@ Procedure:
         nil
         (let ((same (union-map-same-address-relation reads)))
           (not (caten/isl::union-map-is-empty same))))))
-;; -----------------------------------------------------------------------------
-;;  ISL ScheduleTree Deterministic Optimization
-;; -----------------------------------------------------------------------------
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;   ISL ScheduleTree Rewriting Rules
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-map (schedule callback &optional (user (cffi:null-pointer)))
   (isl::%make-schedule
    (isl::%isl-schedule-map-schedule-node-bottom-up
@@ -567,6 +581,212 @@ Procedure:
 (defun schedule-fuse-all-band (schedule)
   "band+child+band ==> [band+band]"
   (schedule-map schedule (cffi:callback rewrite/fuse-band)))
+;; ~~~ ILP ShapeTracker Solver ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Prerequisites:
+;; - The given schedule is obtained by schedule-split-all-band
+;; - No mark is inserted
+
+(defun schedule-node-at-path (node path)
+  "PATH = (i0 i1 ... ik) from root->child(0)."
+  (labels ((n-children (n)
+             (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n)))
+           (child (n i)
+             (let ((cnt (n-children n)))
+               (assert (and (>= i 0) (< i cnt))
+                       () "child index ~a out of [0,~a)" i cnt))
+             (schedule-node-get-child n i)))
+    (dolist (idx path node) (setf node (child node idx)))))
+
+(defun schedule-gather-path (schedule-node f &aux (results))
+  (labels ((explore (node path)
+             (when (eql (schedule-node-get-type node) :schedule-node-leaf)
+               (return-from explore))
+             (when (funcall f node path)
+               (push path results))
+             (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
+               (dotimes (i n-child)
+                 (explore (schedule-node-get-child node i) (append path (list i)))))))
+    (explore schedule-node nil)
+    (nreverse results)))
+
+(defun schedule-get-non-marked-sequence/set (schedule)
+  "Returns a list of schedule_node_sequence/set"
+  (schedule-gather-path
+   (schedule-get-root schedule)
+   #'(lambda (node path)
+       (declare (ignore path))
+       (and
+        (find (schedule-node-get-type node) '(:schedule-node-sequence :schedule-node-set))
+        (> (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)) 1)
+        (let ((parent (isl::schedule-node-parent node)))
+          (not (eql (schedule-node-get-type parent) :schedule-node-mark)))))))
+
+(defun schedule-remove-empty-schedule (schedule)
+  (let ((paths
+          (schedule-gather-path
+           (schedule-get-root schedule)
+           #'(lambda (node path)
+               (declare (ignore path))
+               (or
+                (when (eql (schedule-node-get-type node) :schedule-node-band)
+                  (let ((p (schedule-node-band-get-partial-schedule node)))
+                    (= 0 (space-dim (isl::multi-union-pw-aff-get-space p) :dim-out))))
+                (eql (schedule-node-get-type node) :schedule-node-leaf))))))
+    (dolist (path paths)
+      (setf schedule
+            (schedule-node-get-schedule
+             (isl::schedule-node-delete
+              (schedule-node-at-path (schedule-get-root schedule) path)))))
+    schedule))
+
+(defun schedule-node-sequence-check-fusible (components)
+  "Return: T or reason={:filter, :dependencies, :ReorderFirst}"
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
+    (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
+           (node (isl:schedule-node-first-child components))
+           (mupa))
+      (loop for i upfrom 0 below n-child do
+        (let ((filter (isl::schedule-node-filter-get-filter node)))
+          (setf node (schedule-node-first-child node))
+          (when (not (eql (schedule-node-get-type node) :schedule-node-band))
+            (return-from schedule-node-sequence-check-fusible :need-reorder))
+          (let* ((tmp (schedule-node-band-get-partial-schedule node))
+                 (tmp (isl::multi-union-pw-aff-intersect-domain tmp filter))
+                 (tmp (isl::multi-union-pw-aff-reset-tuple-id tmp :dim-out)))
+            (if (null mupa)
+                (setf mupa tmp)
+                (setf mupa (isl::multi-union-pw-aff-union-add mupa tmp)))
+            (setf node (schedule-node-delete node)
+                  node (isl::schedule-node-parent node))
+            (if (= i (1- n-child))
+                (setf node (isl::schedule-node-parent node))
+                (setf node (isl::schedule-node-next-sibling node))))))
+      :valid))
+
+(defun schedule-node-sequence-full-fuse (components)
+  "Fuse all children in the given components (schedule_node_sequence or schedule_node_set)"
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
+  (let* ((components (isl::schedule-node-first-child (schedule-node-insert-mark components (isl::make-id-from-str "VISITED{FUSION}"))))
+         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
+         (node (isl:schedule-node-first-child components))
+         (mupa))
+    (loop for i upfrom 0 below n-child do
+      (let ((filter (isl::schedule-node-filter-get-filter node)))
+        (setf node (schedule-node-first-child node))
+        (when (not (eql (schedule-node-get-type node) :schedule-node-band))
+          (error "schedule-full-fuse: The children of each filter in sequence should have a schedule_node_band."))
+        (let* ((tmp (schedule-node-band-get-partial-schedule node))
+               (tmp (isl::multi-union-pw-aff-intersect-domain tmp filter))
+               (tmp (isl::multi-union-pw-aff-reset-tuple-id tmp :dim-out)))
+          (if (null mupa)
+              (setf mupa tmp)
+              (setf mupa (isl::multi-union-pw-aff-union-add mupa tmp)))
+          (setf node (schedule-node-delete node)
+                node (isl::schedule-node-parent node))
+          (if (= i (1- n-child))
+              (setf node (isl::schedule-node-parent node))
+              (setf node (isl::schedule-node-next-sibling node))))))
+    (when mupa (setf node (schedule-node-insert-partial-schedule node mupa)))
+    ;;(schedule-remove-empty-schedule (schedule-node-get-schedule node))
+    (schedule-node-get-schedule node)))
+
+(defun align-params/umap (umap model-space)
+  "Return UMAP aligned to MODEL-SPACE (params only). No callbacks."
+  (let* ((ml (isl::union-map-get-map-list umap))
+         (n  (isl::map-list-size ml))
+         (acc nil))
+    (dotimes (i n)
+      (let* ((m   (isl::map-list-elt ml i))
+             (m*  (isl::map-align-params m model-space)))
+        (setf acc (if acc
+                      (isl::union-map-union acc (isl::map-union-map m*))
+                      (isl::map-union-map m*)))))
+    (or acc
+        (isl::union-map-empty
+         (isl::space-align-params
+          (isl::union-map-get-space umap) model-space)))))
+
+(defun align-params/uset (uset model-space)
+  "Return USET aligned to MODEL-SPACE (params only). No callbacks."
+  (let* ((sl (isl::union-set-get-set-list uset))
+         (n  (isl::set-list-n-set sl))
+         (acc nil))
+    (dotimes (i n)
+      (let* ((s  (isl::set-list-get-at sl i))
+             (s* (isl::set-align-params s model-space)))
+        (setf acc (if acc
+                      (isl::union-set-union acc (isl::union-set-from-set s*))
+                      (isl::union-set-from-set s*)))))
+    (or acc
+        (isl::union-set-empty
+         (isl::space-align-params
+          (isl::union-set-get-space uset) model-space)))))
+
+(defun band-range-union-set (band-node user-domain)
+  (let* ((prefix (isl::schedule-node-get-prefix-schedule-union-map band-node)) ; Dom -> Prefix
+         (part   (isl::schedule-node-band-get-partial-schedule-union-map band-node)) ; Dom -> Band
+         (model-space
+           (isl::space-align-params
+            (isl::union-map-get-space prefix)
+            (isl::union-set-get-space user-domain)))
+         (prefix* (align-params/umap prefix model-space))
+         (part*   (align-params/umap part   model-space))
+         (udom*   (align-params/uset user-domain model-space))
+         (full    (isl::union-map-flat-range-product prefix* part*)) ; Dom -> (Prefix × Band)
+         (full   (isl::union-map-intersect-domain full (copy udom*)))
+         (rng     (isl::union-map-range full)))
+    rng))
+
+(defun uset-max/min (uset)
+  "Assume USAGE: uset = { [i0] : 0 <= i0 <= N } (1-D, single set, constants).
+   Return the constant upper bound N as isl::val."
+  (let* ((sl (isl::union-set-get-set-list uset))
+         (n  (isl::set-list-n-set sl)))
+    (unless (= n 1) (error "union-set must contain exactly one set."))
+    (let* ((s   (isl::set-list-get-at sl 0))
+           (dim (isl::set-dim s :dim-set)))
+      (unless (= dim 1) (error "set must be 1-dimensional."))
+      (values (isl::set-dim-max-val s 0) (isl::set-dim-min-val s 0)))))
+
+(defun schedule-node-sequence-get-band-sizes (domain components)
+  "Enumerates all childrens domain size"
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
+  (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
+         (node (isl:schedule-node-first-child components))
+         (sizes))
+    (loop for i upfrom 0 below n-child do
+      (setf node (schedule-node-first-child node))
+      (when (not (eql (schedule-node-get-type node) :schedule-node-band))
+        (error "schedule-full-fuse: The children of each filter in sequence should have a schedule_node_band."))
+      (let ((uset (band-range-union-set node domain)))
+        (multiple-value-bind (max min) (uset-max/min uset)
+          (assert (value= min (value 0)))
+          (push (value+ max (value 1)) sizes)))
+      (setf node (schedule-node-delete node) node (isl::schedule-node-parent node))
+      (if (= i (1- n-child))
+          (setf node (isl::schedule-node-parent node))
+          (setf node (isl::schedule-node-next-sibling node))))
+    (multiple-value-bind (min max) (values (reduce #'value-min sizes) (reduce #'value-max sizes))
+      (values sizes min max (value= min max)))))
+
+(defun schedule-node-sequence-align-band-size (components sizes)
+  (let* ((min-band (reduce #'value-min sizes))
+         (max-band (reduce #'value-max sizes)))
+    (when (value= min-band max-band)
+      (return-from schedule-node-sequence-align-band-size components))
+    (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
+           (node components))
+      (loop for i upfrom 0 below n-child
+            for size = (pop sizes)
+            if (not (value= size max-band)) do
+              (setf node (schedule-node-get-child node i)
+                    node (schedule-node-first-child node))
+              (when (not (eql (schedule-node-get-type node) :schedule-node-band))
+                (error "schedule-full-fuse: The children of each filter in sequence should have a schedule_node_band."))
+              (setf node (schedule-node-band-separate node (value-div max-band size))
+                    node (isl::schedule-node-parent (isl::schedule-node-parent node))))
+      node)))
+;; old code
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:
 ;; Given View = {shape, stride, mask}, computes the beneficial loop generation path {view1.view2}
@@ -648,36 +868,6 @@ Procedure:
       (assert (find (schedule-node-get-type seq) '(:schedule-node-sequence :schedule-node-set)))
       seq)))
 
-(defun schedule-node-at-path (node path)
-  "PATH = (i0 i1 ... ik) from root->child(0)."
-  (labels ((n-children (n)
-             (isl::%isl-schedule-node-n-children (isl::schedule-node-handle n)))
-           (child (n i)
-             (let ((cnt (n-children n)))
-               (assert (and (>= i 0) (< i cnt))
-                       () "child index ~a out of [0,~a)" i cnt))
-             (schedule-node-get-child n i)))
-    (dolist (idx path node) (setf node (child node idx)))))
-
-(defun schedule-gather-path (schedule-node f &aux (results))
-  (labels ((explore (node path)
-             (when (eql (schedule-node-get-type node) :schedule-node-leaf)
-               (return-from explore))
-             (when (funcall f node path)
-               (push path results))
-             (let ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))))
-               (dotimes (i n-child)
-                 (explore (schedule-node-get-child node i) (append path (list i)))))))
-    (explore schedule-node nil)
-    (nreverse results)))
-
-(defun schedule-gather-sequence/set (schedule)
-  (schedule-gather-path
-   (schedule-get-root schedule)
-   #'(lambda (node path)
-       (declare (ignore path))
-       (and (find (schedule-node-get-type node) '(:schedule-node-sequence :schedule-node-set))
-            (> (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)) 1)))))
 ;; Goal: FlashAttentionに相当する区間をまとめてBEAM SearchしちゃえばFlashAttentionまで探索できる
 ;; 1. SCCS同士のdst <- srcのPairを求め，そこから計算していく
 ;; 2.
@@ -694,24 +884,6 @@ Procedure:
 ;; - Reshape (ScheduleBandScale)を探索対象として追加することでCostmodelを使って探索できるように！
 ;; - 10*10, 10*10のCoalesceされたBand同士もExploreできる？
 ;; ==> UnitTest
-(defun schedule-remove-empty-schedule (schedule)
-  (let ((paths
-          (schedule-gather-path
-           (schedule-get-root schedule)
-           #'(lambda (node path)
-               (declare (ignore path))
-               (or
-                (when (eql (schedule-node-get-type node) :schedule-node-band)
-                  (let ((p (schedule-node-band-get-partial-schedule node)))
-                    (= 0 (space-dim (isl::multi-union-pw-aff-get-space p) :dim-out))))
-                (eql (schedule-node-get-type node) :schedule-node-leaf))))))
-    (dolist (path paths)
-      (setf schedule
-            (schedule-node-get-schedule
-             (isl::schedule-node-delete
-              (schedule-node-at-path (schedule-get-root schedule) path)))))
-    schedule))
-
 (defun schedule-node-sequence-splice-children (node)
   (declare (type isl::schedule-node node))
   (assert (eql :schedule-node-sequence (schedule-node-get-type node)))
@@ -818,12 +990,6 @@ Procedure:
   (raw (nth 1 items) :type isl::union-map)
   (waw (nth 2 items) :type isl::union-map)
   (war (nth 3 items) :type isl::union-map))
-
-(defun schedule-node-band-separate (band size)
-  (let ((size (tiling-size band size)))
-    (isl::schedule-node-band-scale-down
-     (isl::schedule-node-band-tile band size)
-     size)))
 
 (progn ;; UnionMapDropInfo
   (defparameter *union-map-drop-info-allowed-names* nil)

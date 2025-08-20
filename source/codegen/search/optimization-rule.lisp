@@ -69,45 +69,78 @@ TODO:
         (ecase (rt-rule optrule)
           (:Maximize-Filter-Candidates (schedule-split-all-band (psi-theta poly)))
           (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly))))))
-;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; At this stage, we assume the initial polyhedral looks like (by applying :Serialize+)
-;; [DOMAIN]
-;; CHILD:
-;;   SEQUENCE:
-;;   - filter1
-;;   - filter2
-;;   ...
-;; [MEMO] もしこれができたら，TensorGraph-LevelでのLoop Collapse, Loop Fusionを削除し，ISLへ統合する。
-;; [MEMO] Sequenceではあるが，Tree構造のはず
-;; [MEMO] This SHOULD SUPER SIMPLIFY SCHEDULER IMPLEMENTATION
-;; [MEMO] SYMBOLIC!!
-;; [TODO] FUSE :MAP Optionを追加する？
-;; [TODO] :best-path-p Tを追加，なければSearch
-(defclass Fuse (OptimizationRule) ((dst :initarg :dst) (src :initarg :src) (at :initarg :at))
-  (:documentation "`Fuse`は同一のSequenceにする二つのFilterNodeを一つに融合する, Scheduleは"))
+;; ~~ Optimizations on schedule-node-sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun psi-get-first-unoptimized-sequence (poly) (car (schedule-get-non-marked-sequence/set (psi-theta poly))))
+
+(defclass Fuse (OptimizationRule) ((at :initarg :at)) (:documentation "Fuse all filters in the same sequence/set node whose child is band."))
+(defclass Reorder (OptimizationRule) ((at :initarg :at)) (:documentation "Reorder all filters in the same sequence/set node whose child is band or else to create a new fusible sequence."))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
-  (let ((path-candidates ;; a list of sequence/set
-          (caten/codegen/search/schedule::schedule-gather-sequence/set
-           (psi-theta poly))))
-;    (print "SequenceDetected")
-;    (print path-candidates)
-    (setf path-candidates (list (car path-candidates)))
-    (list (make-instance 'Fuse :dst nil :src nil :at (car path-candidates)))))
+  (let ((seq (psi-get-first-unoptimized-sequence poly)))
+    (when seq
+      (let ((status (schedule-node-sequence-check-fusible
+                     (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) seq))))
+        ;; [TODO] defclass Fail?
+        (case status
+          (:valid (list (make-instance 'Fuse :at seq)))
+          (:need-reorder (list (make-instance 'Reorder :at seq)))
+          (otherwise
+           ;; TODO: (list (make-instance 'Fail))
+           ))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fuse))
-  (with-slots ((dst dst) (src src) (at at)) optrule
+  (with-slots ((at at)) optrule
     (let ((theta-fused
-            (caten/codegen/search/schedule::schedule-full-fuse
-             (caten/codegen/search/schedule::schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
-             (psi-read-union-map poly)
-             (psi-write-union-map poly))))
+            (schedule-node-sequence-full-fuse
+             (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))))
       (setf (psi-theta poly) theta-fused))))
-;; Jump?
-(defclass Reshape (OptimizationRule) nil) ;; Reshapeは不要，しかしCoalesce/Paddingはいるかも
-(defclass Padding (OptimizationRule) nil)
-(defclass Shift (OptimizationRule) nil) ;; Skewing
 
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reorder))
+  (warn "TODO: Reorder"))
+
+(defclass Fission (OptimizationRule)
+  ((at :initarg :at) (sizes :initarg :sizes))
+  (:documentation "Fission <=> Coalesce"))
+
+(defmethod optrule-generate-search-space (poly (id (eql :Fission)))
+  (let ((pos (psi-get-first-unoptimized-sequence poly)))
+    (when pos
+      (let ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))
+        (multiple-value-bind (sizes min max min-equals-to-max-p)
+            (schedule-node-sequence-get-band-sizes (psi-domain poly) seq)
+          (declare (ignore min max))
+          (if min-equals-to-max-p
+              (list (make-instance 'NoOpt))
+              (list (make-instance 'Fission :at pos :sizes sizes))))))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
+  (with-slots ((at at) (sizes sizes)) optrule
+    (setf (psi-theta poly)
+          (isl:schedule-node-get-schedule
+           (schedule-node-sequence-align-band-size
+            (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
+            sizes)))))
+
+(defclass Scoop (OptimizationRule)
+  ((at :initarg :at))
+  (:documentation "
+Swaps top-level band and N-th band from a n-chain of schedule_node_band.
+```
+schedule: ... <-------|
+  child:              |
+    schedule: ... <---|
+      child: ...
+        xN
+```
+"))
+
+(defmethod optrule-generate-search-space (poly (id (eql :Scoop)))
+  (let ((seq (psi-get-first-unoptimized-sequence poly)))
+    (when seq
+      ;; [TODO] How to generate a search space?
+      )))
+
+(defclass Shift (OptimizationRule) nil) ;; Skewing
 ;; ~~ Reschedule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Reschedule (OptimizationRule)
   ((outer-coincidence :initarg :outer-coincidence :initform 0)
@@ -169,9 +202,9 @@ options; typically used to seed candidate schedules at the start of search."))
              (psi-write-union-map poly)
              (psi-theta poly))))))
     (setf (psi-theta poly) new-schedule)))
-;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Interchange (OptimizationRule)
-  ((order :initarg :order :accessor interchange-order :type list)))
+;; ~~ Exploration Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Interchange (OptimizationRule) ((order :initarg :order :accessor interchange-order :type list)))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Interchange)))
   ;; where each permute has band_depth length list
