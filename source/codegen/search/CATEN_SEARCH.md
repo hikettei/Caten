@@ -34,15 +34,34 @@ BandをCoincident
 ```
 
 ```c
+// Case2: A case where tile matters
 [Conv+ReLU : 0 <= N <= 10 and 0 <= Cout <= 6 and 0 <= FH <= 20 and 0 <= FW <= 20 and 0 <= Cout <= 3 and 0 <= Kh <= 6 and 0 <= Kw <= 6]
-=> Reshape(10, 6, 10, 10, 2, 2, 3, 6, 6)
+=> Reshape(10, 6, 10, 10, 2, 2, 3, 6, 6)   | This is what we should compute
 [Pool      : 0 <= N <= 60 and 0 <= H <= 10 and 0 <= W <= 10 and 0 <= PH <= 2 and 0 <= PW <= 2]
 => Reshape(10, 6, 10, 10, 2, 2)
 
 and apply full_fuse iteratively?
 ```
 
+```c
+// Case3: A case where interchange matters?
+
+```
+
 ### Background2. Computation Complexity
+
+
+Goals: Apply them in polynomial time
+
+- [ ] TILE Search
+  - [ ] OPTIMIZE=2 FusionTest1, (Outermost band is coalesced)
+  - [ ] Matmul+Coalesced ReLU Fusion
+- [ ] Permute Search
+  - [ ] Pass Fusion2
+- [ ] TileCreation+Sink+Fusion
+  - [ ] Conv+Pool On the fly
+- [ ] FullFuse => Sequence Sorting
+  - [ ] FlashAttention from TensorGraph
 
 Related:
 

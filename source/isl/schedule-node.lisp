@@ -133,6 +133,21 @@
   (:take schedule-node)
   (:take multi-val))
 
+(define-isl-function schedule-node-band-scale %isl-schedule-node-band-scale
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-scale-down %isl-schedule-node-band-scale-down
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-mod %isl-schedule-node-band-mod
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
 (define-isl-function schedule-node-band-get-ast-isolate-option %isl-schedule-node-band-get-ast-isolate-option
   (:give set)
   (:keep schedule-node))

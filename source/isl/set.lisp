@@ -24,6 +24,10 @@
   (:give set)
   (:take basic-set))
 
+(define-isl-function set-from-basic-set %isl-set-from-basic-set
+  (:give set)
+  (:take basic-set))
+
 (define-isl-function set-get-space %isl-set-get-space
   (:give space)
   (:take set))
@@ -85,3 +89,6 @@
 
 (defun set-get-tuple-name (set)
   (%isl-set-get-tuple-name (set-handle set)))
+
+(defun set-is-empty (set)
+  (eql :bool-true (%isl-set-is-empty (set-handle set))))

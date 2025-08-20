@@ -809,17 +809,126 @@ Procedure:
     ;; STORE
     (print "COMPONENTS")
     ;; TODO: GraphのWrite/Readの関係からPickUpする
-    (schedule-remove-empty-schedule 
-     (schedule-node-get-schedule
-      (print
-       (schedule-sequence-pick-up
-        components
-        (schedule-node-get-child components 0)
-        (schedule-node-get-child components 1)))))))
-;; FULL_FUSE, NO_FUSEのTreeでいいのか。
+    (schedule-remove-empty-schedule (schedule-node-get-schedule components))))
+
+(defstruct (VolumeConstraint
+            (:constructor make-volume-constraint
+              (schedule read-umap write-umap
+               &aux (items (multiple-value-list (compute-dependence-relation read-umap write-umap schedule))))))
+  (raw (nth 1 items) :type isl::union-map)
+  (waw (nth 2 items) :type isl::union-map)
+  (war (nth 3 items) :type isl::union-map))
+
+(defun schedule-node-band-separate (band size)
+  (let ((size (tiling-size band size)))
+    (isl::schedule-node-band-scale-down
+     (isl::schedule-node-band-tile band size)
+     size)))
+
+(progn ;; UnionMapDropInfo
+  (defparameter *union-map-drop-info-allowed-names* nil)
+  (defparameter *union-map-drop-info-allowed-dims* nil)
+  (cffi:defcallback rewrite/append-union-map :int
+      ((map :pointer) (umap :pointer))
+    (when (find
+           (isl::%isl-map-get-tuple-name map :dim-in)
+           *union-map-drop-info-allowed-names* :test #'string=)
+      (let ((n-params (isl::%isl-map-dim map :dim-in)))
+        (loop for i upfrom 0 below n-params
+              for dim-name = (isl::%isl-map-get-dim-name map :dim-in i)
+              if (null (find dim-name *union-map-drop-info-allowed-dims* :test #'string=)) do
+                (setf map (isl::%isl-map-fix-val map :dim-in i (isl::value-handle (isl::copy (value 0))))))
+        (setf umap (isl::%isl-union-map-union umap (isl::%isl-union-map-from-map map)))))
+    0)
+  (defun union-map-drop-info (union-map allowed-names allowed-dims)
+    (let ((umap (isl::union-map-from-str "{}"))
+          (*union-map-drop-info-allowed-names* allowed-names)
+          (*union-map-drop-info-allowed-dims* allowed-dims))
+      (isl::%isl-union-map-foreach-map
+       (isl::union-map-handle union-map)
+       (cffi:callback rewrite/append-union-map)
+       (isl::union-map-handle umap))
+      umap)))
+
+(defun %pw-aff-to-str (pwa)
+  (let* ((p (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (p (isl::%isl-printer-set-output-format p 0))
+         (p (isl::%isl-printer-print-pw-aff p (isl::pw-aff-handle pwa))))
+    (isl::%isl-printer-get-str p)))
+
+(defun schedule-fuse-two-kernel (components read-umap write-umap)
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
+  (labels ((get-n-band (band depth &optional (count 0))
+             (assert (eql (schedule-node-get-type band) :schedule-node-band))
+             (if (= depth count)
+                 band
+                 (get-n-band (schedule-node-get-child band 0) depth (1+ count))))
+           (get-band-depth (band &optional (count 0))
+             (let ((child (schedule-node-get-child band 0)))
+               (if (eql (schedule-node-get-type child) :schedule-node-band)
+                   (get-band-depth child (1+ count))
+                   count)))
+           (get-root (n)
+             (schedule-node-get-child (schedule-node-get-child components n) 0)))
+    (let* ((read/write (union-map-union read-umap write-umap))
+           (k-src (get-root 0)) (k-dst (get-root 1))
+           (src-depth (get-band-depth k-src)) (dst-depth (get-band-depth k-dst))
+           (s-relation (alexandria:flatten (umap->stmt-pairs (isl::schedule-node-get-prefix-schedule-relation k-src))))
+           (d-relation (alexandria:flatten (umap->stmt-pairs (isl::schedule-node-get-prefix-schedule-relation k-dst))))
+           (domain (schedule-node-get-domain components))
+           (s-selections) (d-selections))
+      (assert (eql :schedule-node-band (schedule-node-get-type k-src)))
+      (assert (eql :schedule-node-band (schedule-node-get-type k-dst)))
+      (push k-src s-selections)
+      (push k-dst d-selections)
+      (labels ((band->id (band)
+                 (let* ((pa
+                         (isl::pw-aff-list-elt
+                          (isl::union-pw-aff-get-pw-aff-list
+                           (multi-union-pw-aff-get-union-pw-aff (schedule-node-band-get-partial-schedule band) 0))
+                          0))
+                        (reg (subseq (second (cl-ppcre:split "->" (%pw-aff-to-str pa))) 3))
+                        (reg (subseq reg 0 (- (length reg) 4))))
+                   (loop for i upfrom 0 below (isl::pw-aff-dim pa :dim-in)
+                         for name = (isl::pw-aff-get-dim-name pa :dim-in i)
+                         ;; [TODO] Improve the implementation ...
+                         if (string= reg name) collect name)))
+               (get-area (selections rels)
+                 (union-map-drop-info read/write rels (apply #'append (map 'list #'band->id selections))))
+               (get-s-area ()
+                 ;; 同じ領域を描画するDomainが欲しい！
+                 ;; s-selectionsのUnionSetが欲しい
+                 (let ((s1 (get-area s-selections s-relation))
+                       (d1 (get-area d-selections d-relation)))
+                   (union-map-union s1 d1)
+                   ))
+               (get-d-area ()
+                 ;(union-map-intersect-domain (get-area d-selections) domain)
+                 ))
+        (print src-depth)
+        (print dst-depth)
+        (print s-relation)
+        (print (get-s-area))
+        (print (get-d-area))
+        ;; 惜しい。任意のDomainでのSetを計算したい。
+;        (print (union-set-subtract (union-map-range (get-s-area)) (union-map-range (get-d-area))))
+        ;; Problem Setting:
+        ;;   Let K_src be multiple of Bs_1 x Bs_2 x ... x Bs_{src_depth}
+        ;;   Let K_dst be multiple of Bd_1 x Bd_2 x ... x Bd_{dst_depth}
+        ;; 同じ領域を描画するBandの組み合わせを切り出す
+        ;; Solution1:
+        ;; ==> A = B*C*...
+        ;; Solution2:
+        ;; ==> Permute and find valid one?
+        ;; ConvのBatchとPoolの二番目のループがFuseされてはいけない。
+        ;; TileされてFuseされるのか？検証した方がいい ==> Possible
+        (print "DOING FUSION")
+        ))))
+;; e.g.: 59にFuseするなら，同じ領域を描画する等価なBandListを引っ張ってくる必要がある。
+;; 仮定: Coincident AreaとReduction AreaでPermuteされてない。
 (defun schedule-full-fuse (components read-umap write-umap)
   (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
-;;  (print components)
+  ;; [TODO] ここに上の関数を挟めるようにする。
   (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
          (node (isl:schedule-node-first-child components))
          (mupa))
@@ -843,6 +952,7 @@ Procedure:
               (setf node (isl::schedule-node-next-sibling node))))))
     (when mupa
       (setf node (schedule-node-insert-partial-schedule node mupa)))
+;    (schedule-fuse-two-kernel components read-umap write-umap)
     (schedule-remove-empty-schedule (schedule-node-get-schedule node))))
 ;; -----------------------------------------------------------------------------
 ;; - [ ] Filter Relocate Concepts

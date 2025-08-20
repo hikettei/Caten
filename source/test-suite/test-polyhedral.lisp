@@ -468,9 +468,13 @@
 
 (deftest test-fusion1
   (with-no-grad
-    (caten (caten/nn:!maxpool (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5))))))))
+    (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))) '(1 0 2 3))))))
 
 (deftest test-fusion2
+  (with-no-grad
+    (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))) '(1 0 2 3))))))
+
+(deftest test-fusion3
   (with-no-grad
     (caten (caten/nn:!maxpool (caten/nn:!batch-norm (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))))))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする

@@ -170,6 +170,21 @@
 (defun multi-union-pw-aff-reset-tuple-id (mupa type)
   (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (copy mupa)) type)))
 
+(defun multi-union-pw-aff-get-tuple-name (mupa type)
+  (%isl-multi-union-pw-aff-get-tuple-name (multi-union-pw-aff-handle mupa) type))
+
+(defun multi-union-pw-aff-get-dim-id (mupa type pos)
+  (%make-identifier (%isl-multi-union-pw-aff-get-dim-id (multi-union-pw-aff-handle mupa) type pos)))
+
+(defun multi-union-pw-aff-get-dim-name (mupa type pos)
+  (%isl-id-to-str (identifier-handle (multi-union-pw-aff-get-dim-id mupa type pos))))
+
+(defun pw-aff-get-dim-name (pa type pos)
+  (%isl-pw-aff-get-dim-name (pw-aff-handle pa) type pos))
+
+(defun pw-aff-dim (pa type)
+  (%isl-pw-aff-dim (pw-aff-handle pa) type))
+
 (define-isl-function multi-union-pw-aff-union-add %isl-multi-union-pw-aff-union-add
   (:give multi-union-pw-aff)
   (:take multi-union-pw-aff)

@@ -90,8 +90,8 @@ TODO:
   (let ((path-candidates ;; a list of sequence/set
           (caten/codegen/search/schedule::schedule-gather-sequence/set
            (psi-theta poly))))
-    (print "SequenceDetected")
-    (print path-candidates)
+;    (print "SequenceDetected")
+;    (print path-candidates)
     (setf path-candidates (list (car path-candidates)))
     (list (make-instance 'Fuse :dst nil :src nil :at (car path-candidates)))))
 
