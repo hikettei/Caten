@@ -463,9 +463,6 @@
   (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
 
-(deftest test-flash-attention-from-tensor
-  (caten (scaled-dot-product-attention (make-tensor `(4 8 8)) (make-tensor `(4 8 8)) (make-tensor `(4 8 8)))))
-
 (deftest test-fusion1
   (with-no-grad
     (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))) '(1 0 2 3))))))
@@ -477,6 +474,10 @@
 (deftest test-fusion3
   (with-no-grad
     (caten (caten/nn:!maxpool (caten/nn:!batch-norm (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))))))))
+
+(deftest test-fusion4
+  (caten (scaled-dot-product-attention (make-tensor `(4 8 8)) (make-tensor `(4 8 8)) (make-tensor `(4 8 8)))))
+
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる

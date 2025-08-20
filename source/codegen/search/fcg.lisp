@@ -19,7 +19,6 @@
    #:fcg-attrs))
 
 (in-package :caten/fcg)
-
 ;;; References (kept brief; see original papers):
 ;;; - Uday Bondhugula et al., "A Practical Automatic Polyhedral Parallelizer and Locality Optimizer", PLDI 2008 (PLuTo).
 ;;;   * Fusion legality via dependence (distance >= 0) checks across pairs (S,T).
@@ -61,6 +60,7 @@ ROLE=:domain or :range only matters for map/union-map."
 
 (defstruct fcg
   (clustered-p t)
+  (sccs (make-hash-table) :type hash-table)
   ;; vertices: key => t
   ;;   clustered:   key = (list :scc scc-id dim)
   ;;   unclustered: key = (list :stmt stmt-name dim)
@@ -71,60 +71,6 @@ ROLE=:domain or :range only matters for map/union-map."
   ;; per-vertex attributes (hash): e.g.,
   ;;   (:serial-p t) / (:parallel-p t) / (:reason <list-of-symbols>)
   (attrs    (make-hash-table :test 'equal)))
-
-(defmethod print-object ((g fcg) stream)
-  "Pretty printer for FCG. Shows vertices grouped and edges list."
-  (labels
-      ((collect-edges ()
-         (let ((es '()))
-           (maphash
-            (lambda (k v)
-              ;; 柔軟に展開（key=(src . dst), あるいは key=src -> value=neighbors）
-              (cond
-                ((and (consp k) (= (length k) 2))
-                 (push (list (first k) (second k) v) es))
-                ((or (keywordp k) (listp k))
-                 (cond
-                   ((hash-table-p v)
-                    (maphash (lambda (dst attr) (push (list k dst attr) es)) v))
-                   ((listp v)
-                    (dolist (dst v) (push (list k dst nil) es)))
-                   (t
-                    (when v (push (list k v nil) es)))))
-                (t
-                 ;; fallback: 何もしない
-                 )))
-            (fcg-edges g))
-           (nreverse es)))
-       (vertex->string (v)
-         (etypecase v
-           (list
-            (destructuring-bind (tag a i &rest rest) v
-              (declare (ignore rest))
-              (format nil "~A[~A,~A]" tag a i)))
-           (t (princ-to-string v)))))
-    (print-unreadable-object (g stream :type t :identity t)
-      (format stream "~%  :clustered ~A" (fcg-clustered-p g))
-      (format stream "~%  :vertices (~D)" (hash-table-count (fcg-vertices g)))
-      ;; 頂点ダンプ
-      (format stream "~%  vertices:")
-      (maphash
-       (lambda (v attrs)
-         (format stream "~%    - ~A ~@[~A~]"
-                 (vertex->string v)
-                 (when attrs (format nil " ~S" attrs))))
-       (fcg-vertices g))
-      ;; 辺ダンプ
-      (let ((es (collect-edges)))
-        (format stream "~%  edges (~D):" (length es))
-        (dolist (e es)
-          (destructuring-bind (src dst attr) e
-            (format stream "~%    ~A -> ~A~@[  ~S~]"
-                    (vertex->string src) (vertex->string dst) attr))))
-      ;; 属性
-      (format stream "~%  attrs:")
-      (maphash (lambda (k v) (format stream "~%    ~S => ~S" k v))
-               (fcg-attrs g)))))
   
 (defun %edges-get (ht k)
   (or (gethash k ht)
@@ -183,11 +129,10 @@ When REASON is non-NIL and u=v, append reason to (:reasons ...) attr."
   (let ((pairs (umap->stmt-pairs delta))
         (adj   (make-hash-table :test 'equal)))
     (dolist (p pairs)
-      (push (car p)  (gethash (cdr p) adj))  ;; edge src→dst was stored as (dst . src)
+      (push (car p) (gethash (cdr p) adj))  ;; edge src→dst was stored as (dst . src)
       (gethash (cdr p) adj))
     (maphash (lambda (k v) (setf (gethash k adj) (remove-duplicates v :test #'equal))) adj)
     adj))
-
 
 (defun %ddg-scc (adj)
   "Tarjan SCC. Return (values id-of (list of sccs))."
@@ -226,7 +171,6 @@ When REASON is non-NIL and u=v, append reason to (:reasons ...) attr."
                  (unless (gethash v idx) (strongconnect v)))
                adj))
     (values id-of (nreverse sccs))))
-
 ;;;; ============================================================
 ;;;; Robust legality checks on Δ (no φ construction).
 ;;;;   Per-map computation of indices; guard by tuple-names.
@@ -580,10 +524,10 @@ Typed: also add parallelism-preserving edges (outer-parallel must be kept)."
   • R : read accesses (UMap),
   • W : write accesses (UMap).
 Options:
-  :clustered T ⇒ vertices correspond to (SCC-id,dim);
-              NIL ⇒ vertices correspond to (stmt,dim).
+  :clustered T   ⇒ vertices correspond to (SCC-id,dim);
+             NIL ⇒ vertices correspond to (stmt,dim).
   :typed     T ⇒ add parallelism-preserving (outer-parallel) constraints
-                  as edges/attrs (shift/scale conflicts are handled later).
+                 as edges/attrs (shift/scale conflicts are handled later).
 
 Edges encode:
   - permute-preventing self-edges (cannot be outermost at this stage),
@@ -597,8 +541,10 @@ Edges encode:
     (let* ((domain (schedule-domain schedule))
            (ddg    (%build-ddg deps))
            (g      (make-fcg :clustered-p clustered)))
-      (multiple-value-bind (scc-of sccs)
-          (%ddg-scc ddg)
+      (multiple-value-bind (scc-of sccs) (%ddg-scc ddg)
+        (setf (fcg-sccs g)
+              (alexandria:alist-hash-table
+               (map 'list #'(lambda (a) (cons (cdr a) (car a))) (alexandria:hash-table-alist scc-of))))
         ;; 1) vertices
         (%enumerate-vertices g domain clustered scc-of sccs)
         ;; 2) exclusivity inside same component (SCC or stmt)
@@ -801,17 +747,15 @@ Store into g.attrs: :levels (vector), :level-of (hash v -> level)."
             (setf (gethash :levels  (fcg-attrs g)) vec)
             (setf (gethash :level-of (fcg-attrs g)) level-of)
             (when verbose
-              (format t "~&[color] levels=~D~%" (length vec)))
+              (format t "~&[color] levels=~D~%~a" (length vec) vec))
             vec))))))
 
 (defun %build-delta-from-rw (read-umap write-umap)
   "Build dependence relation Δ = W ∘ R^{-1} as an ISL union-map.
 READ-UMAP, WRITE-UMAP are CATEN/ISL:UNION-MAPs:
   stmt_iters -> memory_subscript_space"
-  ;; NOTE: ライブラリの正確な関数名は環境に合わせて下さい。
-  ;; ここでは慣用的な API 名を仮定しています。
   (let* ((rinv (caten/isl::union-map-reverse read-umap))
-         (delta (caten/isl::union-map-union write-umap rinv)))
+         (delta (caten/isl::union-map-apply-range write-umap rinv)))
     delta))
 
 (defun assign-shifts-and-skews (g domain read-umap write-umap &key (verbose nil))
@@ -875,3 +819,116 @@ Stores :shift-of (v->int), :skew-of (stmt->list of (j :plus i))."
               (hash-table-count shift-of)
               (hash-table-count skew-of)))
     (values shift-of skew-of)))
+
+;;; ---------- helper ----------
+(defun %edge-reasons->list (cell)
+  "Neighbor cell -> list of reason symbols (stable, sorted by name)."
+  (cond
+    ((hash-table-p cell)
+     (let (acc) (maphash (lambda (k _v) (push k acc)) cell)
+          (sort (remove-duplicates acc :test #'eq) #'string< :key #'symbol-name)))
+    ((eq cell t) '(:unspecified))   ; 旧形式の t を読めるように後方互換
+    ((null cell) nil)
+    ((listp cell) cell)
+    (t (list cell))))
+
+(defun %reason-cell-push (cell reason)
+  "Return a reason-set cell with REASON included."
+  (let ((rs (or cell (make-hash-table :test 'eq))))
+    (when reason (setf (gethash reason rs) t))
+    rs))
+
+;;; ---------- add edge (理由を保持) ----------
+(defun fcg-add-edge (g u v &key (reason nil))
+  "Add an undirected conflict edge {u,v}. If u=v, record a self-edge with reasons.
+REASON is a symbol like :fuse-preventing, :parallelism-preventing, etc."
+  (if (equal u v)
+      ;; self-edge: neighbors[:self] に理由集合を積む
+      (let* ((ne (%edges-get (fcg-edges g) u))
+             (cell (gethash :self ne)))
+        (setf (gethash :self ne) (%reason-cell-push cell (or reason :permute-preventing))))
+      ;; undirected edge: 双方向に理由集合を積む
+      (let* ((neu (%edges-get (fcg-edges g) u))
+             (nev (%edges-get (fcg-edges g) v))
+             (cell-uv (gethash v neu))
+             (cell-vu (gethash u nev)))
+        (setf (gethash v neu) (%reason-cell-push cell-uv (or reason :unspecified)))
+        (setf (gethash u nev) (%reason-cell-push cell-vu (or reason :unspecified)))))
+  g)
+
+;;; ---------- self-edge 判定（:self を見る） ----------
+(defun %fcg-self-edge-p (g v)
+  (let ((neighbors (gethash v (fcg-edges g))))
+    (cond
+      ((hash-table-p neighbors) (and (gethash :self neighbors) t))
+      ((listp neighbors)        (member :self neighbors :test #'eq))
+      (t nil))))
+
+;;; ---------- エッジ列挙（:self を (u u …) に展開し理由を返す） ----------
+(defun %fcg-all-edges (g)
+  "Return list of (src dst reasons-list). Self-edges are returned as (v v reasons)."
+  (let ((res '()))
+    (maphash
+     (lambda (src neigh)
+       (when (hash-table-p neigh)
+         ;; self-edge
+         (let ((self (gethash :self neigh)))
+           (when self
+             (push (list src src (%edge-reasons->list self)) res)))
+         ;; others
+         (maphash
+          (lambda (dst cell)
+            (unless (eq dst :self)
+              (push (list src dst (%edge-reasons->list cell)) res)))
+          neigh)))
+     (fcg-edges g))
+    (nreverse res)))
+
+;;; ---------- 近隣集合（自己辺は無視して無向化） ----------
+(defun %fcg-neighbors (g)
+  "Return two hash-tables: out[u] => (set of v), undirected[u] => (set of v)."
+  (flet ((add (ht a b)
+           (let ((s (or (gethash a ht) (make-hash-table :test 'equal))))
+             (setf (gethash b s) t)
+             (setf (gethash a ht) s))))
+    (let ((out (make-hash-table :test 'equal))
+          (und (make-hash-table :test 'equal)))
+      (dolist (e (%fcg-all-edges g))
+        (destructuring-bind (u v _reasons) e
+          (unless (equal u v)            ; self-edge は隣接には入れない
+            (add out u v)
+            (add und u v)
+            (add und v u))))
+      (values out und))))
+
+;;; ---------- 表示を理由付きに（print-object のローカル collect-edges 相当を置換） ----------
+(defmethod print-object ((g fcg) stream)
+  (labels
+      ((ref (id)
+         (or (gethash id (fcg-sccs g)) "?"))
+       (vertex->string (v)
+         (etypecase v
+           (list
+            (destructuring-bind (tag a i &rest _) v
+              (format nil "~A[~A,~A]" tag (ref a) i)))
+           (t (princ-to-string v)))))
+    (print-unreadable-object (g stream :type t :identity t)
+      (format stream "~%  :clustered ~A" (fcg-clustered-p g))
+      (format stream "~%  :vertices (~D)" (hash-table-count (fcg-vertices g)))
+      (format stream "~%  vertices:")
+      (maphash
+       (lambda (v attrs)
+         (format stream "~%    - ~A ~@[~A~]"
+                 (vertex->string v)
+                 (when attrs (format nil " ~S" attrs))))
+       (fcg-vertices g))
+      (let ((es (%fcg-all-edges g)))
+        (format stream "~%  edges (~D):" (length es))
+        (dolist (e es)
+          (destructuring-bind (src dst reasons) e
+            (format stream "~%    ~A -> ~A~@[  ~S~]"
+                    (vertex->string src) (vertex->string dst)
+                    (and reasons reasons)))))
+      (format stream "~%  attrs:")
+      (maphash (lambda (k v) (format stream "~%    ~S => ~S" k v))
+               (fcg-attrs g)))))

@@ -198,7 +198,7 @@ BEAM Search Workflow:
       ;; STEP1. Pool側のacc=-INFをどうやってFuseするかを考える。
       ;; STEP2. Pool側もDAG
       ;; STEP3. Sequence DAG Sorting?
-;;      (sgt-prepare-for-sketch-generation gen0)
+      (sgt-prepare-for-sketch-generation gen0)
       ;; recollapse = tile?
       (print (sgt-items gen0))
       (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
@@ -208,13 +208,15 @@ BEAM Search Workflow:
             (r (psi-read-union-map (car (sgt-items gen0))))
             (w (psi-write-union-map (car (sgt-items gen0))))
             (d (psi-domain (car (sgt-items gen0)))))
-        (let* ((g (caten/fcg:build-fcg sched r w :clustered t :typed t))
-               (levels (caten/fcg:color-fcg g :clustered t :verbose t)))
+        (let* ((g (caten/fcg:build-fcg sched r w :clustered t :typed t)))
           (print g)
-          (print "LEVELS")
-          (print levels)
-          (caten/fcg:assign-shifts-and-skews g d r w :verbose t)
-          (format t "~&~A~%" g)))
+          ;; FCGの構築を頑張る
+          ;; 1 vs NでFusionを目指す
+;          (print "LEVELS")
+;          (print levels)
+ ;         (caten/fcg:assign-shifts-and-skews g d r w :verbose t)
+  ;        (format t "~&~A~%" g)
+          ))
       (error "STOP")
       (sgt-apply-transformations gen0 :Fuse)
       ;(sgt-apply-transformations gen0 :Fuse)
