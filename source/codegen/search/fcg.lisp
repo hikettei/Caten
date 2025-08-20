@@ -9,6 +9,8 @@
    #:zero-vector-union-set
    #:umap->stmt-pairs)
   (:export
+   #:assign-shifts-and-skews
+   #:color-fcg
    #:build-fcg
    #:fcg
    #:fcg-clustered-p
@@ -70,6 +72,60 @@ ROLE=:domain or :range only matters for map/union-map."
   ;;   (:serial-p t) / (:parallel-p t) / (:reason <list-of-symbols>)
   (attrs    (make-hash-table :test 'equal)))
 
+(defmethod print-object ((g fcg) stream)
+  "Pretty printer for FCG. Shows vertices grouped and edges list."
+  (labels
+      ((collect-edges ()
+         (let ((es '()))
+           (maphash
+            (lambda (k v)
+              ;; 柔軟に展開（key=(src . dst), あるいは key=src -> value=neighbors）
+              (cond
+                ((and (consp k) (= (length k) 2))
+                 (push (list (first k) (second k) v) es))
+                ((or (keywordp k) (listp k))
+                 (cond
+                   ((hash-table-p v)
+                    (maphash (lambda (dst attr) (push (list k dst attr) es)) v))
+                   ((listp v)
+                    (dolist (dst v) (push (list k dst nil) es)))
+                   (t
+                    (when v (push (list k v nil) es)))))
+                (t
+                 ;; fallback: 何もしない
+                 )))
+            (fcg-edges g))
+           (nreverse es)))
+       (vertex->string (v)
+         (etypecase v
+           (list
+            (destructuring-bind (tag a i &rest rest) v
+              (declare (ignore rest))
+              (format nil "~A[~A,~A]" tag a i)))
+           (t (princ-to-string v)))))
+    (print-unreadable-object (g stream :type t :identity t)
+      (format stream "~%  :clustered ~A" (fcg-clustered-p g))
+      (format stream "~%  :vertices (~D)" (hash-table-count (fcg-vertices g)))
+      ;; 頂点ダンプ
+      (format stream "~%  vertices:")
+      (maphash
+       (lambda (v attrs)
+         (format stream "~%    - ~A ~@[~A~]"
+                 (vertex->string v)
+                 (when attrs (format nil " ~S" attrs))))
+       (fcg-vertices g))
+      ;; 辺ダンプ
+      (let ((es (collect-edges)))
+        (format stream "~%  edges (~D):" (length es))
+        (dolist (e es)
+          (destructuring-bind (src dst attr) e
+            (format stream "~%    ~A -> ~A~@[  ~S~]"
+                    (vertex->string src) (vertex->string dst) attr))))
+      ;; 属性
+      (format stream "~%  attrs:")
+      (maphash (lambda (k v) (format stream "~%    ~S => ~S" k v))
+               (fcg-attrs g)))))
+  
 (defun %edges-get (ht k)
   (or (gethash k ht)
       (setf (gethash k ht) (make-hash-table :test 'equal))))
@@ -559,21 +615,263 @@ Edges encode:
 ;;;; (Optional) Greedy convex coloring utilities
 ;;;;   — kept minimal; FCG itself is the primary artifact.
 ;;;; ============================================================
-(defun %has-self-edge-p (g v)
-  (let ((nb (gethash v (fcg-edges g))))
-    (and nb (gethash :self nb))))
+(defun %fcg-all-edges (g)
+  "Return list of (src dst attr). See print-object for tolerant expansion."
+  (let ((res '()))
+    (maphash
+     (lambda (k v)
+       (cond
+         ((and (consp k) (= (length k) 2))
+          (push (list (first k) (second k) v) res))
+         ((or (keywordp k) (listp k))
+          (cond
+            ((hash-table-p v)
+             (maphash (lambda (dst attr) (push (list k dst attr) res)) v))
+            ((listp v)
+             (dolist (dst v) (push (list k dst nil) res)))
+            (t (when v (push (list k v nil) res)))))
+         (t)))
+     (fcg-edges g))
+    (nreverse res)))
 
-(defun %conflicts-with-set-p (g v chosen)
-  "Conflict if v has a self-edge, or an edge to any u in CHOSEN."
-  (or (%has-self-edge-p g v)
-      (some (lambda (u)
-              (let ((nu (gethash u (fcg-edges g)))
-                    (nv (gethash v (fcg-edges g))))
-                (or (and nu (gethash v nu))
-                    (and nv (gethash u nv)))))
-            chosen)))
+(defun %fcg-neighbors (g)
+  "Return two hash-tables:
+   out[u] => (set of v), undirected[u] => (set of v)."
+  (flet ((add (ht a b)
+           (let ((s (or (gethash a ht) (make-hash-table :test 'equal))))
+             (setf (gethash b s) t)
+             (setf (gethash a ht) s))))
+    (let ((out (make-hash-table :test 'equal))
+          (und (make-hash-table :test 'equal)))
+      (dolist (e (%fcg-all-edges g))
+        (destructuring-bind (u v _attr) e
+          (declare (ignore _attr))
+          (add out u v)
+          (add und u v)
+          (add und v u)))
+      (values out und))))
 
-;; Note: A full-fledged reconstruction across levels (removing satisfied
-;; deps and rebuilding the FCG) belongs to the scheduling phase. Here we
-;; keep a minimal greedy coloring helper for clients that want a quick
-;; convex partition on the constructed FCG itself.
+(defun %fcg-self-edge-p (g v)
+  (let ((edges (fcg-edges g)))
+    (or (gethash (list v v) edges)
+        (let ((val (gethash v edges)))
+          (cond
+            ((hash-table-p val) (gethash v val))
+            ((listp val) (member v val :test #'equal))
+            (t nil))))))
+
+(defun %vertex-scc-id (v)
+  (and (consp v) (eql (first v) :scc) (second v)))
+
+(defun %vertex-dim (v)
+  (and (listp v) (third v)))
+
+(defun %vertex-stmt (v)
+  (and (consp v) (eql (first v) :stmt) (second v)))
+
+(defun %topo-order-groups (edges group-of)
+  "groups: set of group-ids found via (group-of v).
+   edges : list of (u v _). Build DAG on groups and topo-sort.
+   If cyclic (shouldn't), fall back to numeric/name order."
+  (let ((nodes (make-hash-table :test 'equal))
+        (adj   (make-hash-table :test 'equal))
+        (indeg (make-hash-table :test 'equal)))
+    (labels ((add-node (g)
+               (unless (gethash g nodes)
+                 (setf (gethash g nodes) t)
+                 (setf (gethash g indeg) 0)))
+             (add-edge (a b)
+               (when (and a b (not (equal a b)))
+                 (let ((s (or (gethash a adj)
+                              (make-hash-table :test 'equal))))
+                   (unless (gethash b s)
+                     (setf (gethash b s) t)
+                     (incf (gethash b indeg 0)))
+                   (setf (gethash a adj) s)))))
+      ;; build
+      (dolist (e edges)
+        (destructuring-bind (u v _attr) e
+          (declare (ignore _attr))
+          (let ((gu (funcall group-of u))
+                (gv (funcall group-of v)))
+            (add-node gu) (add-node gv)
+            (add-edge gu gv))))
+      ;; Kahn topo
+      (let ((q '())
+            (res '()))
+        (maphash (lambda (g _)
+                   (when (zerop (gethash g indeg 0))
+                     (push g q)))
+                 nodes)
+        (loop while q do
+          (let ((x (pop q)))
+            (push x res)
+            (let ((s (gethash x adj)))
+              (when s
+                (maphash (lambda (y _)
+                           (declare (ignore _))
+                           (decf (gethash y indeg))
+                           (when (zerop (gethash y indeg)) (push y q)))
+                         s)))))
+        (let ((n (hash-table-count nodes)))
+          (if (= (length res) n)
+              (nreverse res)
+              ;; fallback: 行儀よく並べる
+              (let (all)
+                (maphash (lambda (k _) (push k all)) nodes)
+                (sort all #'string< :key #'princ-to-string))))))))
+
+;;; --- main: greedy coloring -------------------------------------------------
+(defun color-fcg (g &key (clustered (fcg-clustered-p g)) (verbose nil))
+  "Assign loop levels as a sequence of convex independent sets.
+Store into g.attrs: :levels (vector), :level-of (hash v -> level)."
+  (multiple-value-bind (out und) (%fcg-neighbors g)
+    (declare (ignore out))
+    (let ((vs '()))
+      (maphash (lambda (v _attrs) (push v vs)) (fcg-vertices g))
+      (setf vs (nreverse vs))
+      (let ((levels '())
+            (level-of (make-hash-table :test 'equal)))
+        (labels
+            ((conflict-p (a b)
+               (let ((s (gethash a und)))
+                 (and s (gethash b s))))
+             (degree (v)
+               (hash-table-count (or (gethash v und)
+                                     (make-hash-table :test 'equal))))
+             (greedy-mis (candidates)
+               ;; 次数昇順の貪欲最大独立集合近似
+               (let ((queue (stable-sort (copy-list candidates) #'< :key #'degree))
+                     (picked '()))
+                 (dolist (v queue)
+                   (unless (some (lambda (u) (conflict-p u v)) picked)
+                     (push v picked)))
+                 (nreverse picked)))
+             (uncolored ()
+               (remove-if (lambda (v) (gethash v level-of)) vs))
+             (by-scc (xs)
+               (let ((m (make-hash-table :test 'equal)))
+                 (dolist (v xs)
+                   (let ((id (%vertex-scc-id v)))
+                     (push v (gethash id m))))
+                 m))
+             (by-stmt (xs)
+               (let ((m (make-hash-table :test 'equal)))
+                 (dolist (v xs)
+                   (let ((nm (%vertex-stmt v)))
+                     (push v (gethash nm m))))
+                 m)))
+          (loop
+            with l = 0
+            for first = t then nil
+            while (uncolored) do
+              (let ((Lv '()))
+                (if clustered
+                    ;; --- clustered: SCC トポ順で貪欲 ---
+                    (let* ((es    (%fcg-all-edges g))
+                           (order (%topo-order-groups es #'%vertex-scc-id))
+                           (bucket (by-scc (uncolored))))
+                      (dolist (gid order)
+                        (let* ((cand  (nreverse (gethash gid bucket)))
+                               (cand* (if first
+                                          (remove-if (lambda (v) (%fcg-self-edge-p g v)) cand)
+                                          cand)))
+                          (when cand*
+                            (setf Lv (nconc Lv (greedy-mis cand*)))))))
+                    ;; --- non-clustered: 文トポ順で貪欲 ---
+                    (let* ((es    (%fcg-all-edges g))
+                           (order (%topo-order-groups es #'%vertex-stmt))
+                           (bucket (by-stmt (uncolored))))
+                      (dolist (nm order)
+                        (let ((cand (nreverse (gethash nm bucket))))
+                          (when cand
+                            (setf Lv (nconc Lv (greedy-mis cand))))))))
+                ;; 停滞回避（レベル0自己辺禁止で詰まる等）
+                (when (null Lv)
+                  (let* ((cand (uncolored))
+                         (picked (if cand (greedy-mis cand) '())))
+                    (setf Lv picked)))
+                ;; レベル確定
+                (dolist (v Lv) (setf (gethash v level-of) l))
+                (push Lv levels)
+                (incf l)))
+          ;; 保存
+          (let* ((levels* (nreverse levels))
+                 (vec     (coerce levels* 'vector)))
+            (setf (gethash :levels  (fcg-attrs g)) vec)
+            (setf (gethash :level-of (fcg-attrs g)) level-of)
+            (when verbose
+              (format t "~&[color] levels=~D~%" (length vec)))
+            vec))))))
+
+(defun %build-delta-from-rw (read-umap write-umap)
+  "Build dependence relation Δ = W ∘ R^{-1} as an ISL union-map.
+READ-UMAP, WRITE-UMAP are CATEN/ISL:UNION-MAPs:
+  stmt_iters -> memory_subscript_space"
+  ;; NOTE: ライブラリの正確な関数名は環境に合わせて下さい。
+  ;; ここでは慣用的な API 名を仮定しています。
+  (let* ((rinv (caten/isl::union-map-reverse read-umap))
+         (delta (caten/isl::union-map-union write-umap rinv)))
+    delta))
+
+(defun assign-shifts-and-skews (g domain read-umap write-umap &key (verbose nil))
+  "Given colored FCG, assign per-vertex shifts and per-statement simple skew.
+Stores :shift-of (v->int), :skew-of (stmt->list of (j :plus i))."
+  (declare (ignore domain))
+  (let* ((levels   (gethash :levels  (fcg-attrs g)))
+         (level-of (gethash :level-of (fcg-attrs g)))
+         (shift-of (make-hash-table :test 'equal))
+         (skew-of  (make-hash-table :test 'equal))
+         (delta (%build-delta-from-rw read-umap write-umap)))
+    (labels
+        ((level-vertices (l) (aref levels l))
+         (vertex< (a b) (string< (princ-to-string a) (princ-to-string b)))
+         (stmt&dim (v)
+           (etypecase v
+             (list
+              (destructuring-bind (tag a i &rest rest) v
+                (declare (ignore rest))
+                (ecase tag
+                  (:stmt (values a i))
+                  (:scc  (values (format nil "@scc-~A" a) i)))))))
+         (negative-self-dep? (stmt i j)
+           ;; Δ(S,i -> S,j) に負距離が存在？
+           (let ((sname (if (stringp stmt) stmt (princ-to-string stmt))))
+             (%map-any-violates?/pair delta sname i sname j :violate-kind :lt))))
+      ;; (1) per-level shifts（独立集合なのでデフォルト 0）
+      (dotimes (l (length levels))
+        (let ((Lv (stable-sort (copy-list (level-vertices l)) #'vertex<)))
+          (dolist (v Lv)
+            (setf (gethash v shift-of) 0))))
+      ;; (2) simple skew per statement: j := j + i
+      (let ((by-stmt (make-hash-table :test 'equal)))
+        ;; 頂点→文ごとにグルーピング
+        (maphash
+         (lambda (v _)
+           (multiple-value-bind (s i) (stmt&dim v)
+             (push (list v s i (gethash v level-of))
+                   (gethash s by-stmt))))
+         (fcg-vertices g))
+        ;; 各文で (外側i, 内側j) をチェック
+        (maphash
+         (lambda (s items)
+           (let ((sorted (sort items #'< :key #'fourth)))
+             (dolist (a sorted)
+               (destructuring-bind (_va _sa ia la) a
+                 (declare (ignore _va _sa))
+                 (dolist (b sorted)
+                   (when (> (fourth b) la)
+                     (destructuring-bind (_vb _sb jb lb) b
+                       (declare (ignore _vb _sb lb))
+                       (when (negative-self-dep? s ia jb)
+                         (push (list jb :plus ia)
+                               (gethash s skew-of))))))))))
+         by-stmt)))
+    ;; 保存
+    (setf (gethash :shift-of (fcg-attrs g)) shift-of)
+    (setf (gethash :skew-of  (fcg-attrs g)) skew-of)
+    (when verbose
+      (format t "~&[shift/skew] shifts=~D, skews=~D~%"
+              (hash-table-count shift-of)
+              (hash-table-count skew-of)))
+    (values shift-of skew-of)))
