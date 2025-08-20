@@ -19,6 +19,134 @@
    #:fcg-attrs))
 
 (in-package :caten/fcg)
+
+(defstruct fcg
+  (sccs (make-hash-table) :type hash-table) ;; scc-id -> scc
+  ;; vertices: key => t
+  (vertices (make-hash-table :test 'equal))
+  (colours (make-hash-table))) ;; key => value where (list color-id x\mathinvertices)
+
+(defmethod print-object ((g fcg) stream)
+  (labels ((ref (id) (or (gethash id (fcg-sccs g)) "<UNKNOWN>"))
+           (vertex->string (v)
+             (etypecase v
+               (list
+                (destructuring-bind (tag a i) v
+                  (format nil "<(~a) : [~A] -> [grid(~A)]>" tag (ref a) i)))
+               (t (princ-to-string v)))))
+    (print-unreadable-object (g stream :type t :identity t)
+      (format stream "~%  vertices:")
+      (maphash
+       #'(lambda (v attrs)
+         (format stream "~%    - ~A ~@[~A~]"
+                 (vertex->string v)
+                 (when attrs (format nil " ~S" attrs))))
+       (fcg-vertices g)))))
+
+(defun fcg-add-vertex (g key) (setf (gethash key (fcg-vertices g)) t))
+;; ~~ ISL Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun %build-ddg (delta)
+  "DDG adjacency: stmt -> (unique list of successors)."
+  (let ((pairs (umap->stmt-pairs delta))
+        (adj   (make-hash-table :test 'equal)))
+    (dolist (p pairs) (push (car p) (gethash (cdr p) adj)))  ;; edge src→dst was stored as (dst . src)
+    (maphash #'(lambda (k v) (setf (gethash k adj) (remove-duplicates v :test #'equal))) adj)
+    adj))
+
+(defun %ddg-scc (adj)
+  "Tarjan SCC. Return (values id-of (list of sccs))."
+  (let ((index 0) (stack '()) (onstack (make-hash-table :test 'equal))
+        (idx (make-hash-table :test 'equal))
+        (low (make-hash-table :test 'equal))
+        (id-of (make-hash-table :test 'equal))
+        (sccs '()))
+    (labels
+        ((strongconnect (v)
+           (setf (gethash v idx) index
+                 (gethash v low) index)
+           (incf index)
+           (push v stack)
+           (setf (gethash v onstack) t)
+           (dolist (w (gethash v adj))
+             (cond
+               ((not (gethash w idx))
+                (strongconnect w)
+                (setf (gethash v low) (min (gethash v low) (gethash w low))))
+               ((gethash w onstack)
+                (setf (gethash v low) (min (gethash v low) (gethash w idx))))))
+           (when (= (gethash v low) (gethash v idx))
+             (let ((comp '()))
+               (block pop-loop
+                 (loop for w = (pop stack) do
+                   (setf (gethash w onstack) nil)
+                   (push w comp)
+                   (when (equal w v)
+                     (return-from pop-loop nil))))
+               (let ((cid (length sccs)))
+                 (dolist (x comp) (setf (gethash x id-of) cid))
+                 (push (nreverse comp) sccs))))))
+      (maphash #'(lambda (v _succs)
+                 (declare (ignore _succs))
+                 (unless (gethash v idx) (strongconnect v)))
+               adj))
+    (values id-of (nreverse sccs))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun stmt-get-dim (stmt domain)
+  (isl::set-dim (isl::set-list-get-at (isl::union-set-get-set-list (%uset-of-stmt domain stmt)) 0) :dim-set))
+
+(defun %enumerate-vertices (g domain sccs)
+  "Initialize vertices in g"
+  (declare (type FCG g) (type isl::union-set domain) (type list sccs))
+  (loop for stmts in sccs for cid upfrom 0
+        for mr = (reduce #'max (map 'list #'(lambda (nm) (stmt-get-dim nm domain)) stmts) :initial-value 0) do
+          (dotimes (d mr) (fcg-add-vertex g (list :scc cid d)))))
+
+(defmethod fcg-polyhedron-on-dims ((fcg fcg) dom-id dims)
+  ;; cached
+  )
+
+(defun build-fcg (schedule domain read-umap write-umap)
+  "Construct the extended Fusion Conflict Graph F from:
+- Schedule[ISL:Schedule]
+- Domain[ISL:UnionSet]
+- ReadUmap[ISL:UnionMap]
+- WriteUmap[ISL:UnionMap]
+
+Caten's fusion conflict graph is extended to 1 vs N edges to handle coalesce.
+
+Edges encode:
+  - permute-preventing self-edges (cannot be outermost at this stage),
+  - fuse-preventing edges across components,
+  - parallelism-preventing (typed) edges,
+  - nonreachability edges between mutually-unreachable components,
+  - exclusivity edges within the same component (two dims never same color)."
+  (declare (type isl::schedule schedule) (type isl::union-set domain)
+           (type isl::union-map read-umap write-umap))
+  (multiple-value-bind (deps _raw _waw _war) (compute-dependence-relation read-umap write-umap schedule)
+    (declare (ignore _raw _waw _war))
+    (let* ((ddg    (%build-ddg deps))
+           (g      (make-fcg)))
+      (multiple-value-bind (scc-of sccs) (%ddg-scc ddg)
+        (setf (fcg-sccs g)
+              (alexandria:alist-hash-table
+               (map 'list #'(lambda (a) (cons (cdr a) (car a))) (alexandria:hash-table-alist scc-of))))
+        ;; Approachは同じで，同じ多面体を描画するBandの集合をColoringして，同じLevelに配置したい。
+        ;; あまりが出たらModでSeparateする？
+        ;; 1) vertices
+        (%enumerate-vertices g domain sccs)
+        ;; 2) exclusivity inside same component (SCC or stmt)
+        ;; (%add-intra-exclusive-edges g domain sccs) ??
+        ;; 3) edges due to nonreachability in DDG
+        ;; (%add-nonreachability-edges g ddg domain :clustered clustered :sccs sccs)
+        ;; 4) self permute-preventing (+ typed serial mark)
+        ;; (%add-self-edges g deps domain :clustered clustered :sccs sccs :typed typed)
+        ;; 5) inter-component fuse/permute (+ typed parallelism-preserving)
+        ;; (%add-pair-edges g deps domain :clustered clustered :sccs sccs :typed typed)
+        (print g)))))
+
+
+
+;;; ~~~~~~ OLD IMPL ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; References (kept brief; see original papers):
 ;;; - Uday Bondhugula et al., "A Practical Automatic Polyhedral Parallelizer and Locality Optimizer", PLDI 2008 (PLuTo).
 ;;;   * Fusion legality via dependence (distance >= 0) checks across pairs (S,T).
@@ -58,53 +186,14 @@ ROLE=:domain or :range only matters for map/union-map."
            "")))
     (t "")))
 
-(defstruct fcg
-  (clustered-p t)
-  (sccs (make-hash-table) :type hash-table)
-  ;; vertices: key => t
-  ;;   clustered:   key = (list :scc scc-id dim)
-  ;;   unclustered: key = (list :stmt stmt-name dim)
-  (vertices (make-hash-table :test 'equal))
-  ;; edges: key => hash-set of neighbors (undirected)
-  ;;        self-edge is recorded as key :self in neighbor set
-  (edges    (make-hash-table :test 'equal))
-  ;; per-vertex attributes (hash): e.g.,
-  ;;   (:serial-p t) / (:parallel-p t) / (:reason <list-of-symbols>)
-  (attrs    (make-hash-table :test 'equal)))
-  
-(defun %edges-get (ht k)
-  (or (gethash k ht)
-      (setf (gethash k ht) (make-hash-table :test 'equal))))
-
-(defun fcg-add-vertex (g key)
-  (setf (gethash key (fcg-vertices g)) t))
-
 (defun fcg-attr-push (g key kw val)
   (let ((a (or (gethash key (fcg-attrs g))
                (setf (gethash key (fcg-attrs g)) (make-hash-table :test 'equal)))))
     (setf (gethash kw a) val)))
 
-(defun fcg-add-edge (g u v &key (reason nil))
-  "Add an undirected conflict edge {u,v}. If u=v, record a self-edge.
-When REASON is non-NIL and u=v, append reason to (:reasons ...) attr."
-  (when (equal u v)
-    ;; self-edge prevents coloring this vertex at the current level
-    (setf (gethash :self (%edges-get (fcg-edges g) u)) t)
-    (when reason
-      (let ((ah (%edges-get (fcg-attrs g) u)))
-        (push reason (gethash :reasons ah)))))
-  (unless (equal u v)
-    (setf (gethash v (%edges-get (fcg-edges g) u)) t)
-    (setf (gethash u (%edges-get (fcg-edges g) v)) t))
-  g)
-
 ;;;; ============================================================
 ;;;; Basic graph/ISL helpers
 ;;;; ============================================================
-
-(defun schedule-domain (schedule)
-  "Dom(Schedule) as isl::union-set."
-  (union-map-domain (schedule-get-map schedule)))
 
 (defun %uset-of-stmt (domain stmt-name)
   "Return union-set component for a single statement tuple-name."
@@ -123,54 +212,6 @@ When REASON is non-NIL and u=v, append reason to (:reasons ...) attr."
   "Return Δ ∩ (uset-src × uset-dst)."
   (let* ((d1 (union-map-intersect-domain (copy delta) (copy uset-src))))
     (union-map-intersect-range d1 (copy uset-dst))))
-
-(defun %build-ddg (delta)
-  "DDG adjacency: stmt -> (unique list of successors)."
-  (let ((pairs (umap->stmt-pairs delta))
-        (adj   (make-hash-table :test 'equal)))
-    (dolist (p pairs)
-      (push (car p) (gethash (cdr p) adj))  ;; edge src→dst was stored as (dst . src)
-      (gethash (cdr p) adj))
-    (maphash (lambda (k v) (setf (gethash k adj) (remove-duplicates v :test #'equal))) adj)
-    adj))
-
-(defun %ddg-scc (adj)
-  "Tarjan SCC. Return (values id-of (list of sccs))."
-  (let ((index 0) (stack '()) (onstack (make-hash-table :test 'equal))
-        (idx (make-hash-table :test 'equal))
-        (low (make-hash-table :test 'equal))
-        (id-of (make-hash-table :test 'equal))
-        (sccs '()))
-    (labels
-        ((strongconnect (v)
-           (setf (gethash v idx) index
-                 (gethash v low) index)
-           (incf index)
-           (push v stack)
-           (setf (gethash v onstack) t)
-           (dolist (w (gethash v adj))
-             (cond
-               ((not (gethash w idx))
-                (strongconnect w)
-                (setf (gethash v low) (min (gethash v low) (gethash w low))))
-               ((gethash w onstack)
-                (setf (gethash v low) (min (gethash v low) (gethash w idx))))))
-           (when (= (gethash v low) (gethash v idx))
-             (let ((comp '()))
-               (block pop-loop
-                 (loop for w = (pop stack) do
-                   (setf (gethash w onstack) nil)
-                   (push w comp)
-                   (when (equal w v)
-                     (return-from pop-loop nil))))
-               (let ((cid (length sccs)))
-                 (dolist (x comp) (setf (gethash x id-of) cid))
-                 (push (nreverse comp) sccs))))))
-      (maphash (lambda (v _succs)
-                 (declare (ignore _succs))
-                 (unless (gethash v idx) (strongconnect v)))
-               adj))
-    (values id-of (nreverse sccs))))
 ;;;; ============================================================
 ;;;; Robust legality checks on Δ (no φ construction).
 ;;;;   Per-map computation of indices; guard by tuple-names.
@@ -253,118 +294,9 @@ When REASON is non-NIL and u=v, append reason to (:reasons ...) attr."
 ;;;; ============================================================
 ;;;; Vertex enumeration
 ;;;; ============================================================
-
-(defun %enumerate-vertices (g domain clustered scc-of sccs)
-  (if clustered
-      ;; per-SCC: vertex = (:scc cid dim), dim ∈ [0 .. max-rank(SCC)-1]
-      (loop for cid from 0 below (length sccs) do
-            (let* ((stmts (nth cid sccs))
-                   (mr (reduce #'max
-                               (mapcar (lambda (nm)
-                                         (isl::set-dim
-                                          (isl::set-list-get-at
-                                           (isl::union-set-get-set-list (%uset-of-stmt domain nm)) 0)
-                                          :dim-set))
-                                       stmts)
-                               :initial-value 0)))
-              (dotimes (d mr) (fcg-add-vertex g (list :scc cid d)))))
-      ;; per-statement
-      (dolist (pr (%stmt->rank domain))
-        (dotimes (d (cdr pr))
-          (fcg-add-vertex g (list :stmt (car pr) d)))))
-  g)
-
 ;;;; ============================================================
 ;;;; Edge construction
 ;;;; ============================================================
-
-(defun %add-intra-exclusive-edges (g domain &key (clustered t) sccs)
-  "Add exclusivity edges inside the same SCC (or same statement) so that
-two distinct dimensions of the same component cannot share a color:
-∀ i≠j in a component C, add edge (C,i)-(C,j)."
-  (if clustered
-      (dotimes (cid (length sccs))
-        (let* ((stmts (nth cid sccs))
-               (mr (reduce #'max
-                           (mapcar (lambda (nm)
-                                     (isl::set-dim
-                                      (isl::set-list-get-at
-                                       (isl::union-set-get-set-list (%uset-of-stmt domain nm)) 0)
-                                      :dim-set))
-                                   stmts)
-                           :initial-value 0)))
-          (dotimes (i mr)
-            (dotimes (j mr)
-              (when (< i j)
-                (fcg-add-edge g (list :scc cid i) (list :scc cid j) :reason :same-component)))))) 
-      ;; unclustered: per statement
-      (dolist (pr (%stmt->rank domain))
-        (let ((nm (car pr)) (rk (cdr pr)))
-          (dotimes (i rk)
-            (dotimes (j rk)
-              (when (< i j)
-                (fcg-add-edge g (list :stmt nm i) (list :stmt nm j) :reason :same-statement))))))))
-
-(defun %add-nonreachability-edges (g adj domain &key (clustered t) sccs)
-  "If two components are mutually unreachable in the DDG, they should not be fused:
-add full bipartite edges across all their dimensions."
-  (labels ((reach? (src dst)
-             (let ((found nil)
-                   (seen (make-hash-table :test 'equal)))
-               (labels ((dfs (v)
-                          (when found (return-from dfs))
-                          (when (equal v dst) (setf found t) (return-from dfs))
-                          (unless (gethash v seen)
-                            (setf (gethash v seen) t)
-                            (dolist (w (gethash v adj)) (dfs w)))))
-                 (dfs src))
-               found)))
-    (if clustered
-        (let ((n (length sccs)))
-          (dotimes (a n)
-            (dotimes (b n)
-              (when (/= a b)
-                (let* ((Sa (nth a sccs))
-                       (Sb (nth b sccs))
-                       (ab (some (lambda (x) (some (lambda (y) (reach? x y)) Sb)) Sa))
-                       (ba (some (lambda (x) (some (lambda (y) (reach? x y)) Sa)) Sb)))
-                  (when (and (not ab) (not ba))
-                    (let* ((ra (reduce #'max
-                                       (mapcar (lambda (nm)
-                                                 (isl::set-dim
-                                                  (isl::set-list-get-at
-                                                   (isl::union-set-get-set-list (%uset-of-stmt domain nm)) 0)
-                                                  :dim-set))
-                                               Sa)
-                                       :initial-value 0))
-                           (rb (reduce #'max
-                                       (mapcar (lambda (nm)
-                                                 (isl::set-dim
-                                                  (isl::set-list-get-at
-                                                   (isl::union-set-get-set-list (%uset-of-stmt domain nm)) 0)
-                                                  :dim-set))
-                                               Sb)
-                                       :initial-value 0)))
-                      (dotimes (i ra)
-                        (dotimes (j rb)
-                          (fcg-add-edge g (list :scc a i) (list :scc b j) :reason :nonreachable))))))))))
-        ;; unclustered
-        (let ((stmts (union-set-get-statements domain)))
-          (dolist (sa stmts)
-            (dolist (sb stmts)
-              (when (and (not (string= sa sb))
-                         (not (reach? sa sb))
-                         (not (reach? sb sa)))
-                (let* ((ra (isl::set-dim (isl::set-list-get-at
-                                          (isl::union-set-get-set-list (%uset-of-stmt domain sa)) 0)
-                                         :dim-set))
-                       (rb (isl::set-dim (isl::set-list-get-at
-                                          (isl::union-set-get-set-list (%uset-of-stmt domain sb)) 0)
-                                         :dim-set)))
-                  (dotimes (i ra)
-                    (dotimes (j rb)
-                      (fcg-add-edge g (list :stmt sa i) (list :stmt sb j) :reason :nonreachable)))))))))))
-
 (defun %add-self-edges (g delta domain &key (clustered t) sccs typed)
   "Add self permute-preventing edges for every dimension that cannot be
 moved to the outer level without violating Δ. If TYPED, also mark :serial-p
@@ -517,46 +449,6 @@ Typed: also add parallelism-preserving edges (outer-parallel must be kept)."
 ;;;; ============================================================
 ;;;; Top-level FCG builder
 ;;;; ============================================================
-
-(defun build-fcg (schedule read-umap write-umap &key (clustered t) (typed nil))
-  "Construct the Fusion Conflict Graph F from:
-  • S : schedule,
-  • R : read accesses (UMap),
-  • W : write accesses (UMap).
-Options:
-  :clustered T   ⇒ vertices correspond to (SCC-id,dim);
-             NIL ⇒ vertices correspond to (stmt,dim).
-  :typed     T ⇒ add parallelism-preserving (outer-parallel) constraints
-                 as edges/attrs (shift/scale conflicts are handled later).
-
-Edges encode:
-  - permute-preventing self-edges (cannot be outermost at this stage),
-  - fuse-preventing edges across components,
-  - parallelism-preventing (typed) edges,
-  - nonreachability edges between mutually-unreachable components,
-  - exclusivity edges within the same component (two dims never same color)."
-  (multiple-value-bind (deps _raw _waw _war)
-      (compute-dependence-relation read-umap write-umap schedule)
-    (declare (ignore _raw _waw _war))
-    (let* ((domain (schedule-domain schedule))
-           (ddg    (%build-ddg deps))
-           (g      (make-fcg :clustered-p clustered)))
-      (multiple-value-bind (scc-of sccs) (%ddg-scc ddg)
-        (setf (fcg-sccs g)
-              (alexandria:alist-hash-table
-               (map 'list #'(lambda (a) (cons (cdr a) (car a))) (alexandria:hash-table-alist scc-of))))
-        ;; 1) vertices
-        (%enumerate-vertices g domain clustered scc-of sccs)
-        ;; 2) exclusivity inside same component (SCC or stmt)
-        (%add-intra-exclusive-edges g domain :clustered clustered :sccs sccs)
-        ;; 3) edges due to nonreachability in DDG
-        (%add-nonreachability-edges g ddg domain :clustered clustered :sccs sccs)
-        ;; 4) self permute-preventing (+ typed serial mark)
-        (%add-self-edges g deps domain :clustered clustered :sccs sccs :typed typed)
-        ;; 5) inter-component fuse/permute (+ typed parallelism-preserving)
-        (%add-pair-edges g deps domain :clustered clustered :sccs sccs :typed typed)
-        g))))
-
 ;;;; ============================================================
 ;;;; (Optional) Greedy convex coloring utilities
 ;;;;   — kept minimal; FCG itself is the primary artifact.
@@ -821,16 +713,7 @@ Stores :shift-of (v->int), :skew-of (stmt->list of (j :plus i))."
     (values shift-of skew-of)))
 
 ;;; ---------- helper ----------
-(defun %edge-reasons->list (cell)
-  "Neighbor cell -> list of reason symbols (stable, sorted by name)."
-  (cond
-    ((hash-table-p cell)
-     (let (acc) (maphash (lambda (k _v) (push k acc)) cell)
-          (sort (remove-duplicates acc :test #'eq) #'string< :key #'symbol-name)))
-    ((eq cell t) '(:unspecified))   ; 旧形式の t を読めるように後方互換
-    ((null cell) nil)
-    ((listp cell) cell)
-    (t (list cell))))
+
 
 (defun %reason-cell-push (cell reason)
   "Return a reason-set cell with REASON included."
@@ -865,25 +748,6 @@ REASON is a symbol like :fuse-preventing, :parallelism-preventing, etc."
       (t nil))))
 
 ;;; ---------- エッジ列挙（:self を (u u …) に展開し理由を返す） ----------
-(defun %fcg-all-edges (g)
-  "Return list of (src dst reasons-list). Self-edges are returned as (v v reasons)."
-  (let ((res '()))
-    (maphash
-     (lambda (src neigh)
-       (when (hash-table-p neigh)
-         ;; self-edge
-         (let ((self (gethash :self neigh)))
-           (when self
-             (push (list src src (%edge-reasons->list self)) res)))
-         ;; others
-         (maphash
-          (lambda (dst cell)
-            (unless (eq dst :self)
-              (push (list src dst (%edge-reasons->list cell)) res)))
-          neigh)))
-     (fcg-edges g))
-    (nreverse res)))
-
 ;;; ---------- 近隣集合（自己辺は無視して無向化） ----------
 (defun %fcg-neighbors (g)
   "Return two hash-tables: out[u] => (set of v), undirected[u] => (set of v)."
@@ -902,33 +766,3 @@ REASON is a symbol like :fuse-preventing, :parallelism-preventing, etc."
       (values out und))))
 
 ;;; ---------- 表示を理由付きに（print-object のローカル collect-edges 相当を置換） ----------
-(defmethod print-object ((g fcg) stream)
-  (labels
-      ((ref (id)
-         (or (gethash id (fcg-sccs g)) "?"))
-       (vertex->string (v)
-         (etypecase v
-           (list
-            (destructuring-bind (tag a i &rest _) v
-              (format nil "~A[~A,~A]" tag (ref a) i)))
-           (t (princ-to-string v)))))
-    (print-unreadable-object (g stream :type t :identity t)
-      (format stream "~%  :clustered ~A" (fcg-clustered-p g))
-      (format stream "~%  :vertices (~D)" (hash-table-count (fcg-vertices g)))
-      (format stream "~%  vertices:")
-      (maphash
-       (lambda (v attrs)
-         (format stream "~%    - ~A ~@[~A~]"
-                 (vertex->string v)
-                 (when attrs (format nil " ~S" attrs))))
-       (fcg-vertices g))
-      (let ((es (%fcg-all-edges g)))
-        (format stream "~%  edges (~D):" (length es))
-        (dolist (e es)
-          (destructuring-bind (src dst reasons) e
-            (format stream "~%    ~A -> ~A~@[  ~S~]"
-                    (vertex->string src) (vertex->string dst)
-                    (and reasons reasons)))))
-      (format stream "~%  attrs:")
-      (maphash (lambda (k v) (format stream "~%    ~S => ~S" k v))
-               (fcg-attrs g)))))
