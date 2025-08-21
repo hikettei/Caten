@@ -31,7 +31,8 @@
    #:schedule-node-sequence-check-fusible
    #:schedule-node-sequence-full-fuse
    #:schedule-node-sequence-get-band-sizes
-   #:schedule-node-sequence-align-band-size))
+   #:schedule-node-sequence-align-band-size
+   #:schedule-node-sequence-apply-flash))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -253,16 +254,12 @@ Returns:
 (cffi:defcfun ("isl_set_dim_max_val" %isl-set-dim-max-val) :pointer (x :pointer)  (pos :int))
 (cffi:defcallback extract-domain-maxima-bset-cb :int
     ((bset :pointer) (user :pointer))
-  (let ((set (isl::%isl-set-from-basic-set bset))) ;; __isl_give
+  (let ((set (isl::%isl-set-from-basic-set bset))) ;; todo: check memory leak
     (dotimes (pos (cffi:mem-ref user :int))
       (let ((cpy (isl::%isl-set-copy set))
             (dname (isl::%isl-basic-set-get-dim-name bset :dim-set pos)))
         (setf (gethash dname *domain-maxima-results*)
-              (isl::%make-value (%isl-set-dim-max-val cpy pos)))
-        (isl::%isl-set-free cpy) ;; [TODO] Check Memory Legality
-        ))
-    (isl::%isl-set-free set) ;; [TODO] Check Memory Legality
-    )
+              (isl::%make-value (%isl-set-dim-max-val cpy pos))))))
   0)
 
 (cffi:defcallback extract-domain-maxima-map-cb :int
@@ -445,6 +442,7 @@ Inputs:
              - :padding
 Returns:
   isl::schedule-node — the tiled band"
+  (declare (type (or fixnum isl::value) size))
   (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
     (ecase strategy
       (:isolate
@@ -453,7 +451,7 @@ Returns:
               (tiled-ids (partial-schedule-get-involved-dims mupa)))
          (when (null tiled-ids) (return-from schedule-node-band-tile* tiled))
          (let* ((maxima (domain-dimension-maxima-from-union-map (isl::schedule-node-get-prefix-schedule-relation tiled)))
-                (width  (value size))
+                (width (if (valuep size) size (value size)))
                 (affected
                   (reduce
                    #'isl::union-set-union
@@ -472,8 +470,9 @@ Returns:
       (:atomic  tiled)
       (:guard   tiled))))
 
-
 (defun schedule-node-band-separate (band size)
+  (isl::%isl-options-set-tile-shift-point-loops (isl::context-handle isl::*context*) 1)
+  (isl::%isl-options-set-tile-scale-tile-loops (isl::context-handle isl::*context*) 1)
   (let ((size (tiling-size band size)))
     (isl::schedule-node-band-scale-down
      (isl::schedule-node-band-tile band size)
@@ -666,7 +665,7 @@ Procedure:
 (defun schedule-node-sequence-full-fuse (components)
   "Fuse all children in the given components (schedule_node_sequence or schedule_node_set)"
   (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
-  (let* ((components (isl::schedule-node-first-child (schedule-node-insert-mark components (isl::make-id-from-str "VISITED{FUSION}"))))
+  (let* ((components (isl::schedule-node-first-child (schedule-node-insert-mark components (isl::make-id-from-str "@ApplyOptimization(FUSION)"))))
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
          (node (isl:schedule-node-first-child components))
          (mupa))
@@ -760,7 +759,7 @@ Procedure:
     (loop for i upfrom 0 below n-child do
       (setf node (schedule-node-first-child node))
       (when (not (eql (schedule-node-get-type node) :schedule-node-band))
-        (error "schedule-full-fuse: The children of each filter in sequence should have a schedule_node_band."))
+        (error "schedule-node-sequence-get-band-sizes: The children of each filter in sequence should have a schedule_node_band."))
       (let ((uset (band-range-union-set node domain)))
         (multiple-value-bind (max min) (uset-max/min uset)
           (assert (value= min (value 0)))
@@ -774,6 +773,7 @@ Procedure:
               (every #'(lambda (x) (value= (value 0) (value-mod x min))) sizes)))))
 
 (defun schedule-node-sequence-align-band-size (components sizes)
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
   (let* ((min-band (reduce #'value-min sizes))
          (max-band (reduce #'value-max sizes)))
     (when (value= min-band max-band)
@@ -786,10 +786,40 @@ Procedure:
               (setf node (schedule-node-get-child node i)
                     node (schedule-node-first-child node))
               (when (not (eql (schedule-node-get-type node) :schedule-node-band))
-                (error "schedule-full-fuse: The children of each filter in sequence should have a schedule_node_band."))
+                (error "schedule-node-sequence-align-band-size: The children of each filter in sequence should have a schedule_node_band."))
               (setf node (schedule-node-band-separate node (value-div max-band size))
                     node (isl::schedule-node-parent (isl::schedule-node-parent node))))
       node)))
+
+(defun schedule-node-band-reshape (band band-size reshape-to)
+  (isl::%isl-options-set-tile-shift-point-loops (isl::context-handle isl::*context*) 1)
+  (isl::%isl-options-set-tile-scale-tile-loops (isl::context-handle isl::*context*) 1)
+  
+  (isl::schedule-node-band-scale
+   (schedule-node-band-tile*
+    band (value-floor (value-div band-size reshape-to))
+    :strategy :atomic)
+   (tiling-size band (value-div reshape-to band-size))))
+
+(defun schedule-node-sequence-apply-flash (domain components domain-size)
+  (declare (type isl::schedule-node components) (type isl::union-set domain) (type isl::value domain-size))
+  (assert (find (schedule-node-get-type components) '(:schedule-node-sequence :schedule-node-set)))
+  (let* ((n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle components)))
+         (node components))
+    (loop for i upfrom 0 below n-child do
+      (setf node (schedule-node-get-child node i)
+            node (schedule-node-first-child node))
+      (when (not (eql (schedule-node-get-type node) :schedule-node-band))
+        (error "schedule-node-sequence-apply-flash: The children of each filter in sequence should have a schedule_node_band."))
+      (let ((uset (band-range-union-set node domain)))
+        (multiple-value-bind (max min) (uset-max/min uset)
+          (assert (value= min (value 0)))
+          (let ((max (value+ max (value 1))))
+            (when (not (value= max domain-size))
+              (setf node (schedule-node-band-reshape node max domain-size))))))
+      (setf node (isl::schedule-node-parent (isl::schedule-node-parent node))))
+    node))
+    
 ;; old code
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:

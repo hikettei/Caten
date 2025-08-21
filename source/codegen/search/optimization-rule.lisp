@@ -102,18 +102,24 @@ TODO:
   ((at :initarg :at) (sizes :initarg :sizes))
   (:documentation "Fission <=> Coalesce"))
 
+(defclass Flash (OptimizationRule)
+  ((at :initarg :at) (size :initarg :size))
+  (:documentation ""))
+
 (defmethod optrule-generate-search-space (poly (id (eql :Fission)))
   (let ((pos (psi-get-first-unoptimized-sequence poly)))
-    ;; [TODO] Only fuse when gcd is found
+    ;; [TODO]
+    ;; - get-band-sizes => all band assertion?
     (when pos
       (let ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))
         (multiple-value-bind (sizes min max min-equals-to-max-p fuse-legal-p)
             (schedule-node-sequence-get-band-sizes (psi-domain poly) seq)
           (declare (ignore min max))
-          (when fuse-legal-p
-            (if min-equals-to-max-p
-                (list (make-instance 'NoOpt))
-                (list (make-instance 'Fission :at pos :sizes sizes)))))))))
+          (if fuse-legal-p ;; [todo] should try both of fission and flash
+              (if min-equals-to-max-p
+                  (list (make-instance 'NoOpt))
+                  (list (make-instance 'Fission :at pos :sizes sizes)))
+              (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
   (with-slots ((at at) (sizes sizes)) optrule
@@ -122,6 +128,18 @@ TODO:
            (schedule-node-sequence-align-band-size
             (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
             sizes)))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Flash))
+  (with-slots ((at at) (size size)) optrule
+    (setf (psi-theta poly)
+          (isl:schedule-node-get-schedule
+           (schedule-node-sequence-apply-flash
+            (psi-domain poly)
+            (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
+            size)))
+    (PRINT "FLASH")
+    (print poly)
+    ))
 
 (defclass Scoop (OptimizationRule)
   ((at :initarg :at))

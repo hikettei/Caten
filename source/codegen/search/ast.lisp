@@ -24,6 +24,7 @@ Returns:
   (macrolet ((set-option (name level)
 	       `(cffi:foreign-funcall ,(format nil "isl_options_set_~(~a~)" name) :pointer (isl::context-handle isl::*context*) :int ,level  :void)))
     (set-option "ast_build_atomic_upper_bound" 1)
+    (set-option "ast_build_group_coscheduled" 1)
     (set-option "ast_build_detect_min_max" 1)
     (set-option "ast_build_separation_bounds" 0)
     (set-option "ast_build_exploit_nested_bounds" 1)

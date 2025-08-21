@@ -204,19 +204,21 @@ BEAM Search Workflow:
   ;; [TODO]
   ;; - RescheduleSeenをMarkする
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
-    
-    (sgt-apply-transformations
-     gen0
-     '(:Fission :Fuse)
-     '(:Scoop :Fission :Fuse)) ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
-    (print "+++++++++++++++")
-    (print (sgt-items gen0))
-    (print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
-    (sgt-apply-transformations
-     gen0
-     '(:Fission :Fuse)
-     '(:Scoop :Fission :Fuse))
-    (print (sgt-items gen0))
+    (labels ((generate ()
+               ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
+               (sgt-apply-transformations
+                gen0
+                '(:Fission :Fuse))
+               (print "+++++++++++++++")
+               (print (sgt-items gen0))
+               (print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))))
+      (generate)
+      (generate)
+      (generate)
+      ;; [TODO] ComputeAt, ReductionOnTheFly, what is the minimal impl?
+      ;; [TODO] Reorder
+      )
+      
     ;; apply evaluation
     ;; sort topK
     ;; apply until saturated
