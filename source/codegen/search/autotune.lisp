@@ -198,6 +198,7 @@ BEAM Search Workflow:
 ;; Early BEAM Search for
 ;; [FUSE TILE{ANOTHER_LOOP_SIZE} REORDER]
 ;; maximizing MemoryLocality(G)
+;; [TODO] Use ISL API Directly to optimize the gc ahead!
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -211,9 +212,9 @@ BEAM Search Workflow:
                (sgt-apply-transformations
                 gen0
                 '(:Reshape :Fuse))
-               ;(print "+++++++++++++++")
-               ;(print (sgt-items gen0))
-               ;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
+               (print "+++++++++++++++")
+               (print (sgt-items gen0))
+               ;;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
                ))
       
       (time (generate))

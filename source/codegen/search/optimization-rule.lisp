@@ -73,17 +73,20 @@ TODO:
 (defun psi-get-first-unoptimized-sequence (poly) (car (schedule-get-non-marked-sequence/set (psi-theta poly))))
 
 (defclass Fuse (OptimizationRule) ((at :initarg :at)) (:documentation "Fuse all filters in the same sequence/set node whose child is band."))
-(defclass Reorder (OptimizationRule) ((at :initarg :at)) (:documentation "Reorder all filters in the same sequence/set node whose child is band or else to create a new fusible sequence."))
+(defclass Reorder (OptimizationRule) ((at :initarg :at) (order :initarg :order))
+  (:documentation "Reorder all filters in the same sequence/set node whose child is band or else to create a new fusible sequence."))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
   (let ((seq (psi-get-first-unoptimized-sequence poly)))
     (when seq
-      (let ((status (schedule-node-sequence-check-fusible
-                     (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) seq))))
-        ;; [TODO] defclass Fail?
+      (let* ((seqnode (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) seq))
+             (status (schedule-node-sequence-check-fusible seqnode)))
         (case status
           (:valid (list (make-instance 'Fuse :at seq)))
-          (:need-reorder (list (make-instance 'Reorder :at seq)))
+          (:need-reorder
+           (let ((order
+                   (schedule-node-sequence-tpsort (schedule-node-sequence-splice-children seqnode))))
+             (list (make-instance 'Reorder :at seq :order order))))
           (otherwise
            ;; TODO: (list (make-instance 'Fail))
            ))))))
@@ -96,9 +99,14 @@ TODO:
       (setf (psi-theta poly) theta-fused))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reorder))
-  (warn "TODO: Reorder")
-  
-  )
+  (with-slots ((at at) (order order)) optrule
+    (let* ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))
+           (seq (schedule-node-sequence-splice-children seq)))
+      (setf
+       (psi-theta poly)
+       (isl:schedule-node-get-schedule
+        (schedule-node-sequence-group-sequence
+         (schedule-node-sequence-reorder seq order)))))))
 
 (defclass Fission (OptimizationRule)
   ((at :initarg :at) (sizes :initarg :sizes))
