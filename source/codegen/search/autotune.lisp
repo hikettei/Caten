@@ -114,14 +114,6 @@ pruned (Top-k), and expanded to produce the next generation."))
    ;; evaluator2
    ))
 
-;; - GraphScheduleの時点で，なるべく超デカくグラフを持っておく(あくまでAutoTuneの計算量が膨大になるのを防ぐための)
-;; - OnlineAutotuneKernelはめちゃめちゃでかい関数をFissionできる
-;; - そのカーネル単位内で最小の実行時間を満たすカーネルをend2endで適用する = end2endでもOptimalとなる
-;; - Coalesceってどうやって実装するんだろう。
-;;  - TODO: Two more search command
-;;   - Coalesce | At which stage?
-;;   - Skewing  | これはTemplateGen
-;; Reschedule -> Interchange -> Skewing -> PARALLEL/TILE
 (defun online-autotune-kernel (runtime node)
   "
 BEAM Search Workflow:
@@ -166,17 +158,9 @@ BEAM Search Workflow:
           (error "STOP")
           t
           )))))
-;; [Note]
-;; - OPTIMIZE=0
-;; - FuseALL
-;; ==> Eazy to get FlashAttention?
-;; (caten (!matmul (make-tensor `(512 512)) (!relu (!matmul (make-tensor `(512 512))  (make-tensor `(512 512))))))
-;; Early BEAM Search for
-;; [FUSE TILE{ANOTHER_LOOP_SIZE} REORDER]
-;; maximizing MemoryLocality(G)
-;; [TODO] Use ISL API Directly to optimize the gc ahead!
 ;; [TODO] Prevent Non-beneficial fusion (e.g.: Matmul+Matmul)
-;; [TODO] But this should be done during BEAM Search?
+;; ==> CostFunction Design
+;; [TODO] Faster Exploration Time (Call ISL APIs Directly?) 
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -217,9 +201,9 @@ BEAM Search Workflow:
 
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
-  (print "DEBUG")
-  (dolist (item (append (list src) parents))
-    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
+;;  (print "DEBUG")
+;;  (dolist (item (append (list src) parents))
+;;    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
   (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
     (let* ((t+0 (m src))
            (t-1 (reduce #'psi. (map 'list #'m parents))))
