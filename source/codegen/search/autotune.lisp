@@ -51,7 +51,10 @@ pruned (Top-k), and expanded to produce the next generation."))
                   (loop for space in (optrule-generate-search-space item id)
                         for transformed = (apply-optimization item space)
                         if (psi-verify-legality transformed)
-                          collect transformed))))
+                          collect transformed
+                        else
+                          do (print "NON_LEGAL")
+                             (print transformed)))))
     items))
 
 (defun sgt-apply-transformations (sgt &rest optrule-ids)
