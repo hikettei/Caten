@@ -136,10 +136,7 @@ TODO:
            (schedule-node-sequence-apply-flash
             (psi-domain poly)
             (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
-            size)))
-    (PRINT "FLASH")
-    (print poly)
-    ))
+            size)))))
 
 (defclass Scoop (OptimizationRule)
   ((at :initarg :at))

@@ -750,8 +750,8 @@ Procedure:
     (unless (= n 1) (error "union-set must contain exactly one set."))
     (let* ((s   (isl::set-list-get-at sl 0))
            (dim (isl::set-dim s :dim-set)))
-      (print uset)
-      (print dim)
+      ;; (print uset)
+      ;; (print dim)
       ;; (unless (= dim 1) (error "set must be 1-dimensional."))
       ;; always refer to the last dimension?
       (values (isl::set-dim-max-val s (1- dim)) (isl::set-dim-min-val s (1- dim))))))
