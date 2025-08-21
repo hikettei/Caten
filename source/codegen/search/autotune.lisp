@@ -160,6 +160,7 @@ BEAM Search Workflow:
           )))))
 ;; [TODO] Prevent Non-beneficial fusion (e.g.: Matmul+Matmul)
 ;; ==> CostFunction Design
+;; ==> CmdHistoryから求める？(Less Transpose/Reshape The Better)
 ;; [TODO] Faster Exploration Time (Call ISL APIs Directly?) 
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
@@ -176,29 +177,24 @@ BEAM Search Workflow:
                 gen0
                 '(:Transpose :Reshape :Fuse))
                ;; Select Top1 always?
-               (print "+++++++++++++++")
-               (print (sgt-items gen0))
-               ;;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
+               ;; (print "+++++++++++++++")
+               ;; (print (sgt-items gen0))
+               (isl:schedule-get-root (psi-theta (car (sgt-items gen0))))
                ))
-      
       (time (generate))
-      (time (generate))
-      (time (generate))
-      (time (generate))
-      (time (generate))
-      ;; Workload
-      ;; - PERMUTE, (FUSE can reject invalid permutation? polynomial time?)
-      ;; - 1. SCOOP/SINK[FLASH]
-      ;;   -- The mupa is multi-dimensional, why?
-      ;; - 2. Implement Reorder and sequence creation
-      ;; - 3. SPLICE
-      ;; - 4. CostFunction
-      ;; [TODO] ComputeAt, ReductionOnTheFly, what is the minimal impl?
-      ;; [TODO] Reorder
-      )
-      
-    ))
-
+      ;;      (time (generate))
+      ;;      (time (generate))
+      ;;      (time (generate))
+      ;;      (time (generate))
+      ;; [TODO]
+      ;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
+      ;;   - Restrict the exploration space
+      ;;   - Optimize ISL ops
+      ;; - FlashAttention => Avoid FullFuse
+      ;; - Restrict The Exploration Space for Transpose
+      ;; - Finish Reorder? Should we search it?
+      nil)))
+    
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
 ;;  (print "DEBUG")
