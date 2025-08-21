@@ -150,33 +150,6 @@ BEAM Search Workflow:
           (time (sgt-apply-transformations gen0 :Fuse))
           (time (sgt-apply-transformations gen0 :Fuse))
           (time (sgt-apply-transformations gen0 :Fuse))
-          
-         ; (time (sgt-apply-transformations gen0 :Fuse))
-         ; (time (sgt-apply-transformations gen0 :Fuse))
-;;          (let ((item (car (sgt-items gen0))))
-;            (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0))))
-;            (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0))))
-
-;            (print (isl:schedule-get-root (psi-theta item)));
- ;           (setf item (apply-optimization item (make-instance 'Fuse :src '(0) :dst '(1) :at '(0 0 0 0 0 0 0 0 0 0 0))))
-  ;          (print item)
-   ;         )
-;;          (PRINT "++++++++++++++")
-;          (time (sgt-apply-transformations gen0 :Fuse))
-;          (time (sgt-apply-transformations gen0 :Fuse))
-;          (time (sgt-apply-transformations gen0 :Fuse))
-          
-          
-;;          (print (isl:schedule-get-root(psi-theta(car(sgt-items gen0)))))
-;          (sgt-apply-transformations gen0 :Fuse)
-;          (sgt-apply-transformations gen0 :Fuse)
-          
-          ;; [TODO]
-          ;; - 1. Symbolic Tileができないかやっぱり検証する
-          ;; - 2. Parametricができるようにして，後からLocalSize変えれるようにしたい
-          ;; - 3. この世代で全てのKernelに対してParallelizeする
-;;          (time (sgt-apply-transformations gen0 :Parallel :TileGPU))
-;;          (time (sgt-apply-transformations gen0 :Interchange))
           (print (sgt-items gen0))
 ;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
           ;; Symbolic
@@ -209,6 +182,7 @@ BEAM Search Workflow:
   (declare (type Polyhedral-Schedule-Item polyhedral))
   ;; [TODO]
   ;; - RescheduleSeenをMarkする
+  ;; - FlashAttention ==> InnerMostがReductionだとFullFuseできない？How to separate?
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate ()
                ;; Search Valid Permutation, Reshape, and Fusion
@@ -216,7 +190,8 @@ BEAM Search Workflow:
                ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
                (sgt-apply-transformations
                 gen0
-                '(:Reshape :Fuse))
+                '(:Transpose :Reshape :Fuse))
+               ;; Select Top1 always?
                (print "+++++++++++++++")
                (print (sgt-items gen0))
                ;;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))

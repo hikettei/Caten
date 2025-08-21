@@ -18,10 +18,12 @@ TODO:
    #:optrule-apply-transform-on-polyhedral
    #:optrule-apply-transform-on-blueprint
    #:apply-optimization
-
+   
    #:NoOpt
+   ;; Fusuion/Parallelism
    #:RewriteTree
    #:Fuse
+   ;; Optimization
    #:Reschedule
    #:Interchange
    ))
@@ -72,7 +74,8 @@ TODO:
 ;; ~~ Optimizations on schedule-node-sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun psi-get-first-unoptimized-sequence (poly) (car (schedule-get-non-marked-sequence/set (psi-theta poly))))
 
-(defclass Fuse (OptimizationRule) ((at :initarg :at)) (:documentation "Fuse all filters in the same sequence/set node whose child is band."))
+(defclass Fuse (OptimizationRule) ((at :initarg :at))
+  (:documentation "Fuse all filters in the same sequence/set node whose child is band."))
 (defclass Reorder (OptimizationRule) ((at :initarg :at) (order :initarg :order))
   (:documentation "Reorder all filters in the same sequence/set node whose child is band or else to create a new fusible sequence."))
 
@@ -114,7 +117,7 @@ TODO:
 
 (defclass Flash (OptimizationRule)
   ((at :initarg :at) (size :initarg :size))
-  (:documentation ""))
+  (:documentation "Tile(Size)+Sink+FUSE"))
 
 (defmethod optrule-generate-search-space (poly (id (eql :Reshape)))
   (let* ((pos (psi-get-first-unoptimized-sequence poly))
@@ -132,7 +135,8 @@ TODO:
           (if fuse-legal-p ;; [todo] should try both of fission and flash
               (if min-equals-to-max-p
                   (list (make-instance 'NoOpt))
-                  (list (make-instance 'Fission :at pos :sizes sizes))) ;; [TODO] ==> Try both of fission and flash?
+                  (list
+                   (make-instance 'Fission :at pos :sizes sizes)))
               (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
@@ -151,11 +155,11 @@ TODO:
             (psi-domain poly)
             (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
             size)))))
-;; [TODO] Search a valid permutation?
-(defclass Scoop (OptimizationRule)
-  ((at :initarg :at))
+
+(defclass Transpose (OptimizationRule)
+  ((at :initarg :at) (depth :initarg :depth))
   (:documentation "
-Swaps top-level band and N-th band from a n-chain of schedule_node_band.
+Swaps top-level band and N-th band from a n-chain of schedule_node_band. That is, transpose(0, depth).
 ```
 schedule: ... <-------|
   child:              |
@@ -165,11 +169,29 @@ schedule: ... <-------|
 ```
 "))
 
-(defmethod optrule-generate-search-space (poly (id (eql :Permute)))
-  (let ((seq (psi-get-first-unoptimized-sequence poly)))
-    (when seq
-      ;; [TODO] How to generate a search space?
-      )))
+(defmethod optrule-generate-search-space (poly (id (eql :Transpose)))
+  (let* ((pos (psi-get-first-unoptimized-sequence poly))
+         (status
+           (when pos
+             (schedule-node-sequence-check-fusible
+              (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))))
+    (when pos
+      (let ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))
+        (when (or
+               (not (eql status :valid))
+               (not (= 2 (isl::%isl-schedule-node-n-children (isl::schedule-node-handle seq)))))
+          (return-from optrule-generate-search-space (list (make-instance 'NoOpt))))
+        (let ((depth (schedule-node-band-get-n-chain (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1)))))
+          (append
+           (list (make-instance 'NoOpt))
+           (loop for i upfrom 1 to depth
+                 collect (make-instance 'Transpose :at pos :depth i))))))))
+
+(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Transpose))
+  (with-slots ((at at) (depth depth)) optrule
+    (let* ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))
+           (band (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1))))
+      (setf (psi-theta poly) (isl:schedule-node-get-schedule (schedule-node-band-scoop-up band depth))))))
 
 (defclass Shift (OptimizationRule) nil) ;; Skewing
 ;; ~~ Reschedule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
