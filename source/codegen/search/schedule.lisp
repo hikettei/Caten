@@ -800,6 +800,7 @@ Procedure:
   (schedule-node-band-tile*
    band (value-floor (value-div band-size reshape-to))
    :strategy :atomic
+   :sink nil
    :scale (value-div reshape-to band-size)))
 
 (defun schedule-node-sequence-apply-flash (domain components domain-size)
@@ -820,7 +821,10 @@ Procedure:
               (setf node (schedule-node-band-reshape node max domain-size))))))
       (setf node (isl::schedule-node-parent (isl::schedule-node-parent node))))
     node))
-    
+;; [TODO]
+;; 1. Scoopを実装
+;; 2.
+
 ;; old code
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:

@@ -215,6 +215,10 @@ BEAM Search Workflow:
       (generate)
       (generate)
       (generate)
+      (generate) ;; [TODO] SCOOP/SINKなしでやっちゃいかん
+      ;; Workload
+      ;; - 1. SCOOP/SINK[FLASH]
+      ;; - 2. Implement Reorder and sequence creation
       ;; [TODO] ComputeAt, ReductionOnTheFly, what is the minimal impl?
       ;; [TODO] Reorder
       )
