@@ -199,6 +199,8 @@ BEAM Search Workflow:
 ;; [FUSE TILE{ANOTHER_LOOP_SIZE} REORDER]
 ;; maximizing MemoryLocality(G)
 ;; [TODO] Use ISL API Directly to optimize the gc ahead!
+;; [TODO] Prevent Non-beneficial fusion (e.g.: Matmul+Matmul)
+;; [TODO] But this should be done during BEAM Search?
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -206,7 +208,7 @@ BEAM Search Workflow:
   ;; - RescheduleSeenをMarkする
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate ()
-               ;; Search Valid
+               ;; Search Valid Permutation, Reshape, and Fusion
                ;; Permute+Reshape+Fuse
                ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
                (sgt-apply-transformations
@@ -223,6 +225,7 @@ BEAM Search Workflow:
       (time (generate))
       (time (generate))
       ;; Workload
+      ;; - PERMUTE, (FUSE can reject invalid permutation? polynomial time?)
       ;; - 1. SCOOP/SINK[FLASH]
       ;;   -- The mupa is multi-dimensional, why?
       ;; - 2. Implement Reorder and sequence creation
@@ -232,37 +235,18 @@ BEAM Search Workflow:
       ;; [TODO] Reorder
       )
       
-    ;; apply evaluation
-    ;; sort topK
-    ;; apply until saturated
-    ;; return best kernel
     ))
 
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
+  (print "DEBUG")
+  (dolist (item (append (list src) parents))
+    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
   (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
-    (let* ((items (append (list (m src)) (map 'list #'m parents)))
-           (root (reduce #'psi. items))
-           (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-      (print "DEBUG")
-      (dolist (item (append (list src) parents))
-        (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
-      ;; [Memo]
-      ;; STEP1. Pool側のacc=-INFをどうやってFuseするかを考える。
-      ;; STEP2. Pool側もDAG
-      ;; STEP3. Sequence DAG Sorting?
-      ;; BEAM Searchでやる
-      ;; - Guardを生成するSchedule => Invaildにする
-      ;; - Sequenceを上から下に綺麗にFusionしたい。
-      ;; recollapse = tile?
-;      (print (sgt-items gen0))
-;      (print (isl::schedule-get-root (psi-theta (car (sgt-items gen0)))))
-;      (print (psi-read-union-map (car (sgt-items gen0))))
-;      (print (psi-write-union-map (car (sgt-items gen0))))
-;      (print (sgt-items gen0))
-      (ApplyReschedule root)
-      (error "STOP")
-      )))
+    (let* ((t+0 (m src))
+           (t-1 (reduce #'psi. (map 'list #'m parents))))
+      (ApplyReschedule (psi. t-1 t+0))
+      nil)))
 
 (defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
   (declare (type Graph graph))
@@ -279,6 +263,7 @@ BEAM Search Workflow:
                                    if (mergeable-item-p r) collect (id->value graph r)))
                       (fused (fuse node items)))
                  (print (length fused))
+                 (error "STOP")
                  ;; TODO: Replace myself w/ new kernel
                  ))
              (mapc #'explore (node-reads node))))

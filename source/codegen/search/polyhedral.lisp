@@ -286,7 +286,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
   (let* ((new-read (isl:union-map-union (psi-read-union-map psi1-before) (psi-read-union-map psi2-after)))
          (new-write (isl:union-map-union (psi-write-union-map psi1-before) (psi-write-union-map psi2-after)))
          (new-domain (isl:union-set-union (psi-domain psi1-before) (psi-domain psi2-after)))
-         (new-schedule (isl:schedule-sequence (psi-theta psi2-after) (psi-theta psi1-before))))
+         (new-schedule (isl:schedule-sequence (psi-theta psi1-before) (psi-theta psi2-after))))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation new-read new-write new-schedule)
                    :initial-theta new-schedule :read new-read :write new-write
