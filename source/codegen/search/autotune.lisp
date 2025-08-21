@@ -205,18 +205,22 @@ BEAM Search Workflow:
   ;; - RescheduleSeenをMarkする
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate ()
+               ;; Search Valid
+               ;; Permute+Reshape+Fuse
                ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
                (sgt-apply-transformations
                 gen0
-                '(:Fission :Fuse))
-               (print "+++++++++++++++")
-               (print (sgt-items gen0))
-               (print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
+                '(:Reshape :Fuse))
+               ;(print "+++++++++++++++")
+               ;(print (sgt-items gen0))
+               ;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
                ))
-      (generate)
-      (generate)
-      (generate)
-      (generate)
+      
+      (time (generate))
+      (time (generate))
+      (time (generate))
+      (time (generate))
+      (time (generate))
       ;; Workload
       ;; - 1. SCOOP/SINK[FLASH]
       ;;   -- The mupa is multi-dimensional, why?

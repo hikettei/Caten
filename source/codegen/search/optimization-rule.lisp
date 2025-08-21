@@ -96,7 +96,9 @@ TODO:
       (setf (psi-theta poly) theta-fused))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reorder))
-  (warn "TODO: Reorder"))
+  (warn "TODO: Reorder")
+  
+  )
 
 (defclass Fission (OptimizationRule)
   ((at :initarg :at) (sizes :initarg :sizes))
@@ -106,11 +108,15 @@ TODO:
   ((at :initarg :at) (size :initarg :size))
   (:documentation ""))
 
-(defmethod optrule-generate-search-space (poly (id (eql :Fission)))
-  (let ((pos (psi-get-first-unoptimized-sequence poly)))
-    ;; [TODO]
-    ;; - get-band-sizes => all band assertion?
-    (when pos
+(defmethod optrule-generate-search-space (poly (id (eql :Reshape)))
+  (let* ((pos (psi-get-first-unoptimized-sequence poly))
+         (status
+           (when pos
+             (schedule-node-sequence-check-fusible
+              (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))))
+    (when (and pos)
+      (when (not (eql status :valid))
+        (return-from optrule-generate-search-space (list (make-instance 'NoOpt))))
       (let ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) pos)))
         (multiple-value-bind (sizes min max min-equals-to-max-p fuse-legal-p)
             (schedule-node-sequence-get-band-sizes (psi-domain poly) seq)
@@ -118,7 +124,7 @@ TODO:
           (if fuse-legal-p ;; [todo] should try both of fission and flash
               (if min-equals-to-max-p
                   (list (make-instance 'NoOpt))
-                  (list (make-instance 'Fission :at pos :sizes sizes)))
+                  (list (make-instance 'Fission :at pos :sizes sizes))) ;; [TODO] ==> Try both of fission and flash?
               (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
@@ -137,7 +143,7 @@ TODO:
             (psi-domain poly)
             (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)
             size)))))
-
+;; [TODO] Search a valid permutation?
 (defclass Scoop (OptimizationRule)
   ((at :initarg :at))
   (:documentation "
@@ -151,7 +157,7 @@ schedule: ... <-------|
 ```
 "))
 
-(defmethod optrule-generate-search-space (poly (id (eql :Scoop)))
+(defmethod optrule-generate-search-space (poly (id (eql :Permute)))
   (let ((seq (psi-get-first-unoptimized-sequence poly)))
     (when seq
       ;; [TODO] How to generate a search space?
