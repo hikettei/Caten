@@ -430,7 +430,7 @@ Returns:
          (dim (space-dim band-space 3)))
     (multi-val-from-val-list band-space (apply #'make-value-list (loop for i upfrom 0 below dim collect size)))))
 
-(defun schedule-node-band-tile* (band size &key (strategy :atomic) (directive) (sink))
+(defun schedule-node-band-tile* (band size &key (strategy :atomic) (directive) (sink) (scale))
   "Tile a permutable band by width w, optionally isolating partial tiles.
 Inputs:
   band     : isl::schedule-node-band
@@ -442,8 +442,11 @@ Inputs:
              - :padding
 Returns:
   isl::schedule-node — the tiled band"
-  (declare (type (or fixnum isl::value) size))
+  (declare (type (or fixnum isl::value) size)
+           (type (or null fixnum isl::value) scale))
   (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
+    (when scale
+      (setf tiled (isl::schedule-node-band-scale band (tiling-size band scale))))
     (ecase strategy
       (:isolate
        (let* ((subdom (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
@@ -794,12 +797,10 @@ Procedure:
 (defun schedule-node-band-reshape (band band-size reshape-to)
   (isl::%isl-options-set-tile-shift-point-loops (isl::context-handle isl::*context*) 1)
   (isl::%isl-options-set-tile-scale-tile-loops (isl::context-handle isl::*context*) 1)
-  
-  (isl::schedule-node-band-scale
-   (schedule-node-band-tile*
-    band (value-floor (value-div band-size reshape-to))
-    :strategy :atomic)
-   (tiling-size band (value-div reshape-to band-size))))
+  (schedule-node-band-tile*
+   band (value-floor (value-div band-size reshape-to))
+   :strategy :atomic
+   :scale (value-div reshape-to band-size)))
 
 (defun schedule-node-sequence-apply-flash (domain components domain-size)
   (declare (type isl::schedule-node components) (type isl::union-set domain) (type isl::value domain-size))
