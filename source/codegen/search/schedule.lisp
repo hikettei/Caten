@@ -32,7 +32,10 @@
    #:schedule-node-sequence-full-fuse
    #:schedule-node-sequence-get-band-sizes
    #:schedule-node-sequence-align-band-size
-   #:schedule-node-sequence-apply-flash))
+   #:schedule-node-sequence-apply-flash
+   #:schedule-node-band-get-n-chain
+   #:schedule-node-band-scoop-up
+   #:schedule-node-band-chain-sink))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -446,7 +449,7 @@ Returns:
            (type (or null fixnum isl::value) scale))
   (let ((tiled (schedule-node-band-tile band (tiling-size band size))))
     (when scale
-      (setf tiled (isl::schedule-node-band-scale band (tiling-size band scale))))
+      (setf tiled (isl::schedule-node-band-scale tiled (tiling-size band scale))))
     (ecase strategy
       (:isolate
        (let* ((subdom (union-map-domain (isl::schedule-node-get-subtree-expansion tiled)))
@@ -818,13 +821,62 @@ Procedure:
           (assert (value= min (value 0)))
           (let ((max (value+ max (value 1))))
             (when (not (value= max domain-size))
-              (setf node (schedule-node-band-reshape node max domain-size))))))
+              (setf node
+                    (isl::schedule-node-parent
+                     (schedule-node-band-chain-sink
+                      (schedule-node-first-child (schedule-node-band-reshape node max domain-size)))))))))
       (setf node (isl::schedule-node-parent (isl::schedule-node-parent node))))
     node))
-;; [TODO]
-;; 1. Scoopを実装
-;; 2.
 
+(defun schedule-node-band-get-n-chain (band)
+  "Counts the number of band chain from band."
+  (declare (type isl::schedule-node-band band))
+  (let ((depth 0)
+        (last-band band)
+        (node (schedule-node-first-child band)))
+    (loop while (eql (schedule-node-get-type node) :schedule-node-band) do
+      (incf depth)
+      (setf last-band node
+            node (schedule-node-first-child node)))
+    (values depth last-band)))
+
+(defun schedule-node-band-scoop-up (band n)
+  "Relocates the nth band into the top of band chain.
+```
+schedule: ... <-------|
+  child:              |
+    schedule: ... ----| n=1
+      child: ...
+        xN
+```
+"
+  (declare (type isl::schedule-node-band band) (type fixnum n))
+  (multiple-value-bind (depth innermost-band)
+      (schedule-node-band-get-n-chain band)
+    (assert (and (> n 0) (<= n depth)) () "schedule-node-band-scoop-up: N=~a is out of bound [1, ~a)" n depth)
+    (loop for nth downfrom depth downto (1+ n) do
+      (setf innermost-band (isl::schedule-node-parent innermost-band)))
+    (let ((mupa (schedule-node-band-get-partial-schedule innermost-band))
+          (node (schedule-node-delete innermost-band)))
+      (loop for nth downfrom n downto 1 do
+        (setf node (isl::schedule-node-parent node)))
+      (schedule-node-insert-partial-schedule node mupa))))
+
+(defun schedule-node-band-chain-sink (band)
+    "Relocates the given band to the innermost of current band chain. This function always returns the top of chain.
+```
+schedule: ... --------| // Returned
+  child:              |
+    schedule: ... <---|
+```
+"
+  (declare (type isl::schedule-node-band band))
+  (let ((mupa (schedule-node-band-get-partial-schedule band)))
+    (multiple-value-bind (depth innermost-band)
+        (schedule-node-band-get-n-chain (schedule-node-delete band))
+      (let ((top (schedule-node-insert-partial-schedule (schedule-node-first-child innermost-band) mupa)))
+        (dotimes (i (1+ depth) top)
+          (setf top (isl::schedule-node-parent top)))))))
 ;; old code
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:
