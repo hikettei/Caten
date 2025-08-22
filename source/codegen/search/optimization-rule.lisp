@@ -182,11 +182,6 @@ schedule: ... <-------|
                (not (= 2 (isl::%isl-schedule-node-n-children (isl::schedule-node-handle seq)))))
           (return-from optrule-generate-search-space (list (make-instance 'NoOpt))))
         (let ((depth (schedule-node-band-get-n-chain (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1)))))
-          (print poly)
-          (print (caten/codegen/search/schedule::print-global-dim-dependency-graph
-                  (psi-theta poly)
-                  (psi-read-union-map poly)
-                  (psi-write-union-map poly)))
           (append
            (list (make-instance 'NoOpt))
            (loop for i upfrom 1 to depth

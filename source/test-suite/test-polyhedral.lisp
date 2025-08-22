@@ -484,6 +484,12 @@
 (deftest test-fusion6
   (with-no-grad
     (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 10 25 25)) (make-tensor `(10 10 5 5)))) '(1 0 2 3))))))
+
+(deftest test-fusion7 ;; flash matmul w/ no benefit
+  (caten (!matmul (make-tensor `(128 128)) (!matmul (make-tensor `(128 128)) (make-tensor `(128 128))))))
+
+(deftest test-fusion8 ;; flash matmul
+  (caten (!matmul (make-tensor `(128 128)) (!t (!matmul (make-tensor `(128 128)) (make-tensor `(128 128)))))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる

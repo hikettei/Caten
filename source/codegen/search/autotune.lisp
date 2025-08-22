@@ -51,10 +51,7 @@ pruned (Top-k), and expanded to produce the next generation."))
                   (loop for space in (optrule-generate-search-space item id)
                         for transformed = (apply-optimization item space)
                         if (psi-verify-legality transformed)
-                          collect transformed
-                        else
-                          do (print "NON_LEGAL")
-                             (print transformed)))))
+                          collect transformed))))
     items))
 
 (defun sgt-apply-transformations (sgt &rest optrule-ids)
@@ -179,8 +176,11 @@ BEAM Search Workflow:
                 gen0
                 ;; If Transpose direction is one, it is polynomial time
                 '(:Transpose :Reshape :Fuse))
+               (print (sgt-items gen0))
                ;;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
                ))
+      ;; Optimizeすればいいこと。。。
+      (time (generate))
       (time (generate))
       ;;      (time (generate))
       ;;      (time (generate))
@@ -212,7 +212,7 @@ BEAM Search Workflow:
 ;;  (print "DEBUG")
   (dolist (item (append (list src) parents))
     (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
-  (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
+  (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)) :scal->array nil)))
     (let* ((t+0 (m src))
            (t-1 (reduce #'psi. (map 'list #'m parents))))
       (ApplyReschedule (psi. t-1 t+0))

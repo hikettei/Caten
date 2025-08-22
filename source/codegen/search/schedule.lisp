@@ -956,87 +956,6 @@ schedule: ... --------| // Returned
      components
      new-filter-list)))
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;;;; ================================================================
-;;;; Global dim-level dependency graph over all statements in S
-;;;; Nodes: "NIDxxxx(_gid_p<i>)"
-;;;; Edge : pair of such strings if dims are actually coupled by RAW
-;;;; ================================================================
-(defun %upa->graph (upa)
-  "UnionPwAff -> UnionMap (graph)."
-  (let ((upma (isl::multi-union-pw-aff-from-union-pw-aff upa)))
-    (isl::union-map-from-multi-union-pw-aff upma)))
-
-(defun %independent-rel-p (rel)
-  "Return T iff rel == (domain(rel) × range(rel))."
-  (when (eql :bool-true
-             (isl::%isl-union-map-is-empty (isl::union-map-handle rel)))
-    (return-from %independent-rel-p t))
-  (let* ((dom (isl::union-map-domain rel))
-         (ran (isl::union-map-range  rel))
-         (prd (isl::union-map-from-domain-and-range dom ran)))
-    (eql :bool-true
-         (isl::%isl-union-map-is-equal
-          (isl::union-map-handle (isl::union-map-coalesce rel))
-          (isl::union-map-handle (isl::union-map-coalesce prd))))))
-
-(defun %global-schedule-upa-list (schedule)
-  "Return vector of θ_i (UnionPwAff) for the WHOLE schedule Θ:Dom->Z^k."
-  (let* ((umap (isl::schedule-get-map schedule))          ; Dom -> Z^k (UnionMap)
-         (mupa (isl::multi-union-pw-aff-from-union-map umap))
-         (k    (isl::multi-union-pw-aff-dim mupa :dim-out))
-         (vec  (make-array k)))
-    (dotimes (i k vec)
-      (setf (aref vec i) (multi-union-pw-aff-get-union-pw-aff mupa i)))))
-
-(defun %stmt-name-of-map (m &key (side :in))
-  "Pick tuple-name from a Map domain/range."
-  (ecase side
-    (:in  (or (isl::map-get-tuple-name m :dim-in)  "UNKNOWN"))
-    (:out (or (isl::map-get-tuple-name m :dim-out) "UNKNOWN"))))
-
-(defun %upa-restrict (upa uset)
-  "Restrict UnionPwAff to a union-set domain."
-  (isl::union-pw-aff-intersect-domain upa uset))
-
-(defun %rel-ab (D theta i j)
-  "D : UnionMap (DS -> DT)
-   theta : vector of UnionPwAff for GLOBAL schedule Θ:Dom->Z^k
-   returns: UnionMap (Z -> Z) coupling θ_i(source) → θ_j(sink)."
-  (let* ((DS (isl::union-map-domain D))         ; source stmt domain
-         (DT (isl::union-map-range  D))         ; sink   stmt domain
-         ;; 1) restrict θ components to the *relevant* statements only
-         (θS (%upa-restrict (aref theta i) DS)) ; DS -> Z
-         (θT (%upa-restrict (aref theta j) DT)) ; DT -> Z
-         ;; 2) graphize
-         (gS (isl::union-map-from-multi-union-pw-aff
-              (isl::multi-union-pw-aff-from-union-pw-aff θS))) ; DS -> Z
-         (gT (isl::union-map-from-multi-union-pw-aff
-              (isl::multi-union-pw-aff-from-union-pw-aff θT))) ; DT -> Z
-         ;; 3) compose: (Z --rev gS--> DS --D--> DT --gT--> Z)
-         (z->DT (isl::union-map-apply-domain (copy D) (isl::union-map-reverse gS)))
-         (z->z  (isl::union-map-apply-range  z->DT gT)))
-    (isl::union-map-coalesce z->z)))
-
-(defun %canonize-rw (reads writes schedule)
-  "Align params to schedule space and canonize range tuple-ids by buffer name."
-  (let* ((smap     (isl::schedule-get-map schedule))
-         (model-sp (isl::union-map-get-space smap))
-         (R* (canonize-range-tuple-id/umap (align-params/umap reads  model-sp)))
-         (W* (canonize-range-tuple-id/umap (align-params/umap writes model-sp))))
-    (values R* W*)))
-
-(defun %raw-source->sink (schedule reads writes)
-  "Compute RAW as SOURCE->SINK over ALL statements."
-  (multiple-value-bind (R* W*) (%canonize-rw reads writes schedule)
-    (let* ((uai (isl::union-access-info-from-sink R*)))
-      (setf uai (isl::union-access-info-set-must-source uai W*))
-      (setf uai (isl::union-access-info-set-may-source  uai W*))
-      (setf uai (isl::union-access-info-set-schedule    uai schedule))
-      (let* ((flow    (isl::union-access-info-compute-flow uai))
-             (may-s2t (isl::union-map-reverse (isl::union-flow-get-may-dependence  flow)))
-             (mus-s2t (isl::union-map-reverse (isl::union-flow-get-must-dependence flow))))
-        (isl::union-map-coalesce (isl::union-map-union mus-s2t may-s2t))))))
-
 (progn ;; foreach-map
   (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil
   (cffi:defcallback %each-map-cb :int ((mp :pointer) (user :pointer))
@@ -1051,35 +970,6 @@ schedule: ... --------| // Returned
        (isl::union-map-handle umap)
        (cffi:callback %each-map-cb)
        (cffi:null-pointer)))))
-
-(defun build-global-dim-dependency-graph (schedule reads writes)
-  "Return a list of edges (\"StmtA(_gid_p<i>)\" . \"StmtB(_gid_p<j>)\")
-for ALL statements appearing in S. Uses only ISL (no AST), runs in polytime."
-  (declare (type isl::schedule schedule)
-           (type isl::union-map reads writes))
-  (let* ((theta  (%global-schedule-upa-list schedule))
-         (k      (length theta))
-         (raw-s2t (%raw-source->sink schedule reads writes))
-         (seen    (make-hash-table :test 'equal))
-         (edges   '()))
-    ;; Iterate each statement-pair map in RAW (already source->sink)
-    (%foreach-map
-     raw-s2t
-     #'(lambda (m)
-         (let* ((D (isl::map-union-map m))               ; restrict to this pair
-                (src (format nil "~A" (%stmt-name-of-map m :side :in)))
-                (dst (format nil "~A" (%stmt-name-of-map m :side :out))))
-           (dotimes (i k)
-             (dotimes (j k)
-               (let* ((rel (%rel-ab D theta i j)))
-                 (unless (%independent-rel-p rel)
-                   (let ((e (cons (format nil "~A(dim=~a)" src i)
-                                  (format nil "~A(dim=~a)" dst j))))
-                     ;; dedup
-                     (unless (gethash e seen)
-                       (setf (gethash e seen) t)
-                       (push e edges))))))))))
-    (nreverse edges)))
 ;;; 便利ラッパ（必要なら）
 (defun print-global-dim-dependency-graph (schedule reads writes)
   (dolist (e (build-global-dim-dependency-graph schedule reads writes))
@@ -1479,3 +1369,68 @@ Return new schedule."
 ;;     S2(i, j)
 ;; 1. Can assert S1 == S2
 ;; 2. Can tile S1
+;; 実際にFuseしたScheduleを用意する必要がある？
+(defun r () ;; read (pool)
+  (union-map-from-str "{ S1[_gid0, _gid1, _gid2, _gid3, _gid4_1, _gid5_1] -> X[((((((441*_gid0)+(2646*_gid1))+(42*_gid2))+(2*_gid3))+(21*_gid4_1))+_gid5_1)] : 0 <= _gid0 < 6 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10 and 0 <= _gid4_1 < 2 and 0 <= _gid5_1 < 2 }"))
+
+(defun w () ;; write (conv)
+  (union-map-from-str "{ S1[_gid0, _gid2, _gid3, _gid4] -> X[((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 < 10 and 0 <= _gid2 < 6 and 0 <= _gid3 < 21 and 0 <= _gid4 < 21 }"))
+;;;; ================================================================
+;;;; Compare mapped address spaces after keeping only a slice of
+;;;; input dimensions on each access relation.
+;;;; Return T iff the two images (UnionSet in the buffer space) match.
+;;;; ================================================================
+
+(defun %slice-input-dims/map (m start end)
+  "Keep only input dims [start..end] (0-based, inclusive) of MAP m.
+   Other input dims are existentially projected out."
+  (let* ((nin (isl::map-dim m :dim-in)))
+    (assert (and (<= 0 start) (<= start end) (< end nin))
+            () "slice-input-dims: bad range ~a..~a for nin=~a" start end nin)
+    (let* ((left  start)                         ; drop [0 .. start-1]
+           (keep  (1+ (- end start)))           ; keep count_
+           (m1    (if (> left 0)
+                      (isl::map-project-out (copy m) :dim-in 0 left)
+                      (copy m)))
+           (nin1  (isl::map-dim m1 :dim-in))
+           (tail  (- nin1 keep))                 ; drop after kept block
+           (m2    (if (> tail 0)
+                      (isl::map-project-out m1 :dim-in keep tail)
+                      m1)))
+      m2)))
+
+(defun %slice-input-dims/umap (umap start end)
+  "UnionMap version of %slice-input-dims/map."
+  (let* ((ml (isl::union-map-get-map-list umap))
+         (n  (isl::map-list-size ml))
+         (acc nil))
+    (dotimes (i n (or acc
+                      (isl::union-map-empty (isl::union-map-get-space umap))))
+      (let* ((m   (isl::map-list-elt ml i))
+             (m*  (%slice-input-dims/map m start end))
+             (u*  (isl::map-union-map m*)))
+        (setf acc (if acc (isl::union-map-union acc u*) u*))))))
+
+(defun %equal-unionset-p (u1 u2)
+  "Check U1 = U2 by (U1⊆U2) ∧ (U2⊆U1)."
+  (labels ((subset-p (a b)
+             (let ((diff (isl::union-set-subtract (copy a) (copy b))))
+               (isl::union-set-is-empty diff))))
+    (and (subset-p u1 u2) (subset-p u2 u1))))
+
+
+(defun equal-mapped-space-p (umap1 a b umap2 c d)
+  "From UMAP1, keep only input dims [a..b]; from UMAP2, keep only [c..d].
+   Compare the images in the buffer space. Return T iff equal."
+  (declare (type isl::union-map umap1 umap2))
+  (print umap1)
+  (print umap2)
+  ;; 1) Slice domain dims
+  (let* ((u1 (%slice-input-dims/umap umap1 a b))
+         (u2 (%slice-input-dims/umap umap2 c d))
+         ;; 2) Compare their ranges (address sets) in the buffer space
+         (r1 (isl::union-set-coalesce (isl::union-map-range u1)))
+         (r2 (isl::union-set-coalesce (isl::union-map-range u2))))
+    (print r1)
+    (print r2)
+    (%equal-unionset-p r1 r2)))

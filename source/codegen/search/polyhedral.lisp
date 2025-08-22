@@ -156,8 +156,11 @@ During the optimization, auto scheduler tries to minimize the floating value of 
     (explore id)
     found))
 
-(defun render-default-isl-access (ctx bp idxs loops)
+(defun render-default-isl-access (ctx bp idxs loops &key (scal->array t))
+  "Renders a default memory accessing expr for scalar values."
   (declare (type cons idxs))
+  (unless scal->array
+    (return-from render-default-isl-access "0"))
   (multiple-value-bind (visible-name graph-id) (values (car idxs) (cdr idxs))
     (declare (ignore graph-id))
     ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
@@ -172,15 +175,15 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (setf (gethash visible-name (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
       access)))
 
-(defun render-access-for-node (ctx node loops buffers index blueprint)
+(defun render-access-for-node (ctx node loops buffers index blueprint &key (scal->array t))
   "Render access relation for a single node"
   (multiple-value-bind (visible-id graph-id) (values (car buffers) (cdr buffers))
     (declare (ignore visible-id))
     (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
       (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id
-              (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops)))))))
+              (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops) :scal->array scal->array))))))
 
-(defun extract-accesses (ctx blueprint &aux (reads) (writes))
+(defun extract-accesses (ctx blueprint &key (scal->array t) &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) ctx
     (loop for expr in (reverse exprs) ;; found earlier -> later
@@ -196,18 +199,19 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                  (assert (= 1 (length write-region)))
                  (dolist (w write-region)
                    (let ((macc (cons (caar w) (car (node-writes expr))))) ;; visible as (caar w) but internally expr.writes[0]
-                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint) writes)))
+                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint :scal->array scal->array) writes)))
                  (dolist (r read-region)
-                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))
+                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array) reads))))
                (otherwise ;; // EXPR
                 (let ((read-region (extract-buffer-access-info (car (node-reads expr)) blueprint)))
                   (push
                    (render-access-for-node
                     ctx expr expr-domain
-                    (cons (car (node-writes expr)) (car (node-writes expr))) nil blueprint)
+                    (cons (car (node-writes expr)) (car (node-writes expr))) nil blueprint
+                    :scal->array scal->array)
                    writes)
                   (dolist (r read-region)
-                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint) reads))))))
+                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array) reads))))))
     (cons
      (format nil "{ ~{~a~^; ~} }" (reverse reads))
      (format nil "{ ~{~a~^; ~} }" (reverse writes)))))
@@ -223,7 +227,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
             do (format out "~a[~{~a~^, ~}] -> [~(~a~)]" (node-id filter) idxs idx))
     (format out "}]")))
 
-(defun rewrite-blueprint-tree->schedule-tree (ctx blueprint &aux (visited (make-hash-table)))
+(defun rewrite-blueprint-tree->schedule-tree (ctx blueprint &key (scal->array t) &aux (visited (make-hash-table)))
   "Build ISL Schedule Tree directly from blueprint structure following analyze-scop pattern"
   (declare (type Graph blueprint))
   ;; ISL Schedule starts w/ domain
@@ -266,12 +270,16 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (assert (= 1 (length (graph-outputs blueprint))))
       (rewrite-node (car (graph-outputs blueprint))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-polyhedral-schedule-item (blueprint &key (strategy))
-  (declare (type FastGraph blueprint))
+(defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy))
+  "
+- scal->array[bool]
+  - If set to T, scalar values are rendered as tensor (to maximize parallelism)
+  - Otherwise, scalar values are renderered as val[0] (to maximize locality, detect illegal permutation)"
+  (declare (type FastGraph blueprint) (type boolean scal->array))
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
          (domain (isl:union-set-from-str (render-domains ctx blueprint)))
-         (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
-         (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
+         (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint :scal->array scal->array))
+         (reads/writes (extract-accesses ctx blueprint :scal->array scal->array)) (reads) (writes))
     (handler-case (setf reads (isl:union-map-from-str (car reads/writes))
                         writes (isl:union-map-from-str (cdr reads/writes)))
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
