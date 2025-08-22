@@ -932,126 +932,65 @@ schedule: ... --------| // Returned
     (print filter-ids)
     ))
 
-;; ~~ Permutation ~~~~~
-(defun canonize-range-tuple-id/umap (umap)
-  "Range tuple-id を配列名ごとに統一。"
-  (let* ((ml  (isl::union-map-get-map-list umap))
-         (n   (isl::map-list-size ml))
-         (acc nil)
-         (tbl (make-hash-table :test 'equal))) ; name -> isl::id
-    (dotimes (i n)
-      (let* ((m   (isl::map-list-elt ml i))
-             (rng (isl::map-range m))
-             (nm  (or (isl::set-get-tuple-name rng) "")) ; 配列名
-             (id  (or (gethash nm tbl)
-                      (setf (gethash nm tbl) (isl::make-id-from-str nm))))
-             (m*  (isl::map-set-tuple-id m :dim-out id)))
-        (setf acc (if acc
-                      (isl::union-map-union acc (isl::map-union-map m*))
-                      (isl::map-union-map m*)))))
-    acc))
-
-(defun upa->graph (upa)
-  "UPA: Dom->Z を UnionMap (Dom->Z) のグラフへ。"
-  (let ((upma (isl::multi-union-pw-aff-from-union-pw-aff upa)))
-    (isl::union-map-from-multi-union-pw-aff upma)))
-
-(defun union-set-minmax-val (uset)
-  "UnionSet (Z^1) 上の min/max を返す。空なら 0,0。"
-  (let* ((sl (isl::union-set-get-set-list uset))
-         (n  (isl::set-list-n-set sl)))
-    (when (= n 0)
-      (let ((z (value 0))) (return-from union-set-minmax-val (values z z))))
-    (let ((vmin nil) (vmax nil))
-      (dotimes (i n)
-        (let* ((s  (isl::set-list-get-at sl i))
-               (d  (isl::set-dim s :dim-set))
-               (lo (isl::set-dim-min-val s (1- d)))
-               (hi (isl::set-dim-max-val s (1- d))))
-          (setf vmin (if vmin (value-min vmin lo) lo))
-          (setf vmax (if vmax (value-max vmax hi) hi))))
-      (values vmin vmax))))
-
-(defun %subtree-domain/aligned (node model-sp)
-  (align-params/uset (schedule-node-subtree-domain node) model-sp))
-
-(defun compute-must-flow-between-bands (schedule reads writes band-src band-dst)
-  "RAW must dependence を T(=dst) -> S(=src) で返す。"
-  (let* ((smap     (isl::schedule-get-map schedule))         ; **UnionMap を使用**
-         (model-sp (isl::union-map-get-space smap)) ;; HERE!
-         (src-sub  (%subtree-domain/aligned band-src model-sp))
-         (dst-sub  (%subtree-domain/aligned band-dst model-sp))
-         (reads*   (canonize-range-tuple-id/umap
-                    (align-params/umap (isl::union-map-intersect-domain reads  dst-sub) model-sp)))
-         (writes*  (canonize-range-tuple-id/umap
-                    (align-params/umap (isl::union-map-intersect-domain writes src-sub) model-sp)))
-         ;; UAI 構築
-         (uai  (isl::union-access-info-from-sink reads*)))
-    (setf uai (isl::union-access-info-set-must-source uai writes*))
-    (setf uai (isl::union-access-info-set-may-source  uai writes*))
-    (setf uai (isl::union-access-info-set-schedule    uai schedule))
-    (let* ((flow (isl::union-access-info-compute-flow uai))
-           (must (isl::union-flow-get-must-dependence flow)))         ; **T -> S**
-      must)))
-
-(defun get-band-scalar-aff (band-node level)
-  "BAND の部分スケジュールから Level 次元の UPA (Dom->Z) を取り出す。"
-  (let* ((mupa (schedule-node-band-get-partial-schedule band-node))
-         (outd (isl::multi-union-pw-aff-dim mupa :dim-out)))
-    (when (or (< level 0) (>= level outd))
-      (error "get-band-scalar-aff: level ~D out-of-range (out-dim=~D)" level outd))
-    (multi-union-pw-aff-get-union-pw-aff mupa level)))
-
-(defun pullback-upa-along-umap/fn (theta umap)
-  "theta : UPA (X->Z), umap : UMap (Y->X)  => UPA (Y->Z)
-   **umap は単写（must）を仮定**。"
-  (let* ((graph (upa->graph theta))                 ; X->Z
-         (y->z (isl::union-map-apply-range (copy umap) graph))) ; Y->Z
-    (when (not (eql :bool-true
-                    (isl::%isl-union-map-is-single-valued (isl::union-map-handle y->z))))
-      (error "pullback-upa-along-umap/fn: Y->Z が多値です（must以外？）"))
-    (let* ((upma (isl::multi-union-pw-aff-from-union-map y->z)))
-      (isl::multi-union-pw-aff-get-union-pw-aff upma 0))))
-
-(defun pts-delta-on-must (theta-src theta-dst must-t->s)
-  "Δ(t) = θ_dst(t) - θ_src(s(t)) を UPA (T->Z) で返す。"
-  (let* ((theta-src-on-t (pullback-upa-along-umap/fn theta-src must-t->s)) ; T->Z
-         (delta          (isl::union-pw-aff-sub theta-dst theta-src-on-t))) ; T->Z
-    delta))
-
-(defun min-max-on-domain (upa domain)
-  "UPA (Dom->Z) を DOMAIN に制限し min/max。"
-  (let* ((upa*   (isl::union-pw-aff-intersect-domain upa domain))
-         (graph  (upa->graph upa*))          ;; Dom->Z
-         (values (isl::union-map-range graph))
-         (values (isl::union-set-coalesce values)))
-    (union-set-minmax-val values)))
-
-(defun pts-cost-for-bands (schedule reads writes band-src band-dst level)
+(defun schedule-node-sequence-group-sequence (components)
+  (declare (type isl::schedule-node-sequence components))
+  (let* ((filters (schedule-node-sequence-get-filters components))
+         (filter-types
+           (loop for typ in (schedule-node-sequence-get-filter-types components)
+                 collect (eql :schedule-node-band typ)))
+         (last-filter nil)
+         (new-filter-list (isl::union-set-list-alloc 0)))
+    (loop for filter in filters for is-band-p in filter-types
+          if is-band-p do
+            (setf last-filter
+                  (if last-filter
+                      (union-set-union last-filter filter)
+                      filter))
+          else do
+            (when last-filter
+              (setf new-filter-list (isl::union-set-list-add new-filter-list last-filter)
+                    last-filter nil))
+            (setf new-filter-list (isl::union-set-list-add new-filter-list filter)))
+    (when last-filter
+      (setf new-filter-list (isl::union-set-list-add new-filter-list last-filter)))
+    (isl::schedule-node-insert-sequence
+     components
+     new-filter-list)))
+;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun pts-cost-for-bands (dom schedule reads writes band1 band2 level)
+  "
+Reference: Meister et al., HPCS 2019 (Permutation Tensor Scheduler).
+Return: (values d* shift feasible vmin vmax)."
   (declare (type isl::schedule schedule)
            (type isl::union-map reads writes)
-           (type isl::schedule-node-band band-src band-dst)
+           (type isl::schedule-node-band band1 band2)
            (type fixnum level))
-  ;; 1) must(T->S) を取る
-  (let* ((must (compute-must-flow-between-bands schedule reads writes band-src band-dst)))
-    (print must)
-    (when (isl::union-map-is-empty must)
-      ;; 共有が無いなら fusion の意味は無い。pTS 的には d*=0, shift=0。
-      (let ((z (value 0))) (return-from pts-cost-for-bands (list z z t z z))))
-    ;; 2) θ を取り出す
-    (let* ((theta-a (get-band-scalar-aff band-src level))   ; Dom_A -> Z
-           (theta-b (get-band-scalar-aff band-dst level))   ; Dom_B -> Z
-           ;; 3) Δ(t) を構成（T->Z）
-           (delta-t (pts-delta-on-must theta-a theta-b must))
-           ;; 4) 定義域は must の domain（= T のサブ集合）
-           (t-dom   (isl::union-map-domain must)))
-      (multiple-value-bind (vmin vmax) (min-max-on-domain delta-t t-dom)
-        ;; 5) 最適 d* と shift, 法性
-        (let* ((d*    (value- vmax vmin))
-               (shift (value-neg vmin))
-               (feas  (eql :bool-true (isl::%isl-val-is-nonneg (isl::value-handle vmin)))))
-          (list d* shift feas vmin vmax))))))
 
+  ;; デバッグ: 直接 alias と 経路 alias を観測
+  (let* ((flow-T->S
+           (compute-path-flow-between-bands schedule reads writes band1 band2
+                                            :closure-steps 4)))
+    (print flow-T->S)
+    (format t "path flow (T->S) empty? ~A~%"
+            (isl::union-map-is-empty flow-T->S))
+    ;; pTS の Δ(s,t) は S→T が欲しいので反転して S→T を作る
+    (let* ((deps-S->T (isl::union-map-reverse flow-T->S)))
+      (setf deps-S->T (restrict-deps-to-bands schedule deps-S->T band1 band2))
+      (print deps-S->T)
+      (when (isl::union-map-is-empty deps-S->T)
+        (let ((z (value 0))) (return-from pts-cost-for-bands (list z z t z z))))
+
+      (let* ((theta-a (get-band-scalar-aff band1 level))       ; Dom_A -> Z
+             (theta-b (get-band-scalar-aff band2 level))       ; Dom_B -> Z
+             (delta-s (lift-aff-to-dep-pair theta-a theta-b deps-S->T)) ; S->Z
+             (s-dom   (isl::union-map-domain deps-S->T)))
+        (multiple-value-bind (vmin vmax) (min-max-on-domain delta-s s-dom)
+          (let* ((d*    (value- vmax vmin))
+                 (shift (value-neg vmin))
+                 ;; vmin >= 0 なら（そのまま）融合可能、<0 なら平行移動が必要
+                 (feas  (not (eql :bool-true
+                                  (isl::%isl-val-is-nonneg (isl::value-handle vmin))))))
+            (list d* shift feas vmin vmax)))))))
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:
 ;; Given View = {shape, stride, mask}, computes the beneficial loop generation path {view1.view2}

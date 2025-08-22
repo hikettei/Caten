@@ -189,6 +189,7 @@ schedule: ... <-------|
                        (setf band2 (isl:schedule-node-first-child band2)))
                      (print "++++++++")
                      (print (caten/codegen/search/schedule::pts-cost-for-bands
+                             (psi-domain poly)
                              (psi-theta poly)
                              (psi-read-union-map poly)
                              (psi-write-union-map poly)
