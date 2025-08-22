@@ -134,15 +134,9 @@ BEAM Search Workflow:
           ;; - Option1: BEAM Search + LightWeight Cost Function
           ;; - Option2: ISL Reschedule
           ;; - Option3: No Template Search
-          (print (car (sgt-items gen0)))
-          (sgt-prepare-for-sketch-generation gen0)
-          (time (sgt-apply-transformations gen0 :Fuse))
-          (time (sgt-apply-transformations gen0 :Fuse))
-          (time (sgt-apply-transformations gen0 :Fuse))
-          (time (sgt-apply-transformations gen0 :Fuse))
-          (print (sgt-items gen0))
+;;          (print (car (sgt-items gen0)))
 ;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
-          ;; Symbolic
+;;
 ;;          (sgt-apply-transformations gen0 :Interchange)
 ;;          (sgt-apply-transformations gen0 :Parallel :TileGPU)
 ;;          (sgt-add-evaluations gen0 cost1 blueprint)
@@ -169,6 +163,12 @@ BEAM Search Workflow:
 ;; - FlashAttention => Avoid FullFuse
 ;; - Restrict The Exploration Space for Transpose
 ;; - Finish Reorder? Should we search it?
+;; - [TODO] Finalize Fusion
+;;   - [ ] Reorder
+;;   - [ ] Flash
+;;   - [ ] Optimize ISL
+;;   - [ ] CostModel
+;;   - [ ] If it works well ==> apply this function algo end2end
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -200,7 +200,7 @@ BEAM Search Workflow:
 ;; - [ ] Move renderer.lisp ==> byoc or runtime
 ;; - [ ] Move codegen
 ;; - [ ] Remove realize
-;; - [ ] Create ScheduleGraph (each node is Polyhedron!)
+;; - [ ] Create ScheduleGraph (each node is Polyhedral w/ Lexiographical Order)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
