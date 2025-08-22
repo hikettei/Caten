@@ -594,7 +594,6 @@ Procedure:
 ;; Prerequisites:
 ;; - The given schedule is obtained by schedule-split-all-band
 ;; - No mark is inserted
-
 (defun schedule-node-at-path (node path)
   "PATH = (i0 i1 ... ik) from root->child(0)."
   (labels ((n-children (n)
@@ -957,6 +956,136 @@ schedule: ... --------| // Returned
      components
      new-filter-list)))
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;;; ================================================================
+;;;; Global dim-level dependency graph over all statements in S
+;;;; Nodes: "NIDxxxx(_gid_p<i>)"
+;;;; Edge : pair of such strings if dims are actually coupled by RAW
+;;;; ================================================================
+(defun %upa->graph (upa)
+  "UnionPwAff -> UnionMap (graph)."
+  (let ((upma (isl::multi-union-pw-aff-from-union-pw-aff upa)))
+    (isl::union-map-from-multi-union-pw-aff upma)))
+
+(defun %independent-rel-p (rel)
+  "Return T iff rel == (domain(rel) × range(rel))."
+  (when (eql :bool-true
+             (isl::%isl-union-map-is-empty (isl::union-map-handle rel)))
+    (return-from %independent-rel-p t))
+  (let* ((dom (isl::union-map-domain rel))
+         (ran (isl::union-map-range  rel))
+         (prd (isl::union-map-from-domain-and-range dom ran)))
+    (eql :bool-true
+         (isl::%isl-union-map-is-equal
+          (isl::union-map-handle (isl::union-map-coalesce rel))
+          (isl::union-map-handle (isl::union-map-coalesce prd))))))
+
+(defun %global-schedule-upa-list (schedule)
+  "Return vector of θ_i (UnionPwAff) for the WHOLE schedule Θ:Dom->Z^k."
+  (let* ((umap (isl::schedule-get-map schedule))          ; Dom -> Z^k (UnionMap)
+         (mupa (isl::multi-union-pw-aff-from-union-map umap))
+         (k    (isl::multi-union-pw-aff-dim mupa :dim-out))
+         (vec  (make-array k)))
+    (dotimes (i k vec)
+      (setf (aref vec i) (multi-union-pw-aff-get-union-pw-aff mupa i)))))
+
+(defun %stmt-name-of-map (m &key (side :in))
+  "Pick tuple-name from a Map domain/range."
+  (ecase side
+    (:in  (or (isl::map-get-tuple-name m :dim-in)  "UNKNOWN"))
+    (:out (or (isl::map-get-tuple-name m :dim-out) "UNKNOWN"))))
+
+(defun %upa-restrict (upa uset)
+  "Restrict UnionPwAff to a union-set domain."
+  (isl::union-pw-aff-intersect-domain upa uset))
+
+(defun %rel-ab (D theta i j)
+  "D : UnionMap (DS -> DT)
+   theta : vector of UnionPwAff for GLOBAL schedule Θ:Dom->Z^k
+   returns: UnionMap (Z -> Z) coupling θ_i(source) → θ_j(sink)."
+  (let* ((DS (isl::union-map-domain D))         ; source stmt domain
+         (DT (isl::union-map-range  D))         ; sink   stmt domain
+         ;; 1) restrict θ components to the *relevant* statements only
+         (θS (%upa-restrict (aref theta i) DS)) ; DS -> Z
+         (θT (%upa-restrict (aref theta j) DT)) ; DT -> Z
+         ;; 2) graphize
+         (gS (isl::union-map-from-multi-union-pw-aff
+              (isl::multi-union-pw-aff-from-union-pw-aff θS))) ; DS -> Z
+         (gT (isl::union-map-from-multi-union-pw-aff
+              (isl::multi-union-pw-aff-from-union-pw-aff θT))) ; DT -> Z
+         ;; 3) compose: (Z --rev gS--> DS --D--> DT --gT--> Z)
+         (z->DT (isl::union-map-apply-domain (copy D) (isl::union-map-reverse gS)))
+         (z->z  (isl::union-map-apply-range  z->DT gT)))
+    (isl::union-map-coalesce z->z)))
+
+(defun %canonize-rw (reads writes schedule)
+  "Align params to schedule space and canonize range tuple-ids by buffer name."
+  (let* ((smap     (isl::schedule-get-map schedule))
+         (model-sp (isl::union-map-get-space smap))
+         (R* (canonize-range-tuple-id/umap (align-params/umap reads  model-sp)))
+         (W* (canonize-range-tuple-id/umap (align-params/umap writes model-sp))))
+    (values R* W*)))
+
+(defun %raw-source->sink (schedule reads writes)
+  "Compute RAW as SOURCE->SINK over ALL statements."
+  (multiple-value-bind (R* W*) (%canonize-rw reads writes schedule)
+    (let* ((uai (isl::union-access-info-from-sink R*)))
+      (setf uai (isl::union-access-info-set-must-source uai W*))
+      (setf uai (isl::union-access-info-set-may-source  uai W*))
+      (setf uai (isl::union-access-info-set-schedule    uai schedule))
+      (let* ((flow    (isl::union-access-info-compute-flow uai))
+             (may-s2t (isl::union-map-reverse (isl::union-flow-get-may-dependence  flow)))
+             (mus-s2t (isl::union-map-reverse (isl::union-flow-get-must-dependence flow))))
+        (isl::union-map-coalesce (isl::union-map-union mus-s2t may-s2t))))))
+
+(progn ;; foreach-map
+  (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil
+  (cffi:defcallback %each-map-cb :int ((mp :pointer) (user :pointer))
+    (declare (ignore user))
+    ;; Call user-supplied Lisp function on a wrapped isl_map
+    (when *%foreach-map-fn* (funcall *%foreach-map-fn* (isl::%make-map mp)))
+    0)
+  (defun %foreach-map (umap fn)
+    "Iterate with ISL's foreach_map. Requires top-level defcallback."
+    (let ((*%foreach-map-fn* fn))
+      (isl::%isl-union-map-foreach-map
+       (isl::union-map-handle umap)
+       (cffi:callback %each-map-cb)
+       (cffi:null-pointer)))))
+
+(defun build-global-dim-dependency-graph (schedule reads writes)
+  "Return a list of edges (\"StmtA(_gid_p<i>)\" . \"StmtB(_gid_p<j>)\")
+for ALL statements appearing in S. Uses only ISL (no AST), runs in polytime."
+  (declare (type isl::schedule schedule)
+           (type isl::union-map reads writes))
+  (let* ((theta  (%global-schedule-upa-list schedule))
+         (k      (length theta))
+         (raw-s2t (%raw-source->sink schedule reads writes))
+         (seen    (make-hash-table :test 'equal))
+         (edges   '()))
+    ;; Iterate each statement-pair map in RAW (already source->sink)
+    (%foreach-map
+     raw-s2t
+     #'(lambda (m)
+         (let* ((D (isl::map-union-map m))               ; restrict to this pair
+                (src (format nil "~A" (%stmt-name-of-map m :side :in)))
+                (dst (format nil "~A" (%stmt-name-of-map m :side :out))))
+           (dotimes (i k)
+             (dotimes (j k)
+               (let* ((rel (%rel-ab D theta i j)))
+                 (unless (%independent-rel-p rel)
+                   (let ((e (cons (format nil "~A(dim=~a)" src i)
+                                  (format nil "~A(dim=~a)" dst j))))
+                     ;; dedup
+                     (unless (gethash e seen)
+                       (setf (gethash e seen) t)
+                       (push e edges))))))))))
+    (nreverse edges)))
+;;; 便利ラッパ（必要なら）
+(defun print-global-dim-dependency-graph (schedule reads writes)
+  (dolist (e (build-global-dim-dependency-graph schedule reads writes))
+    (format t "~A -> ~A~%" (car e) (cdr e)))
+  (values))
+
 (defun pts-cost-for-bands (dom schedule reads writes band1 band2 level)
   "
 Reference: Meister et al., HPCS 2019 (Permutation Tensor Scheduler).
@@ -965,32 +1094,8 @@ Return: (values d* shift feasible vmin vmax)."
            (type isl::union-map reads writes)
            (type isl::schedule-node-band band1 band2)
            (type fixnum level))
-
-  ;; デバッグ: 直接 alias と 経路 alias を観測
-  (let* ((flow-T->S
-           (compute-path-flow-between-bands schedule reads writes band1 band2
-                                            :closure-steps 4)))
-    (print flow-T->S)
-    (format t "path flow (T->S) empty? ~A~%"
-            (isl::union-map-is-empty flow-T->S))
-    ;; pTS の Δ(s,t) は S→T が欲しいので反転して S→T を作る
-    (let* ((deps-S->T (isl::union-map-reverse flow-T->S)))
-      (setf deps-S->T (restrict-deps-to-bands schedule deps-S->T band1 band2))
-      (print deps-S->T)
-      (when (isl::union-map-is-empty deps-S->T)
-        (let ((z (value 0))) (return-from pts-cost-for-bands (list z z t z z))))
-
-      (let* ((theta-a (get-band-scalar-aff band1 level))       ; Dom_A -> Z
-             (theta-b (get-band-scalar-aff band2 level))       ; Dom_B -> Z
-             (delta-s (lift-aff-to-dep-pair theta-a theta-b deps-S->T)) ; S->Z
-             (s-dom   (isl::union-map-domain deps-S->T)))
-        (multiple-value-bind (vmin vmax) (min-max-on-domain delta-s s-dom)
-          (let* ((d*    (value- vmax vmin))
-                 (shift (value-neg vmin))
-                 ;; vmin >= 0 なら（そのまま）融合可能、<0 なら平行移動が必要
-                 (feas  (not (eql :bool-true
-                                  (isl::%isl-val-is-nonneg (isl::value-handle vmin))))))
-            (list d* shift feas vmin vmax)))))))
+  (print-global-dim-dependency-graph schedule reads writes)
+  nil)
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:
 ;; Given View = {shape, stride, mask}, computes the beneficial loop generation path {view1.view2}

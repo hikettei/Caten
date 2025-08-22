@@ -182,20 +182,11 @@ schedule: ... <-------|
                (not (= 2 (isl::%isl-schedule-node-n-children (isl::schedule-node-handle seq)))))
           (return-from optrule-generate-search-space (list (make-instance 'NoOpt))))
         (let ((depth (schedule-node-band-get-n-chain (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1)))))
-          (loop for i upfrom 0 to depth
-                do (let ((band1 (isl:schedule-node-first-child (isl:schedule-node-get-child seq 0)))
-                         (band2 (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1))))
-                     (dotimes (a i)
-                       (setf band2 (isl:schedule-node-first-child band2)))
-                     (print "++++++++")
-                     (print (caten/codegen/search/schedule::pts-cost-for-bands
-                             (psi-domain poly)
-                             (psi-theta poly)
-                             (psi-read-union-map poly)
-                             (psi-write-union-map poly)
-                             band1
-                             band2
-                             0))))              
+          (print poly)
+          (print (caten/codegen/search/schedule::print-global-dim-dependency-graph
+                  (psi-theta poly)
+                  (psi-read-union-map poly)
+                  (psi-write-union-map poly)))
           (append
            (list (make-instance 'NoOpt))
            (loop for i upfrom 1 to depth

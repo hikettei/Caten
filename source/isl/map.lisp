@@ -53,3 +53,6 @@
 
 (defun map-set-tuple-id (map type id)
   (%make-map (%isl-map-set-tuple-id (map-handle (copy map)) type (identifier-handle (copy id)))))
+
+(defun map-get-tuple-name (map type)
+  (%isl-map-get-tuple-name (map-handle map) type))
