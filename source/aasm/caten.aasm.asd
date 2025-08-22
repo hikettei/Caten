@@ -13,6 +13,7 @@
    (:file "specs/schedule-ops")
    (:file "tensor-ops")
    (:file "runtime-ops")
+   (:file "schedule-ops")
    (:file "simplifiers")
    (:file "expr")
    (:file "render-ops")
