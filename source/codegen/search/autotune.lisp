@@ -168,24 +168,17 @@ BEAM Search Workflow:
   ;; - RescheduleSeenをMarkする
   ;; - FlashAttention ==> InnerMostがReductionだとFullFuseできない？How to separate?
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
-    (labels ((generate ()
+    (labels ((generate (&aux (prev-items (sgt-items gen0)))
                ;; Search Valid Permutation, Reshape, and Fusion
-               ;; Permute+Reshape+Fuse
-               ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
                (sgt-apply-transformations
                 gen0
-                ;; If Transpose direction is one, it is polynomial time
                 '(:Transpose :Reshape :Fuse))
-               (print (sgt-items gen0))
-               ;;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
-               ))
-      ;; Optimizeすればいいこと。。。
-      (time (generate))
-      (time (generate))
-      ;;      (time (generate))
-      ;;      (time (generate))
-      ;;      (time (generate))
-      ;;      (time (generate))
+               (when (null (sgt-items gen0))
+                 (print "Finished")
+                 (print prev-items)
+                 (return-from ApplyReschedule gen0))
+               t))
+      (time (loop while t do (generate)))
       ;; [TODO]
       ;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
       ;;   - Restrict the exploration space
