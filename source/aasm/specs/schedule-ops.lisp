@@ -19,10 +19,10 @@
    [out]
 ```
 "
-         :slots nil
+         :slots ((view) (items) (polyhedron))
          :type-relay (verify-schedule-item :Affine))
 
 (defnode (:Schedule :NonAffine) (ScheduleItem)
          ""
-         :slots nil
+         :slots ((items :initform nil))
          :type-relay (verify-schedule-item :Nonaffine))

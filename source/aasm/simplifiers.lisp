@@ -225,13 +225,13 @@
      ->
      ((node grpah) (when (eql dtype1 dtype2) (with-context-nodes (out (%mul (%load (%salloc :dtype dtype1) (* a c)) b))))))
     ;; C(A+B) -> CA+CB (this will produce one extra multiplication but gains more chance to simplified)
-    ((:Mul ((Const C dtype) (:Add (a b))))
-     ->
-     ((node grpah) (when (eql dtype :int64) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul z a) (%mul z b)))))))
+;    ((:Mul ((Const C dtype) (:Add (a b))))
+;     ->
+;     ((node grpah) (when (eql dtype :int64) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul z a) (%mul z b)))))))
     ;; (A+B)C -> AC+BC
-    ((:Mul ((:Add (a b)) (Const C dtype)))
-     ->
-     ((node grpah) (when (eql dtype :int64) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul a z) (%mul b z)))))))
+;    ((:Mul ((:Add (a b)) (Const C dtype)))
+;     ->
+;     ((node grpah) (when (eql dtype :int64) (with-context-nodes (z (%load (%salloc :dtype dtype) c)) (out (%add (%mul a z) (%mul b z)))))))
     ;; (C1*x)-(C2*x+Z) = ((C1-C2)*x)-Z
     ;;((:Add ((:Mul ((Const x dtype1) P))
     ;;        (:Neg ((:Add ((Const y dtype2) (guard m (eql m p)))) Z))))
