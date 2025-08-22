@@ -50,3 +50,6 @@
   (:give map)
   (:take map)
   (:take space))
+
+(defun map-set-tuple-id (map type id)
+  (%make-map (%isl-map-set-tuple-id (map-handle (copy map)) type (identifier-handle (copy id)))))

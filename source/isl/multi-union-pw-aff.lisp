@@ -179,6 +179,9 @@
 (defun multi-union-pw-aff-get-dim-name (mupa type pos)
   (%isl-id-to-str (identifier-handle (multi-union-pw-aff-get-dim-id mupa type pos))))
 
+(defun multi-union-pw-aff-dim (mupa type)
+  (%isl-multi-union-pw-aff-dim (multi-union-pw-aff-handle mupa) type))
+
 (defun pw-aff-get-dim-name (pa type pos)
   (%isl-pw-aff-get-dim-name (pw-aff-handle pa) type pos))
 
@@ -193,3 +196,25 @@
 (define-isl-function multi-union-pw-aff-get-space %isl-multi-union-pw-aff-get-space
   (:give space)
   (:keep multi-union-pw-aff))
+
+(define-isl-function union-pw-aff-intersect-domain %isl-union-pw-aff-intersect-domain
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take union-set))
+
+(define-isl-function multi-union-pw-aff-from-union-pw-aff %isl-multi-union-pw-aff-from-union-pw-aff
+  (:give multi-union-pw-aff)
+  (:take union-pw-aff))
+
+(define-isl-function union-map-from-multi-union-pw-aff %isl-union-map-from-multi-union-pw-aff
+  (:give union-map)
+  (:take multi-union-pw-aff))
+
+(define-isl-function multi-union-pw-aff-from-union-map %isl-multi-union-pw-aff-from-union-map
+  (:give multi-union-pw-aff)
+  (:take union-map))
+
+(define-isl-function union-pw-aff-sub %isl-union-pw-aff-sub
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take union-pw-aff))

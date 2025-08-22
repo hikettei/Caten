@@ -130,6 +130,7 @@ BEAM Search Workflow:
         ;; - BEAM Search With Early Pruning
         ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
         ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
+        ;; [TODO] No Ondevice Profiling Mode
         (let* ((root (make-polyhedral-schedule-item blueprint))
                (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
           ;; [Template Construction] (Which is the best?)
@@ -161,7 +162,8 @@ BEAM Search Workflow:
 ;; [TODO] Prevent Non-beneficial fusion (e.g.: Matmul+Matmul)
 ;; ==> CostFunction Design
 ;; ==> CmdHistoryから求める？(Less Transpose/Reshape The Better)
-;; [TODO] Faster Exploration Time (Call ISL APIs Directly?) 
+;; [TODO] Faster Exploration Time (Call ISL APIs Directly?)
+;; [TODO] ↓をSCCsのみで実行するようにして，End2EndでILP Based Polyhedral Compiler
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -175,11 +177,9 @@ BEAM Search Workflow:
                ;; [TODO] Scoop -> Fission -> Fuseの組み合わせだけにする
                (sgt-apply-transformations
                 gen0
+                ;; If Transpose direction is one, it is polynomial time
                 '(:Transpose :Reshape :Fuse))
-               ;; Select Top1 always?
-               ;; (print "+++++++++++++++")
-               ;; (print (sgt-items gen0))
-               (isl:schedule-get-root (psi-theta (car (sgt-items gen0))))
+               ;;(print (isl:schedule-get-root (psi-theta (car (sgt-items gen0)))))
                ))
       (time (generate))
       ;;      (time (generate))
@@ -190,16 +190,28 @@ BEAM Search Workflow:
       ;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
       ;;   - Restrict the exploration space
       ;;   - Optimize ISL ops
+      ;;   - Transpose ==> How to pickup just "relavant" dim?
       ;; - FlashAttention => Avoid FullFuse
       ;; - Restrict The Exploration Space for Transpose
       ;; - Finish Reorder? Should we search it?
       nil)))
-    
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] BlockLevel Fusion (e.g.: Group multiple sequence of EXPR into a single group)
+;; [Note]
+;; - Assume the compiler gives a multiple section of tensors enclosured by two VIEWS
+;; - G1: [VIEW] -> Add -> Sub -> [VIEW]
+;; - G2: [VIEW] -> Mul -> Exp -> [VIEW]
+;; The function (will be responsible for) fusion G1 and G2 correctly
+;; - [ ] Move byoc.lisp ==> runtime or byoc
+;; - [ ] Move renderer.lisp ==> byoc or runtime
+;; - [ ] Move codegen
+;; - [ ] Remove realize
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
 ;;  (print "DEBUG")
-;;  (dolist (item (append (list src) parents))
-;;    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
+  (dolist (item (append (list src) parents))
+    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
   (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)))))
     (let* ((t+0 (m src))
            (t-1 (reduce #'psi. (map 'list #'m parents))))

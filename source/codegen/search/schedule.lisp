@@ -932,30 +932,126 @@ schedule: ... --------| // Returned
     (print filter-ids)
     ))
 
-(defun schedule-node-sequence-group-sequence (components)
-  (declare (type isl::schedule-node-sequence components))
-  (let* ((filters (schedule-node-sequence-get-filters components))
-         (filter-types
-           (loop for typ in (schedule-node-sequence-get-filter-types components)
-                 collect (eql :schedule-node-band typ)))
-         (last-filter nil)
-         (new-filter-list (isl::union-set-list-alloc 0)))
-    (loop for filter in filters for is-band-p in filter-types
-          if is-band-p do
-            (setf last-filter
-                  (if last-filter
-                      (union-set-union last-filter filter)
-                      filter))
-          else do
-            (when last-filter
-              (setf new-filter-list (isl::union-set-list-add new-filter-list last-filter)
-                    last-filter nil))
-            (setf new-filter-list (isl::union-set-list-add new-filter-list filter)))
-    (when last-filter
-      (setf new-filter-list (isl::union-set-list-add new-filter-list last-filter)))
-    (isl::schedule-node-insert-sequence
-     components
-     new-filter-list)))
+;; ~~ Permutation ~~~~~
+(defun canonize-range-tuple-id/umap (umap)
+  "Range tuple-id を配列名ごとに統一。"
+  (let* ((ml  (isl::union-map-get-map-list umap))
+         (n   (isl::map-list-size ml))
+         (acc nil)
+         (tbl (make-hash-table :test 'equal))) ; name -> isl::id
+    (dotimes (i n)
+      (let* ((m   (isl::map-list-elt ml i))
+             (rng (isl::map-range m))
+             (nm  (or (isl::set-get-tuple-name rng) "")) ; 配列名
+             (id  (or (gethash nm tbl)
+                      (setf (gethash nm tbl) (isl::make-id-from-str nm))))
+             (m*  (isl::map-set-tuple-id m :dim-out id)))
+        (setf acc (if acc
+                      (isl::union-map-union acc (isl::map-union-map m*))
+                      (isl::map-union-map m*)))))
+    acc))
+
+(defun upa->graph (upa)
+  "UPA: Dom->Z を UnionMap (Dom->Z) のグラフへ。"
+  (let ((upma (isl::multi-union-pw-aff-from-union-pw-aff upa)))
+    (isl::union-map-from-multi-union-pw-aff upma)))
+
+(defun union-set-minmax-val (uset)
+  "UnionSet (Z^1) 上の min/max を返す。空なら 0,0。"
+  (let* ((sl (isl::union-set-get-set-list uset))
+         (n  (isl::set-list-n-set sl)))
+    (when (= n 0)
+      (let ((z (value 0))) (return-from union-set-minmax-val (values z z))))
+    (let ((vmin nil) (vmax nil))
+      (dotimes (i n)
+        (let* ((s  (isl::set-list-get-at sl i))
+               (d  (isl::set-dim s :dim-set))
+               (lo (isl::set-dim-min-val s (1- d)))
+               (hi (isl::set-dim-max-val s (1- d))))
+          (setf vmin (if vmin (value-min vmin lo) lo))
+          (setf vmax (if vmax (value-max vmax hi) hi))))
+      (values vmin vmax))))
+
+(defun %subtree-domain/aligned (node model-sp)
+  (align-params/uset (schedule-node-subtree-domain node) model-sp))
+
+(defun compute-must-flow-between-bands (schedule reads writes band-src band-dst)
+  "RAW must dependence を T(=dst) -> S(=src) で返す。"
+  (let* ((smap     (isl::schedule-get-map schedule))         ; **UnionMap を使用**
+         (model-sp (isl::union-map-get-space smap)) ;; HERE!
+         (src-sub  (%subtree-domain/aligned band-src model-sp))
+         (dst-sub  (%subtree-domain/aligned band-dst model-sp))
+         (reads*   (canonize-range-tuple-id/umap
+                    (align-params/umap (isl::union-map-intersect-domain reads  dst-sub) model-sp)))
+         (writes*  (canonize-range-tuple-id/umap
+                    (align-params/umap (isl::union-map-intersect-domain writes src-sub) model-sp)))
+         ;; UAI 構築
+         (uai  (isl::union-access-info-from-sink reads*)))
+    (setf uai (isl::union-access-info-set-must-source uai writes*))
+    (setf uai (isl::union-access-info-set-may-source  uai writes*))
+    (setf uai (isl::union-access-info-set-schedule    uai schedule))
+    (let* ((flow (isl::union-access-info-compute-flow uai))
+           (must (isl::union-flow-get-must-dependence flow)))         ; **T -> S**
+      must)))
+
+(defun get-band-scalar-aff (band-node level)
+  "BAND の部分スケジュールから Level 次元の UPA (Dom->Z) を取り出す。"
+  (let* ((mupa (schedule-node-band-get-partial-schedule band-node))
+         (outd (isl::multi-union-pw-aff-dim mupa :dim-out)))
+    (when (or (< level 0) (>= level outd))
+      (error "get-band-scalar-aff: level ~D out-of-range (out-dim=~D)" level outd))
+    (multi-union-pw-aff-get-union-pw-aff mupa level)))
+
+(defun pullback-upa-along-umap/fn (theta umap)
+  "theta : UPA (X->Z), umap : UMap (Y->X)  => UPA (Y->Z)
+   **umap は単写（must）を仮定**。"
+  (let* ((graph (upa->graph theta))                 ; X->Z
+         (y->z (isl::union-map-apply-range (copy umap) graph))) ; Y->Z
+    (when (not (eql :bool-true
+                    (isl::%isl-union-map-is-single-valued (isl::union-map-handle y->z))))
+      (error "pullback-upa-along-umap/fn: Y->Z が多値です（must以外？）"))
+    (let* ((upma (isl::multi-union-pw-aff-from-union-map y->z)))
+      (isl::multi-union-pw-aff-get-union-pw-aff upma 0))))
+
+(defun pts-delta-on-must (theta-src theta-dst must-t->s)
+  "Δ(t) = θ_dst(t) - θ_src(s(t)) を UPA (T->Z) で返す。"
+  (let* ((theta-src-on-t (pullback-upa-along-umap/fn theta-src must-t->s)) ; T->Z
+         (delta          (isl::union-pw-aff-sub theta-dst theta-src-on-t))) ; T->Z
+    delta))
+
+(defun min-max-on-domain (upa domain)
+  "UPA (Dom->Z) を DOMAIN に制限し min/max。"
+  (let* ((upa*   (isl::union-pw-aff-intersect-domain upa domain))
+         (graph  (upa->graph upa*))          ;; Dom->Z
+         (values (isl::union-map-range graph))
+         (values (isl::union-set-coalesce values)))
+    (union-set-minmax-val values)))
+
+(defun pts-cost-for-bands (schedule reads writes band-src band-dst level)
+  (declare (type isl::schedule schedule)
+           (type isl::union-map reads writes)
+           (type isl::schedule-node-band band-src band-dst)
+           (type fixnum level))
+  ;; 1) must(T->S) を取る
+  (let* ((must (compute-must-flow-between-bands schedule reads writes band-src band-dst)))
+    (print must)
+    (when (isl::union-map-is-empty must)
+      ;; 共有が無いなら fusion の意味は無い。pTS 的には d*=0, shift=0。
+      (let ((z (value 0))) (return-from pts-cost-for-bands (list z z t z z))))
+    ;; 2) θ を取り出す
+    (let* ((theta-a (get-band-scalar-aff band-src level))   ; Dom_A -> Z
+           (theta-b (get-band-scalar-aff band-dst level))   ; Dom_B -> Z
+           ;; 3) Δ(t) を構成（T->Z）
+           (delta-t (pts-delta-on-must theta-a theta-b must))
+           ;; 4) 定義域は must の domain（= T のサブ集合）
+           (t-dom   (isl::union-map-domain must)))
+      (multiple-value-bind (vmin vmax) (min-max-on-domain delta-t t-dom)
+        ;; 5) 最適 d* と shift, 法性
+        (let* ((d*    (value- vmax vmin))
+               (shift (value-neg vmin))
+               (feas  (eql :bool-true (isl::%isl-val-is-nonneg (isl::value-handle vmin)))))
+          (list d* shift feas vmin vmax))))))
+
 ;; ~~~ MergeView in Polyhedral Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Problem Setting:
 ;; Given View = {shape, stride, mask}, computes the beneficial loop generation path {view1.view2}
@@ -1339,26 +1435,3 @@ Return new schedule."
 ;;     S2(i, j)
 ;; 1. Can assert S1 == S2
 ;; 2. Can tile S1
-
-
-(defun test-dep-extract ()
-  (let* ((pool (union-map-from-str "{ [x] -> [x] : 0 <= x < 60 }"))
-         (relu (union-map-from-str "{ [a, b] -> [6a+b] : 0 <= a < 9 and 0 <= b < 6 }")))
-    (union-set-subtract (union-map-range pool) (union-map-range relu))))
-
-(defun test-dep-extract ()
-  (let ((relu (union-map-from-str "{ [_gid0, _gid2, _gid3, _gid4] -> [((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 <= 9 and 0 <= _gid2 <= 5 and 0 <= _gid3 <= 20 and 0 <= _gid4 <= 20; }")) ;; write
-        (pool (union-map-from-str "{ [_gid0, _gid1, _gid2, _gid3_1, _gid4_1] -> [(((((_gid0*441)+(42*_gid1))+(2*_gid2))+(21*_gid3_1))+_gid4_1)] : 0 <= _gid0 <= 59 and 0 <= _gid1 <= 9 and 0 <= _gid2 <= 9 and 0 <= _gid3_1 <= 1 and 0 <= _gid4_1 <= 1; }"))) ;; read
-    (print (isl::union-map-detect-equalities (isl::union-map-flat-domain-product pool relu)))
-    ;; (print (union-map-intersect-range pool (union-map-range relu)))
-    ))
-
-;; NID(g1, g2 ,g3, g4)に対して
-;; NID(g1, g2, g3~g3+2, g4~g4+2)を読んでいる
-;;             -------  -------
-;;                ^ TILE  ^ TILE
-(defun test-dep-extract ()
-  (let ((relu (union-map-from-str "{ [_gid0, _gid2, _gid3, _gid4] -> [((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 < 1 and 0 <= _gid2 < 1 and 0 <= _gid3 < 1 and 0 <= _gid4 < 1; }"))
-        (pool (union-map-from-str "{ [_gid0, _gid1, _gid2, _gid3_1, _gid4_1] -> [(((((_gid0*441)+(42*_gid1))+(2*_gid2))+(21*_gid3_1))+_gid4_1)] : 0 <= _gid0 < 1 and 0 <= _gid1 < 1 and 0 <= _gid2 < 1 and 0 <= _gid3_1 <= 1 and 0 <= _gid4_1 <= 1; }")))
-    (let ((d (union-map-lex-gt-union-map pool relu)))
-      (union-map-apply-domain pool d))))
