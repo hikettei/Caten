@@ -77,3 +77,25 @@
 (define-isl-function union-set-get-space %isl-union-set-get-space
   (:give space)
   (:keep union-set))
+
+(define-isl-function union-set-get-set-list %isl-union-set-get-set-list
+  (:give set-list)
+  (:keep union-set))
+
+(defun union-set-list-alloc (n)
+  (%make-union-set-list (%isl-union-set-list-alloc (context-handle *context*) n)))
+
+(defun union-set-list-add (lst uset)
+  (%make-union-set-list (%isl-union-set-list-add (union-set-list-handle (copy lst)) (union-set-handle (copy uset)))))
+
+(define-isl-function union-set-coalesce %isl-union-set-coalesce
+  (:give union-set)
+  (:take union-set))
+
+(define-isl-function union-set-lexmin %isl-union-set-lexmin
+  (:give union-set)
+  (:take union-set))
+
+(define-isl-function union-set-lexmax %isl-union-set-lexmax
+  (:give union-set)
+  (:take union-set))

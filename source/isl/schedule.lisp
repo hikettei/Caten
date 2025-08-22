@@ -38,3 +38,9 @@
 (define-isl-function schedule-from-domain %isl-schedule-from-domain
   (:give schedule)
   (:take union-set))
+
+(defun schedule-read-from-str (str)
+  (%make-schedule
+   (%isl-schedule-read-from-str
+    (context-handle *context*)
+    str)))

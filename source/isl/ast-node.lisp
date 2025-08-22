@@ -90,3 +90,7 @@
     (:ast-node-block (%make-block-node handle))
     (:ast-node-mark (%make-mark-node handle))
     (:ast-node-user (%make-user-node handle))))
+
+(define-isl-function ast-node-get-annotation %isl-ast-node-get-annotation
+  (:give identifier)
+  (:keep ast-node))

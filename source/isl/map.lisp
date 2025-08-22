@@ -20,3 +20,45 @@
 (define-isl-function basic-map-map %isl-map-from-basic-map
   (:give map)
   (:take basic-map))
+
+(define-isl-function map-from-domain %isl-map-from-domain
+  (:give map)
+  (:take set))
+
+(define-isl-function map-domain %isl-map-domain
+  (:give set)
+  (:take map))
+
+(define-isl-function map-range %isl-map-range
+  (:give set)
+  (:take map))
+
+(defun map-move-dims (map dst-type dst-pos src-type src-pos n)
+  (%make-map (%isl-map-move-dims (map-handle (copy map)) dst-type dst-pos src-type src-pos n)))
+
+(defun map-dim (map type)
+  (%isl-map-dim (map-handle map) type))
+
+(defun map-dim-min (map pos)
+  (%make-map (%isl-map-dim-min (map-handle (copy map)) pos)))
+
+(defun map-dim-max (map pos)
+  (%make-map (%isl-map-dim-max (map-handle (copy map)) pos)))
+
+(defun map-project-out (map type from to)
+  (%make-map (%isl-map-project-out (map-handle (copy map)) type from to)))
+
+(define-isl-function map-wrap %isl-map-wrap
+  (:give set)
+  (:take map))
+
+(define-isl-function map-align-params %isl-map-align-params
+  (:give map)
+  (:take map)
+  (:take space))
+
+(defun map-set-tuple-id (map type id)
+  (%make-map (%isl-map-set-tuple-id (map-handle (copy map)) type (identifier-handle (copy id)))))
+
+(defun map-get-tuple-name (map type)
+  (%isl-map-get-tuple-name (map-handle map) type))

@@ -99,7 +99,7 @@
   (when (eql :bool-true (isl::%isl-schedule-node-has-children (schedule-node-handle schedule-node)))
     (let ((n (isl::%isl-schedule-node-n-children (schedule-node-handle schedule-node))))
       (loop for nth upfrom 0 below n
-	    collect (isl::%isl-schedule-node-child (schedule-node-handle schedule-node) nth)))))
+	    collect (isl::%make-schedule-node (isl::%isl-schedule-node-child (schedule-node-handle (copy schedule-node)) nth))))))
 
 (defun schedule-node-get-type (schedule-node)
   (declare (type schedule-node schedule-node))
@@ -129,6 +129,21 @@
   (:take union-set))
 
 (define-isl-function schedule-node-band-tile %isl-schedule-node-band-tile
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-scale %isl-schedule-node-band-scale
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-scale-down %isl-schedule-node-band-scale-down
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-mod %isl-schedule-node-band-mod
   (:give schedule-node)
   (:take schedule-node)
   (:take multi-val))
@@ -172,3 +187,56 @@
 (defun schedule-node-is-equal (band1 band2)
   (declare (type schedule-node band1 band2))
   (%isl-schedule-node-is-equal (schedule-node-handle band1) (schedule-node-handle band2)))
+
+(define-isl-function schedule-node-get-prefix-schedule-relation %isl-schedule-node-get-prefix-schedule-relation
+  (:give union-map)
+  (:keep schedule-node))
+
+
+(define-isl-function schedule-node-get-prefix-schedule-union-map %isl-schedule-node-get-prefix-schedule-union-map
+  (:give union-map)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-get-subtree-expansion %isl-schedule-node-get-subtree-expansion
+  (:give union-map)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-insert-filter %isl-schedule-node-insert-filter
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
+(define-isl-function schedule-node-insert-sequence %isl-schedule-node-insert-sequence
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set-list))
+
+(define-isl-function schedule-node-insert-set %isl-schedule-node-insert-set
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set-list))
+
+(define-isl-function schedule-node-filter-get-filter %isl-schedule-node-filter-get-filter
+  (:give union-set)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-next-sibling %isl-schedule-node-next-sibling
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-order-before %isl-schedule-node-order-before
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
+(define-isl-function schedule-node-order-after %isl-schedule-node-order-after
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
+(defun schedule-node-sequence-splice-child (node pos)
+  (%make-schedule-node (%isl-schedule-node-sequence-splice-child (schedule-node-handle (copy node)) pos)))
+
+(define-isl-function schedule-node-cut %isl-schedule-node-cut
+  (:give schedule-node)
+  (:take schedule-node))

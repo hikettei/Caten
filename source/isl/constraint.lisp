@@ -43,3 +43,22 @@
   (:keep dim-type)
   (:keep integer position)
   (:take value value))
+
+(defgeneric set-constant-si (constraint v))
+(defmethod set-constant-si ((constraint equality-constraint) v)
+  (%make-equality-constraint (%isl-constraint-set-constant-si (constraint-handle (copy constraint)) v)))
+(defmethod set-constant-si ((constraint inequality-constraint) v)
+  (%make-inequality-constraint (%isl-constraint-set-constant-si (constraint-handle (copy constraint)) v)))
+
+(defgeneric set-constant-val (constraint v))
+(defmethod set-constant-val ((constraint equality-constraint) v)
+  (%make-equality-constraint (%isl-constraint-set-constant-val (constraint-handle (copy constraint)) (value-handle (copy v)))))
+(defmethod set-constant-val ((constraint inequality-constraint) v)
+  (%make-inequality-constraint (%isl-constraint-set-constant-val (constraint-handle (copy constraint)) (value-handle (copy v)))))
+
+(defun set-coefficient-si (constraint type pos v)
+  (funcall
+   (etypecase constraint
+     (equality-constraint #'%make-equality-constraint)
+     (inequality-constraint #'%make-inequality-constraint))
+   (%isl-constraint-set-coefficient-si (constraint-handle (copy constraint)) type pos v)))

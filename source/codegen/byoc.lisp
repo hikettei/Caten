@@ -40,7 +40,7 @@
 
 (defparameter *autotune-mode-p* nil)
 (defmethod caten/runtime:realize-node ((node-id (eql :KERNEL)) runtime node args)
-  (when *autotune-mode-p* (return-from caten/runtime:realize-node (uiop:symbol-call :caten/codegen/polyhedral :realize-node-with-autotuning runtime node args)))
+  (when *autotune-mode-p* (return-from caten/runtime:realize-node (uiop:symbol-call :caten/codegen/search/autotune :online-autotune-kernel runtime node)))
   ;; [TODO] coerce-dtyped-buffer and force scalars to be a buffer? or if there's segv we have to add them.
   (let* ((kernel (caten/air:getattr node :kernel-info))
          (prg-time (kernel-call kernel runtime node (subseq args (caten/air:getattr node :n-kernel-args)))))

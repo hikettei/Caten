@@ -2,7 +2,7 @@
   :description "Caten Code Generator Engine"
   :author "hikettei <ichndm@gmail.com>"
   :licence "MIT"
-  :depends-on ("caten.runtime" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi")
+  :depends-on ("caten.runtime" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi" "ironclad")
   :serial t
   :components
   ((:file "helpers")
@@ -15,7 +15,16 @@
    (:file "blueprint")
    (:file "memory-planner")
    (:file "pprinter")
-   (:file "polyhedral")
+   ;; AutoSchedulers
+   (:file "search/directive")
+   (:file "search/schedule")
+   (:file "search/polyhedral")
+   (:file "search/perf")
+   (:file "search/optimization-rule")
+   (:file "search/ast")
+   (:file "search/evaluator")
+   (:file "search/autotune")
+   
    (:file "jit")
    (:file "package")
    ;(:file "documentation")

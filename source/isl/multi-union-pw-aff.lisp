@@ -15,7 +15,8 @@
 
 (define-isl-object pw-aff
   :free %isl-pw-aff-free
-  :copy %isl-pw-aff-copy)
+  :copy %isl-pw-aff-copy
+  :list-type pw-aff-list)
 
 (defmethod print-object ((value multi-union-pw-aff) stream)
   (print-unreadable-object (value stream :type t)
@@ -149,4 +150,71 @@
 
 (define-isl-function union-map-from-union-pw-aff %isl-union-map-from-union-pw-aff
   (:give union-map)
+  (:take union-pw-aff))
+
+(define-isl-function union-pw-aff-get-pw-aff-list %isl-union-pw-aff-get-pw-aff-list
+  (:give pw-aff-list)
+  (:keep union-pw-aff))
+
+(defun pw-aff-list-get-at (pw-aff-list n)
+  (%make-pw-aff (%isl-pw-aff-list-get-at (pw-aff-list-handle pw-aff-list) n)))
+
+(define-isl-function pw-aff-domain %isl-pw-aff-domain
+  (:give set)
+  (:take pw-aff))
+
+(define-isl-function pw-aff-neg %isl-pw-aff-neg
+  (:give pw-aff)
+  (:take pw-aff))
+
+(defun multi-union-pw-aff-reset-tuple-id (mupa type)
+  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (copy mupa)) type)))
+
+(defun multi-union-pw-aff-get-tuple-name (mupa type)
+  (%isl-multi-union-pw-aff-get-tuple-name (multi-union-pw-aff-handle mupa) type))
+
+(defun multi-union-pw-aff-get-dim-id (mupa type pos)
+  (%make-identifier (%isl-multi-union-pw-aff-get-dim-id (multi-union-pw-aff-handle mupa) type pos)))
+
+(defun multi-union-pw-aff-get-dim-name (mupa type pos)
+  (%isl-id-to-str (identifier-handle (multi-union-pw-aff-get-dim-id mupa type pos))))
+
+(defun multi-union-pw-aff-dim (mupa type)
+  (%isl-multi-union-pw-aff-dim (multi-union-pw-aff-handle mupa) type))
+
+(defun pw-aff-get-dim-name (pa type pos)
+  (%isl-pw-aff-get-dim-name (pw-aff-handle pa) type pos))
+
+(defun pw-aff-dim (pa type)
+  (%isl-pw-aff-dim (pw-aff-handle pa) type))
+
+(define-isl-function multi-union-pw-aff-union-add %isl-multi-union-pw-aff-union-add
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))
+
+(define-isl-function multi-union-pw-aff-get-space %isl-multi-union-pw-aff-get-space
+  (:give space)
+  (:keep multi-union-pw-aff))
+
+(define-isl-function union-pw-aff-intersect-domain %isl-union-pw-aff-intersect-domain
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take union-set))
+
+(define-isl-function multi-union-pw-aff-from-union-pw-aff %isl-multi-union-pw-aff-from-union-pw-aff
+  (:give multi-union-pw-aff)
+  (:take union-pw-aff))
+
+(define-isl-function union-map-from-multi-union-pw-aff %isl-union-map-from-multi-union-pw-aff
+  (:give union-map)
+  (:take multi-union-pw-aff))
+
+(define-isl-function multi-union-pw-aff-from-union-map %isl-multi-union-pw-aff-from-union-map
+  (:give multi-union-pw-aff)
+  (:take union-map))
+
+(define-isl-function union-pw-aff-sub %isl-union-pw-aff-sub
+  (:give union-pw-aff)
+  (:take union-pw-aff)
   (:take union-pw-aff))

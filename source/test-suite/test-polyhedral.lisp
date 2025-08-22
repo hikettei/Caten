@@ -1,7 +1,10 @@
 (defpackage :caten/test-suite/polyhedral
   (:use :cl :rove :caten/api :caten/air :caten/aasm :caten/lang :caten/runtime :caten/codegen/byoc
-        :caten/codegen/polyhedral
-        :caten/codegen/blueprint)
+        :caten/codegen/search/polyhedral
+   :caten/codegen/search/schedule
+   :caten/codegen/search/optimization-rule
+   :caten/codegen/search/ast
+   :caten/codegen/blueprint)
   (:export))
 
 (in-package :caten/test-suite/polyhedral)
@@ -9,14 +12,15 @@
 (in-caten-toplevel)
 
 (defun psched (poly)
-  (format t "~a~%" (caten/codegen/pprinter:pprint-isl-schedule (caten/codegen/polyhedral::poly-schedule poly))))
+  (format t "~a~%" (caten/codegen/pprinter:pprint-isl-schedule (psi-theta poly))))
 
 (defun getband (poly idx)
-  (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx))
+  ;; (caten/codegen/polyhedral::schedule-node-get-band-from-relative-idx (isl::schedule-get-root (caten/codegen/polyhedral::poly-schedule poly)) idx)
+  )
 
 (defun expr-val (expr) (caten/aasm/expr:expr-realize-as-value expr))
 
-(defun get-depth (band) (caten/codegen/polyhedral::schedule-node-get-band-depth band))
+(defun get-depth (band) (schedule-node-band-get-depth band))
 
 (defmacro bp-match-p (graph pattern &aux (match-p (gensym)))
   `(let ((,match-p nil))
@@ -53,16 +57,19 @@
                    "Runtime should only schedule a single kernel!")
            (let ((kernel (find :KERNEL (graph-nodes (runtime-graph runtime)) :key #'node-type)))
              (assert kernel)
-             (caten/codegen/polyhedral::make-polyhedral-from-blueprint
-              (kernel-blueprint (getattr kernel :kernel-info))
-              :strategy ,strategy)))))))
+             (values
+              (make-polyhedral-schedule-item
+               (kernel-blueprint (getattr kernel :kernel-info))
+               :strategy ,strategy)
+              (kernel-blueprint (getattr kernel :kernel-info)))))))))
 
 (defmacro with-polyhedral (((bind polyhedral) &rest optimizations) ((bind1 &optional (allocs (gensym))) &body body))
-  `(let ((,bind ,polyhedral))
+  (let ((bp (gensym)))
+  `(multiple-value-bind (,bind ,bp) ,polyhedral
      ,@optimizations
-     (multiple-value-bind (,bind1 ,allocs) (caten/codegen/polyhedral::get-blueprint-from-polyhedral ,bind)
+     (multiple-value-bind (,bind1 ,allocs) (apply-schedule (psi-theta ,bind) ,bp)
        (declare (ignorable ,allocs))
-       ,@body)))
+       ,@body))))
 
 (with-traced-polyhedral ($gemm gemm *strategy*)
   @caten.jit () {
@@ -80,6 +87,7 @@
                           (Pointer O Type (Batch Head N D))
                           (Pointer L Type (Batch Head N)) (Pointer M Type (Batch Head N)))
     (let ((scale (/ 1.0 (sqrt (scast D :float32)))))
+      ;(for index = (Range (* batch head N) 1) do (setf (aref M index) 0.0)) ;; Caten should fuse this M initialization loop!
       (for b = (Range BATCH 1) do
            (for h = (Range Head 1) do
                 (for i = (Range N 1) do
@@ -317,20 +325,35 @@
   ;; Workload
   ;; - DirectiveをちゃんとFORに適用させる or DirectiveMarkにSequenceを挿入したい？
   ;; - ReminderはPaddingで表現する
-  (testing "Vectorize at K"
+  (testing "Vectorize at ELWISE"
     (with-polyhedral
         ;; TODO: If the loop was smaller than width?
-        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 20)) (make-tensor `(20 30))))
-         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
-         (ok (= 1 (get-depth (getband gemm 1))))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 0) :axis 0)))
-         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 1) :axis 1)))
-         (print gemm))
+        ((sin ($sin (make-tensor `(100 100))))
+         (setf sin (apply-optimization sin (make-instance 'Vectorize :width 3 :band (getband sin 0) :axis 0)))
+         (print sin))
         ((new-kernels extra-allocs)
           (print-blueprint (car new-kernels) t)
           (ok (= 1 (length new-kernels)))
           (ok (= 0 (length extra-allocs)))
-          ))))
+          )))
+  
+  (testing "Vectorize at K"
+    (with-polyhedral
+        ;; TODO: If the loop was smaller than width?
+        ((gemm ($gemm (make-tensor `(10 30)) (make-tensor `(10 27)) (make-tensor `(27 30))))
+         (setf gemm (apply-optimization gemm (make-instance 'Reschedule :maximize-coincidence 1)))
+         (ok (= 1 (get-depth (getband gemm 1))))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 0) :axis 0)))
+         (setf gemm (apply-optimization gemm (make-instance 'Vectorize :width 4 :band (getband gemm 5) :axis 0)))
+         (print gemm))
+        ((new-kernels extra-allocs)
+          (print-blueprint (car new-kernels) t)
+          (print (caten/codegen/renderer::make-kernel-description (car new-kernels)))
+          (ok (= 1 (length new-kernels)))
+          (ok (= 0 (length extra-allocs)))
+  )))
+  
+  )
 ;; [TODO]
 ;; 戻ったら
 ;; Softmax, FlashAttentionでVECTORIZE
@@ -432,6 +455,41 @@
         (assert (= 1 (length softmax-kernels)))
         (let ((sftmx (car softmax-kernels)))
           (print-blueprint sftmx t))))))
+
+(deftest test-flash-attention-auto-schedule
+  (caten (flash_attention (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50 256)) (make-tensor `(100 16 50)) (make-tensor `(100 16 50)))))
+
+(defun scaled-dot-product-attention (query key value &optional mask)
+  (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
+    (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
+
+(deftest test-fusion1
+  (with-no-grad
+    (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))) '(0 1 2 3))))))
+
+(deftest test-fusion2
+  (with-no-grad
+    (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))) '(1 0 2 3))))))
+
+(deftest test-fusion3
+  (with-no-grad
+    (caten (caten/nn:!maxpool (caten/nn:!batch-norm (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)))))))))
+
+(deftest test-fusion4
+  (caten (scaled-dot-product-attention (make-tensor `(4 8 8)) (make-tensor `(4 8 8)) (make-tensor `(4 8 8)))))
+
+(deftest test-fusion5
+  (caten (!add (!t (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))) (!t (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
+
+(deftest test-fusion6
+  (with-no-grad
+    (caten (caten/nn:!maxpool (!permute (caten/nn:!relu (caten/nn:!convnd (make-tensor `(10 10 25 25)) (make-tensor `(10 10 5 5)))) '(1 0 2 3))))))
+
+(deftest test-fusion7 ;; flash matmul w/ no benefit
+  (caten (!matmul (make-tensor `(128 128)) (!matmul (make-tensor `(128 128)) (make-tensor `(128 128))))))
+
+(deftest test-fusion8 ;; flash matmul
+  (caten (!matmul (make-tensor `(128 128)) (!t (!matmul (make-tensor `(128 128)) (make-tensor `(128 128)))))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる
