@@ -7,6 +7,7 @@
 ;; ~~ Grids ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Grids
   (is-affine t :type boolean)
+  (edge->view (make-hash-table) :type hash-table)
   (id 0 :type fixnum)
   ;; iterator
   (items nil :type list))
@@ -14,24 +15,39 @@
 ;; Binary/Ternary no case ha touzen broadcast suru hituyou ga aru
 ;; but: they are same-ranked so the code should be still simple...
 ;; %Grids-Coalesce
+;; view w/o items  ==> rewrite as non-affine
+;; bring back symbolic ...
+;; scalar computation vs load
 (defun make-grids-from-node (node id->grids)
   (declare (type node node))
-  (case (node-type node)
-    (:Allocate
-     ;; If allocate produces scalar computation, no worth to explore it.
-     (if (null (node-reads node))
-         (make-grids :is-affine nil)
-         (make-grids :is-affine t)))
-    (:View
-     ;; If view produces scalar computation (e.g.: A[0])
+  (let ((next-id (hash-table-count id->grids)))
+    (case (node-type node)
+      ((:Allocate :View)
+       (make-grids :id next-id :is-affine t :items (list node)))
+      (otherwise
+       (if (typep (node-attr node) 'caten/aasm::JITAble)
+           (let* ((parent-grids
+                    (loop for r in (node-reads node)
+                          for g = (gethash r id->grids)
+                          if (and g (grids-is-affine g)) collect g))
+                  (items (apply #'append (list node) (map 'list #'grids-items parent-grids)))
+                  (new-grids
+                    (make-grids :id next-id :items items)))
+             (dolist (n items)
+               (dolist (w (node-writes n))
+                 (setf (gethash w id->grids) new-grids)))
+             new-grids)
+           (make-grids :id next-id :is-affine nil :id 0 :items (list node)))))))
 
-     )
-    (otherwise
-     (if (typep (node-attr node) 'caten/aasm::JITAble)
-         (progn
-           ;; BinaryOps?
-           )
-         (make-grids :is-affine nil :id 0 :items (list node))))))
+(defun grids-init (grids)
+  (declare (type Grids grids))
+  ;; View w/o items ==> rewrite as non-affine
+  ;; how to deal w/ ?
+  ;; A -> [VIEW] -> [VIEW] -> B
+  (when (and (null (grids-items grids)) (grids-is-affine grids))
+    (setf (grids-is-affine grids) nil))
+  ;; [todo] all shape space should match here
+  )
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; 最後のViewも残せるようにしたい！ (e.g.: Matmul ...)
 ;; Allocate -> View Rewriting
@@ -69,16 +85,22 @@
     (assert (= 0 (hash-table-count out-degrees)) ()
             "The following nodes are not scheduled. circular dependencies?~%~a" (alexandria:hash-table-values out-degrees))
     ;; Construct Graph
-    (maphash
-     #'(lambda (id grids)
-         ;; each grid has unique id generated from gensym
-         ;; OR, make it unique (add counter)
-         ;; each kernel has name like
-         ;; K_1
-         )
-     id->grids)
-    ))
-
+    (let ((all-grids (make-hash-table)) (n-scheduled 0))
+      (declare (type fixnum n-scheduled))
+      ;; circular dependency of schedule graph? will it happen?
+      (maphash
+       #'(lambda (id grids)
+           (declare (ignore id))
+           (setf (gethash (grids-id grids) all-grids) grids))
+       id->grids)
+      (maphash
+       #'(lambda (id grids)
+           (incf n-scheduled (length (the list (grids-items grids))))
+           (format t "~a -> ~a~%" id grids)
+           )
+       all-grids)
+      (assert (= n-scheduled (length (the list (graph-nodes graph)))))
+      )))
 
 (defun schedule-graph-solve-ilp (graph)
   ;; Objective: Maximize the volume of Affine Nodes
