@@ -21,35 +21,42 @@
 ;; - run tensor-relay-scalarify?
 ;; - or measure locality?
 ;;  ==> simplify ast.lisp
-(defun make-grids-from-node (node id->grids)
+(defun make-grids-from-node (graph node id->grids id->users)
   (declare (type node node))
-  (let ((next-id (hash-table-count id->grids)))
-    (case (node-type node)
-      (:Allocate
-       (if (node-reads node)
-           (make-grids :id next-id :is-affine nil :items (list node))
-           (make-grids :id next-id :is-affine t :items (list node))))
-      (:View (make-grids :id next-id :is-affine t :items (list node)))
-      (otherwise
-       (if (typep (node-attr node) 'JITAble)
-           (let* ((parent-grids
-                    (loop for r in (node-reads node)
-                          for g = (gethash r id->grids)
-                          if (and g (grids-is-affine g)) collect g))
-                  (items (apply #'append (list node) (map 'list #'grids-items parent-grids)))
-                  (new-grids
-                    (make-grids :id next-id :items items)))
-             (dolist (n items)
-               (dolist (w (node-writes n))
-                 (setf (gethash w id->grids) new-grids)))
-             new-grids)
-           (make-grids :id next-id :is-affine nil :id 0 :items (list node)))))))
+  (flet ((node-is-singleton-p (id &aux (node (id->value graph id)))
+           (and
+            node
+            (= 1 (length (gethash (car (node-writes node)) id->users))))))
+    (let ((next-id (hash-table-count id->grids)))
+      (case (node-type node)
+        (:Allocate
+         (if (node-reads node)
+             (make-grids :id next-id :is-affine nil :items (list node))
+             (make-grids :id next-id :is-affine t :items (list node))))
+        (:View (make-grids :id next-id :is-affine t :items (list node)))
+        (otherwise
+         
+         (if (typep (node-attr node) 'JITAble)
+             (let* ((parent-grids
+                      (loop for r in (node-reads node)
+                            for g = (gethash r id->grids)
+                            if (and g (grids-is-affine g) (node-is-singleton-p r)) collect g))
+                    (items (append (reduce #'append (map 'list #'grids-items parent-grids)) (list node)))
+                    (new-grids
+                      (make-grids :id next-id :items items)))
+               (dolist (n items)
+                 (dolist (w (node-writes n))
+                   (setf (gethash w id->grids) new-grids)))
+               new-grids)
+             (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
 
 (defun grids-init (grids id->grids id->users graph-outputs)
   (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
   ;; View w/o items ==> rewrite as non-affine
   ;; how to deal w/ ?
   ;; A -> [VIEW] -> [VIEW] -> B
+  ;; [TODO] Avoid circuliar deps
+  ;; [TODO]
   (when (and (= 1 (length (grids-items grids)))
              (eql :VIEW (node-type (car (grids-items grids)))))
     (setf (grids-is-affine grids) nil))
@@ -77,8 +84,6 @@
       ;; [todo] all shape space should match here
       ;; [todo] coalesce
       ;; Construct blueprint?
-      (print grids)
-      (print grid-writes)
       (funcall type grid-writes grid-reads))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; 最後のViewも残せるようにしたい！ (e.g.: Matmul ...)
@@ -89,7 +94,6 @@
   "Constructs ScheduleGraph from the given tensorgraph."
   (declare (type Graph graph) (optimize (speed 3)))
   (assert (null (graph-seen graph)) () "tensor-graph->schedule-graph: Scheduling partial graph is not allowed! Set graph-seen = nil")
-  (print graph)
   (let ((id->grids (make-hash-table)) (id->users (make-hash-table)) (queue)
         (in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
     (flet ((butseen (list) (loop for l in list for v = (id->value graph l) if (and v (symbolp l)) collect v)))
@@ -107,7 +111,7 @@
     (loop for node in (graph-nodes graph) if (null (gethash (node-id node) in-degrees)) do (push node queue))
     (loop while queue
           for node = (pop queue)
-          for new-grid = (make-grids-from-node node id->grids) do
+          for new-grid = (make-grids-from-node graph node id->grids id->users) do
             (dolist (w (node-writes node)) (setf (gethash w id->grids) new-grid))
             (dolist (adj (gethash (node-id node) out-degrees))
               (setf (gethash (node-id adj) in-degrees) (remove (node-id node) (gethash (node-id adj) in-degrees) :key #'node-id))
@@ -133,12 +137,16 @@
          all-grids)
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf (graph-outputs *ctx*) (graph-outputs graph))
-        *ctx* ;; ooh circular deps ...
-        ))))
+        (->fast-graph *ctx*))))) ;; ooh circular deps ...
 
 ;; Solve Graph Partition Problem
 (defun schedule-graph-solve-ilp (schedule-graph)
   ;; Objective: Maximize the volume of Affine Nodes
   ;; Firstly, single Affine single reduce
   ;; Secondly, fuse reduction and reduction
+  ;; Create this form first:
+  ;; ACC      |
+  ;;   REDUCE | <== Scalarify!
+  ;; STORE    |
+  ;; And then fuse Reduce+Reduce
   )
