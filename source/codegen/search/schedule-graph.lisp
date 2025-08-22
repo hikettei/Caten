@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/schedule-graph
-  (:use :cl :caten/air)
+  (:use :cl :caten/air :caten/aasm)
   (:export
    #:tensor-graph->schedule-graph))
 
@@ -31,7 +31,7 @@
            (make-grids :id next-id :is-affine t :items (list node))))
       (:View (make-grids :id next-id :is-affine t :items (list node)))
       (otherwise
-       (if (typep (node-attr node) 'caten/aasm::JITAble)
+       (if (typep (node-attr node) 'JITAble)
            (let* ((parent-grids
                     (loop for r in (node-reads node)
                           for g = (gethash r id->grids)
@@ -45,8 +45,8 @@
              new-grids)
            (make-grids :id next-id :is-affine nil :id 0 :items (list node)))))))
 
-(defun grids-init (grids id->grids id->users)
-  (declare (type Grids grids) (type hash-table id->grids id->users) (optimize (speed 3)))
+(defun grids-init (grids id->grids id->users graph-outputs)
+  (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
   ;; View w/o items ==> rewrite as non-affine
   ;; how to deal w/ ?
   ;; A -> [VIEW] -> [VIEW] -> B
@@ -54,17 +54,32 @@
              (eql :VIEW (node-type (car (grids-items grids)))))
     (setf (grids-is-affine grids) nil))
   (labels ((node-is-output-p (node)
-             (some
-              #'(lambda (usr)
-                  (let ((usr (gethash (car (node-writes usr)) id->grids)))
-                    (assert usr)
-                    (not (= (grids-id grids) (grids-id usr)))))
-              (gethash (car (node-writes node)) id->users))))
-    (print (map 'list #'node-is-output-p (grids-items grids)))
-    ;; [todo] all shape space should match here
-    ;; [todo] coalesce
-    ;; Construct blueprint?
-    ))
+             (or
+              (some
+               #'(lambda (usr)
+                   (let ((usr (gethash (car (node-writes usr)) id->grids)))
+                     (not (= (grids-id grids) (grids-id usr)))))
+               (gethash (car (node-writes node)) id->users))
+              (find (the symbol (car (node-writes node))) graph-outputs)))
+           (node-reads-from-another-grids (node)
+             (loop for r in (node-reads node)
+                   for g = (gethash r id->grids)
+                   if (and (symbolp r) g (not (= (grids-id grids) (grids-id g)))) ;; collect when definition is not self
+                     collect r)))
+    (let ((grid-writes
+            (loop for item in (grids-items grids)
+                  if (node-is-output-p item)
+                    collect (car (node-writes item))))
+          (grid-reads
+            (loop for item in (grids-items grids)
+                  append (node-reads-from-another-grids item)))
+          (type (if (grids-is-affine grids) #'$affine #'$nonaffine)))
+      ;; [todo] all shape space should match here
+      ;; [todo] coalesce
+      ;; Construct blueprint?
+      (print grids)
+      (print grid-writes)
+      (funcall type grid-writes grid-reads))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; 最後のViewも残せるようにしたい！ (e.g.: Matmul ...)
 ;; Allocate -> View Rewriting
@@ -110,15 +125,16 @@
            (declare (ignore id))
            (setf (gethash (grids-id grids) all-grids) grids))
        id->grids)
-      (maphash
-       #'(lambda (id grids)
-           (incf n-scheduled (length (the list (grids-items grids))))
-           (grids-init grids id->grids id->users)
-           (format t "~a -> ~a~%" id grids)
-           )
-       all-grids)
-      (assert (= n-scheduled (length (the list (graph-nodes graph)))))
-      )))
+      (let ((*ctx* (make-graph)))
+        (maphash
+         #'(lambda (id grids)
+             (incf n-scheduled (length (the list (grids-items grids))))
+             (grids-init grids id->grids id->users (graph-outputs graph)))
+         all-grids)
+        (assert (= n-scheduled (length (the list (graph-nodes graph)))))
+        (setf (graph-outputs *ctx*) (graph-outputs graph))
+        *ctx* ;; ooh circular deps ...
+        ))))
 
 ;; Solve Graph Partition Problem
 (defun schedule-graph-solve-ilp (schedule-graph)

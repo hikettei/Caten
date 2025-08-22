@@ -94,4 +94,6 @@
   ;; RuntimeOps
   (:export #:$sink #:$kernel #:$sync)
   ;; ScheduleOps
-  (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse))
+  (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse)
+  ;; schedule-ops
+  (:export #:$affine #:$nonaffine))
