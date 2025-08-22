@@ -10,6 +10,7 @@
    (:file "specs/tensor-ops")
    (:file "specs/render-ops")
    (:file "specs/runtime-ops")
+   (:file "specs/schedule-ops")
    (:file "tensor-ops")
    (:file "runtime-ops")
    (:file "simplifiers")
