@@ -81,6 +81,7 @@ TODO:
 
 (defmethod optrule-generate-search-space (poly (id (eql :Fuse)))
   (let ((seq (psi-get-first-unoptimized-sequence poly)))
+    ;; [TODO] Return 'Saturated if seq is null (and succeed)
     (when seq
       (let* ((seqnode (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) seq))
              (status (schedule-node-sequence-check-fusible seqnode)))

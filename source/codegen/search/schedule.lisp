@@ -874,6 +874,9 @@ schedule: ... --------| // Returned
 ```
 "
   (declare (type isl::schedule-node-band band))
+  ;; The band is already the innermost
+  (when (not (eql (schedule-node-get-type (schedule-node-first-child band)) :schedule-node-band))
+    (return-from schedule-node-band-chain-sink band))
   (let ((mupa (schedule-node-band-get-partial-schedule band)))
     (multiple-value-bind (depth innermost-band)
         (schedule-node-band-get-n-chain (schedule-node-delete band))
@@ -1370,67 +1373,7 @@ Return new schedule."
 ;; 1. Can assert S1 == S2
 ;; 2. Can tile S1
 ;; 実際にFuseしたScheduleを用意する必要がある？
-(defun r () ;; read (pool)
-  (union-map-from-str "{ S1[_gid0, _gid1, _gid2, _gid3, _gid4_1, _gid5_1] -> X[((((((441*_gid0)+(2646*_gid1))+(42*_gid2))+(2*_gid3))+(21*_gid4_1))+_gid5_1)] : 0 <= _gid0 < 6 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10 and 0 <= _gid4_1 < 2 and 0 <= _gid5_1 < 2 }"))
-
-(defun w () ;; write (conv)
-  (union-map-from-str "{ S1[_gid0, _gid2, _gid3, _gid4] -> X[((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 < 10 and 0 <= _gid2 < 6 and 0 <= _gid3 < 21 and 0 <= _gid4 < 21 }"))
-;;;; ================================================================
-;;;; Compare mapped address spaces after keeping only a slice of
-;;;; input dimensions on each access relation.
-;;;; Return T iff the two images (UnionSet in the buffer space) match.
-;;;; ================================================================
-
-(defun %slice-input-dims/map (m start end)
-  "Keep only input dims [start..end] (0-based, inclusive) of MAP m.
-   Other input dims are existentially projected out."
-  (let* ((nin (isl::map-dim m :dim-in)))
-    (assert (and (<= 0 start) (<= start end) (< end nin))
-            () "slice-input-dims: bad range ~a..~a for nin=~a" start end nin)
-    (let* ((left  start)                         ; drop [0 .. start-1]
-           (keep  (1+ (- end start)))           ; keep count_
-           (m1    (if (> left 0)
-                      (isl::map-project-out (copy m) :dim-in 0 left)
-                      (copy m)))
-           (nin1  (isl::map-dim m1 :dim-in))
-           (tail  (- nin1 keep))                 ; drop after kept block
-           (m2    (if (> tail 0)
-                      (isl::map-project-out m1 :dim-in keep tail)
-                      m1)))
-      m2)))
-
-(defun %slice-input-dims/umap (umap start end)
-  "UnionMap version of %slice-input-dims/map."
-  (let* ((ml (isl::union-map-get-map-list umap))
-         (n  (isl::map-list-size ml))
-         (acc nil))
-    (dotimes (i n (or acc
-                      (isl::union-map-empty (isl::union-map-get-space umap))))
-      (let* ((m   (isl::map-list-elt ml i))
-             (m*  (%slice-input-dims/map m start end))
-             (u*  (isl::map-union-map m*)))
-        (setf acc (if acc (isl::union-map-union acc u*) u*))))))
-
-(defun %equal-unionset-p (u1 u2)
-  "Check U1 = U2 by (U1⊆U2) ∧ (U2⊆U1)."
-  (labels ((subset-p (a b)
-             (let ((diff (isl::union-set-subtract (copy a) (copy b))))
-               (isl::union-set-is-empty diff))))
-    (and (subset-p u1 u2) (subset-p u2 u1))))
-
-
-(defun equal-mapped-space-p (umap1 a b umap2 c d)
-  "From UMAP1, keep only input dims [a..b]; from UMAP2, keep only [c..d].
-   Compare the images in the buffer space. Return T iff equal."
-  (declare (type isl::union-map umap1 umap2))
-  (print umap1)
-  (print umap2)
-  ;; 1) Slice domain dims
-  (let* ((u1 (%slice-input-dims/umap umap1 a b))
-         (u2 (%slice-input-dims/umap umap2 c d))
-         ;; 2) Compare their ranges (address sets) in the buffer space
-         (r1 (isl::union-set-coalesce (isl::union-map-range u1)))
-         (r2 (isl::union-set-coalesce (isl::union-map-range u2))))
-    (print r1)
-    (print r2)
-    (%equal-unionset-p r1 r2)))
+;; (defun r () ;; read (pool)
+;;  (union-map-from-str "{ S1[_gid0, _gid1, _gid2, _gid3, _gid4_1, _gid5_1] -> X[((((((441*_gid0)+(2646*_gid1))+(42*_gid2))+(2*_gid3))+(21*_gid4_1))+_gid5_1)] : 0 <= _gid0 < 6 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10 and 0 <= _gid4_1 < 2 and 0 <= _gid5_1 < 2 }"))
+;;(defun w () ;; write (conv)
+;;  (union-map-from-str "{ S1[_gid0, _gid2, _gid3, _gid4] -> X[((((2646*_gid0)+(441*_gid2))+(21*_gid3))+_gid4)] : 0 <= _gid0 < 10 and 0 <= _gid2 < 6 and 0 <= _gid3 < 21 and 0 <= _gid4 < 21 }"))

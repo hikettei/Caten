@@ -161,6 +161,14 @@ BEAM Search Workflow:
 ;; ==> CmdHistoryから求める？(Less Transpose/Reshape The Better)
 ;; [TODO] Faster Exploration Time (Call ISL APIs Directly?)
 ;; [TODO] ↓をSCCsのみで実行するようにして，End2EndでILP Based Polyhedral Compiler
+;; [TODO]
+;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
+;;   - Restrict the exploration space
+;;   - Optimize ISL ops
+;;   - Transpose ==> How to pickup just "relavant" dim?
+;; - FlashAttention => Avoid FullFuse
+;; - Restrict The Exploration Space for Transpose
+;; - Finish Reorder? Should we search it?
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -176,17 +184,10 @@ BEAM Search Workflow:
                (when (null (sgt-items gen0))
                  (print "Finished")
                  (print prev-items)
+                 ;; [TODO] How to solve the best one?
                  (return-from ApplyReschedule gen0))
                t))
       (time (loop while t do (generate)))
-      ;; [TODO]
-      ;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
-      ;;   - Restrict the exploration space
-      ;;   - Optimize ISL ops
-      ;;   - Transpose ==> How to pickup just "relavant" dim?
-      ;; - FlashAttention => Avoid FullFuse
-      ;; - Restrict The Exploration Space for Transpose
-      ;; - Finish Reorder? Should we search it?
       nil)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] BlockLevel Fusion (e.g.: Group multiple sequence of EXPR into a single group)
@@ -199,11 +200,11 @@ BEAM Search Workflow:
 ;; - [ ] Move renderer.lisp ==> byoc or runtime
 ;; - [ ] Move codegen
 ;; - [ ] Remove realize
+;; - [ ] Create ScheduleGraph (each node is Polyhedron!)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
-;;  (print "DEBUG")
-  (dolist (item (append (list src) parents))
+  (dolist (item (reverse (append (list src) parents)))
     (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
   (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)) :scal->array nil)))
     (let* ((t+0 (m src))
