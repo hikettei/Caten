@@ -409,13 +409,14 @@
       (%global r (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt)))))
     (let ((binds)
           (loads)    ;; float acc_0 = 0.0f;
-          (alus) ;; for (int i=0; i<100; i++) acc_0 += ...;
-          (stores)     ;; out[0] = acc_0;
+          (alus)     ;; for (int i=0; i<100; i++) acc_0 += ...;
+          (stores)   ;; out[0] = acc_0;
           (caten/aasm/expr::*expr-no-simplify-mode* t)
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
       ;; [TODO]
       ;; - [ ] BIND handling
+      ;; - [ ] BIND Local?
       ;; - Reduction (OK)
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
@@ -439,31 +440,26 @@
                   (if (getattr item :reduction :allow-undefined t)
                       (let* ((type (read-type-relay item))
                              (w (car (node-writes item)))
-                             (wi (car (relay-write-iters type)) )
+                             (wi (car (relay-write-iters type)))
                              (index (iter->index wi (car (relay-writes type))))
                              (r (car (node-reads item)))
                              (waypoint (gensym "WP"))
-                             (tmp (gensym "R")))
+                             (tmp (gensym "R"))
+                             (tmp1 (gensym "TMP")))
                         ;; Reduction is lowered as:
                         ;; A <- Binary(B, C, reduction=T)
                         ;; ==>
                         ;; TMP = SETF(AREF(B, idx1), Binary(AREF(B, idx2), AREF(C, idx3)))
                         ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
                         (assert (= 1 (length (node-writes item))))
-                        ;; TODO: make it global?
-                        ;; Fuseした後，BINDがInsertされるようにしたい。
-                        ;; BIND is OK if it is local
-                        ;; [TODO]
-                        ;; - Permuteするべきか
-                        ;; LOADER    ;; AREFだけ配置すればおk
-                        ;;  REDUCER  ;; AREF以外はここ
-                        ;; STORER    ;; ReductionStoreはここ
                         (setf (car (node-writes item)) waypoint
-                              (gethash w id->bind) (make-node :JIT :BIND (list w) (list tmp) :value r))
+                              (gethash w id->bind) (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r )))
                         (push (gethash w id->bind) binds)
                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
                         (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
-                        (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp)) stores))
+                        ;; [TODO] id->valueがArefに到達するならば,
+                        ;; Arefをもう一つ作成してそこへ書き込む
+                        (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp1)) stores))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
                             for wi in (relay-write-iters (read-type-relay item))
