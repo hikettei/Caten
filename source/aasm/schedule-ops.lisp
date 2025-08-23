@@ -8,3 +8,9 @@
   (declare (type list writes reads))
   (emit (make-node :Schedule :NonAffine writes reads :items items)))
 
+(defmethod print-node ((node Node) (id (eql :Affine)))
+  ;; [TODO] Moduleと考えて内部のItemsをpprintする
+  (format nil "<Affine : ~a <- (~a)>" (render-list (node-writes node)) (render-list (node-reads node))))
+
+(defmethod print-node ((node Node) (id (eql :NonAffine)))
+  (format nil "<NonAffine : ~a <- (~a)>" (render-list (node-writes node)) (render-list (node-reads node))))

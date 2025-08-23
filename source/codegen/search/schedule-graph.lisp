@@ -1,5 +1,6 @@
 (defpackage :caten/codegen/schedule-graph
-  (:use :cl :caten/air :caten/aasm :caten/aasm/expr)
+  (:documentation "TensorGraph => ScheduleGraph Lowerer")
+  (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers)
   (:export
    #:tensor-graph->schedule-graph))
 
@@ -11,9 +12,8 @@
   ;; iterator
   (items nil :type list))
 
-(defstruct LowerCtx)
-
-
+(defstruct LowerCtx
+  (id->bind (make-hash-table) :type hash-table))
 ;; ~~ Early Coalesce ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Iteration-Space
   (shape nil :type list)
@@ -260,6 +260,50 @@
       (dolist (n items)
         (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
+
+(defun make-index-components (node gids)
+  (assert (eql (node-type node) :INDEX-COMPONENTS))
+  (flet ((maybe-expr-const (x) (if (numberp x) (expr-const x :int64) x)))
+    (labels ((from-expr (shapes components)
+               (reduce
+                #'expr-add
+                (map
+                 'list
+                 #'(lambda (size stride gid)
+                     (if (expr-equal-to size 1)
+                         (expr-const 0 :int64)
+                         (expr-mul (maybe-expr-const stride) (maybe-expr-const gid))))
+                 shapes
+                 components
+                 gids)))
+             (merge-stride (proc list)
+               (loop for p in proc
+                     collect
+                     (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
+                       (if (find 0 strides :test #'eql) (expr-const 0 :int64) (maybe-expr-const (car (last strides))))))))
+      (let* ((is (car (relay-write-iters (read-type-relay node))))
+             (proc (iteration-space-procedure is))
+             (components (merge-stride proc (cdr (node-reads node)))))
+        (let ((e (from-expr (iteration-space-shape is) components)))
+          (setf (node-writes (expr-out e)) (node-writes node)
+                (graph-outputs (expr-graph e)) (node-writes node))
+          e)))))
+
+(defmethod iteration-space-expr-aref ((is Iteration-Space) (type TensorRelay) gids)
+  "Returns a list of EXPR which (reduce #'+ ...) represents for the index."
+  (assert (not (= (tensor-relay-nrank type) -1)) () "buffer-nrank = -1 means the array was mutated to scalar!")
+  (let ((size (iteration-space-shape is))
+        (stride (iteration-space-strides is))
+        (view (iteration-space-views is)))
+    (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
+    (loop for s in stride
+          for nth upfrom 0
+          for i in gids
+          for v = (nth nth view)
+          if v
+            collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
+          else
+            collect (expr-mul (if (numberp i) (expr-const i :int64) i) s))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-grids-from-node (graph node id->grids id->users)
   (declare (type node node))
@@ -289,15 +333,79 @@
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
 
-(defun lower-into-blueprint ())
+(defun lower-into-blueprint (lctx gids iterspace items writes reads write-types read-types)
+  (with-blueprint (:noopt t)
+    ;; [TODO]
+    ;; Insert %global
+    (loop for w in writes for wt in write-types do
+      (%global w (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
+    (loop for r in reads for rt in read-types do
+      (%global r (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt)))))
+    (let ((binds)
+          (caten/aasm/expr::*expr-no-simplify-mode* t)
+          (id->bind (lowerctx-id->bind lctx))
+          (id->load (make-hash-table))) ;; cache is created for each kernel
+      (print items)
+      ;; [TODO]
+      ;; - Reduction
+      ;; - %SETF Handling
+      (labels ((sendexpr (expr)
+                 (dolist (n (graph-nodes (expr-graph expr))) (emit n))
+                 (expr-out expr))
+               (iter->index (iter typ)
+                 (sendexpr (reduce #'expr-add (iteration-space-expr-aref iter typ gids))))
+               (%insert-aref (item &aux (item (copy-node item)))
+                 (setf (node-id item) (gensym "NID"))
+                 (map
+                  'list
+                  #'(lambda (x) (emit x))
+                  (let ((*ctx* (make-graph)))
+                    (append
+                     (loop for r in (node-reads item)
+                           for rt in (relay-reads (read-type-relay item))
+                           for ri in (relay-read-iters (read-type-relay item))
+                           if (and (find r reads) (null (gethash r id->load)))
+                             collect
+                             (let ((index (iter->index ri rt))
+                                   (tmpid (gensym "AREF")))
+                               (setf (gethash r id->load) tmpid)
+                               (%aref r index :out tmpid)))
+                     (loop for w in (node-writes item)
+                           for wt in (relay-writes (read-type-relay item))
+                           for wi in (relay-write-iters (read-type-relay item))
+                           for nth upfrom 0
+                           if (find w writes)
+                             collect
+                             (let ((waypoint (gensym "WP"))
+                                   (new-w (gensym "T"))
+                                   (tmpid (gensym "T"))
+                                   (index (iter->index wi wt)))
+                               (setf (nth nth (node-writes item)) waypoint
+                                     (gethash w id->bind) new-w)
+                               ;; [note] no waypoint user in this items right?
+                               (push (make-node :JIT :BIND (list new-w) (list tmpid) :value w) binds) ;; schedule all item users after %setf
+                               (%setf (%aref w index) waypoint :out tmpid)))
+                     (progn
+                       (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
+                       (case (node-type item)
+                         (:VIEW
+                          (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
+                          nil)
+                         (:Allocate (push item binds))
+                         (otherwise (list (emit item))))))
+                    (graph-nodes *ctx*))))
+               (lower-item (item)
+                 (case (node-type item)
+                   (:INDEX-COMPONENTS (list (sendexpr (make-index-components item gids))))
+                   (otherwise (%insert-aref item)))))
+        (let ((body (%progn (reduce #'append (map 'list #'lower-item items)))))
+          (loop for gid in gids for space in iterspace
+                do (setf body (%range gid (sendexpr space) body)))
+          (dolist (b binds) (emit b))
+          body)))))
 
-(defun grids-init (graph grids id->grids id->users graph-outputs)
+(defun grids-init (lctx graph grids id->grids id->users graph-outputs)
   (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
-  ;; View w/o items ==> rewrite as non-affine
-  ;; how to deal w/ ?
-  ;; A -> [VIEW] -> [VIEW] -> B
-  ;; [TODO] Avoid circuliar deps
-  ;; [TODO]
   (when (and (= 1 (length (grids-items grids)))
              (eql :VIEW (node-type (car (grids-items grids)))))
     (setf (grids-is-affine grids) nil))
@@ -311,22 +419,33 @@
               (find (the symbol (car (node-writes node))) graph-outputs)))
            (node-reads-from-another-grids (node)
              (loop for r in (node-reads node)
+                   for typ in (relay-reads (read-type-relay node))
                    for g = (gethash r id->grids)
                    if (and (symbolp r) g (not (= (grids-id grids) (grids-id g)))) ;; collect when definition is not self
-                     collect r)))
-    (let ((grid-writes
-            (loop for item in (grids-items grids)
-                  if (node-is-output-p item)
-                    collect (car (node-writes item))))
-          (grid-reads
-            (loop for item in (grids-items grids)
-                  append (node-reads-from-another-grids item))))
+                     collect (cons r typ))))
+    (let* ((grid-writes*
+             (loop for item in (grids-items grids)
+                   if (node-is-output-p item)
+                     collect (cons (car (node-writes item)) (car (relay-writes (read-type-relay item))))))
+           (grid-reads*
+             (loop for item in (grids-items grids)
+                   append (node-reads-from-another-grids item)))
+           (grid-writes (map 'list #'car grid-writes*))
+           (grid-reads (map 'list #'car grid-reads*))
+           (grid-write-types (map 'list #'cdr grid-writes*))
+           (grid-read-types  (map 'list #'cdr grid-reads*)))
       (unless (grids-is-affine grids)
         (return-from grids-init ($nonaffine grid-writes grid-reads :items (grids-items grids))))
-      ;; Coalesce
+      ;; Early Loop Coalesce (Cannot judged in polyhedral model)
       (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
-             (_ (fixup-items-iteration-space (grids-items grids) iterspace graph)))
+             (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
+             (gids (map 'list #'gid (range 0 (length (the list (car iterspace)))))) ;; todo: initial perm?
+             (bp (lower-into-blueprint lctx gids (car iterspace) (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
         (declare (ignore _))
+        (setf bp (caten/aasm::%simplify-ast bp))
+        (fresh-line)
+        (caten/codegen/blueprint:print-blueprint bp t)
+        
         ;; 1. generate blueprint
         ;; - 1. Compute Common Iteration Space
         ;; - 2. Lowerblueprint considering SETF (add global ctx)
@@ -377,16 +496,16 @@
            (declare (ignore id))
            (setf (gethash (grids-id grids) all-grids) grids))
        id->grids)
-      (let ((*ctx* (make-graph)))
-        (maphash
-         #'(lambda (id grids)
-             (declare (ignore id))
-             (incf n-scheduled (length (the list (grids-items grids))))
-             (grids-init graph grids id->grids id->users (graph-outputs graph)))
-         all-grids)
+      (let ((g
+              (loop with lctx = (make-lowerctx)
+                    for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
+                    for grids = (gethash key all-grids)
+                    do (incf n-scheduled (length (the list (grids-items grids))))
+                    collect (grids-init lctx graph grids id->grids id->users (graph-outputs graph)))))
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
-        (setf (graph-outputs *ctx*) (graph-outputs graph))
-        (->fast-graph *ctx*)))))
+        (setf g (apply #'make-graph g)
+              (graph-outputs g) (graph-outputs graph))
+        (->fast-graph g)))))
 ;; Solve Graph Partition Problem
 (defun schedule-graph-solve-ilp (schedule-graph)
   ;; Objective: Maximize the volume of Affine Nodes
@@ -397,5 +516,5 @@
   ;;   REDUCE | <== Scalarify!
   ;; STORE    |
   ;; And then fuse Reduce+Reduce
-
+  ;; [TODO] Rename schedule-graph ==> Lowerer
   )
