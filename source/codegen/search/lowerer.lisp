@@ -357,7 +357,6 @@
     (loop for r in reads for rt in read-types do
       (%global r (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt)))))
     (let ((binds)
-          (items (items/fold-toplevel-views (map 'list #'copy-item items)))
           (caten/aasm/expr::*expr-no-simplify-mode* t)
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
@@ -424,7 +423,6 @@
                     (case (node-type item)
                       (:VIEW
                        (error "view sholld not used here")
-;;                       (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
                        nil)
                       (:Allocate (push item binds) nil)
                       (otherwise (list (emit item)))))))
@@ -470,6 +468,7 @@
            (grid-read-types  (map 'list #'cdr grid-reads*)))
       (unless (grids-is-affine grids)
         (return-from grids-init ($nonaffine grid-writes grid-reads :items (grids-items grids))))
+      (setf (grids-items grids) (items/fold-toplevel-views (map 'list #'copy-item (grids-items grids))))
       ;; Early Loop Coalesce (Cannot judged in polyhedral model)
       (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
              (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
