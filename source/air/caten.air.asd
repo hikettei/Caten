@@ -2,7 +2,7 @@
   :description "aIR = Abstract + IR, General purpose IR system including pattern matcher."
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("trivia" "alexandria" "closer-mop")
+  :depends-on ("trivia" "alexandria" "closer-mop" "cl-ppcre")
   :serial t
   :components
   ((:file "package")

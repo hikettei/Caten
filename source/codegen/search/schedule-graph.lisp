@@ -349,6 +349,7 @@
       ;; [TODO]
       ;; - Reduction
       ;; - %SETF Handling
+      ;; - extra alloc?
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -358,7 +359,10 @@
                  (setf (node-id item) (gensym "NID"))
                  (map
                   'list
-                  #'(lambda (x) (emit x))
+                  #'(lambda (x)
+                      (case (node-type x)
+                        ((:Allocate :View) (emit x) nil) ;; Appeared in the graph
+                        (otherwise (emit x)))) ;; Appeared in the graph + child of progn
                   (let ((*ctx* (make-graph)))
                     (append
                      (loop for r in (node-reads item)
@@ -517,4 +521,12 @@
   ;; STORE    |
   ;; And then fuse Reduce+Reduce
   ;; [TODO] Rename schedule-graph ==> Lowerer
+  ;; [TODO] Pinning scalar points
+  ;; [TODO] Symbolic
+  ;; [TODO] AffineにAllocを含める
+  ;; [TODO] 全部いい感じになったら
+  ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
+  )
+
+(defun schedule-graph-solve-memory-planner (schedule-graph)
   )

@@ -1,6 +1,9 @@
 (in-package :caten/aasm)
 
+(defclass ScheduleGraph (FastGraph) nil)
+
 (defclass ScheduleItem () nil)
+
 (defclass ScheduleTime (AType) ((type :initarg :type :reader st-type)))
 
 (defun verify-schedule-item (self)
@@ -8,7 +11,7 @@
       (let ((ptypes (loop for i in (node-reads node) collect (gethash i id->type))))
         (assert (every #'(lambda (x) (find (st-type x) `(:Affine :Nonaffine))) ptypes)))
       (list (make-instance 'ScheduleTime :type self))))
-
+;; ~~ Specs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defnode (:Schedule :Affine) (ScheduleItem)
          "
 ```
@@ -26,3 +29,4 @@
          ""
          :slots ((items :initform nil))
          :type-relay (verify-schedule-item :Nonaffine))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

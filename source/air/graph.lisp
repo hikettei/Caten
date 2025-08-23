@@ -38,7 +38,8 @@ FastGraph[seen=~a, outputs=~a] {
 	  (graph-outputs graph)
 	  (with-output-to-string (out)
 	    (dolist (node (graph-nodes (->graph-with-tpsort graph)))
-	      (format out "    ~a~%" node)))))
+              (loop for line in (cl-ppcre:split "\\n" (print-object node nil))
+                    do (format out "    ~a~%" line))))))
 
 (defun make-graph (&rest nodes)
   "

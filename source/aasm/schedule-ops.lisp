@@ -10,7 +10,9 @@
 
 (defmethod print-node ((node Node) (id (eql :Affine)))
   ;; [TODO] Moduleと考えて内部のItemsをpprintする
-  (format nil "<Affine : ~a <- (~a)>" (render-list (node-writes node)) (render-list (node-reads node))))
+  (with-output-to-string (out)
+    (format out "<Affine : ~a <- (~a)" (render-list (node-writes node)) (render-list (node-reads node)))
+    (format out "~%>")))
 
 (defmethod print-node ((node Node) (id (eql :NonAffine)))
   (format nil "<NonAffine : ~a <- (~a)>" (render-list (node-writes node)) (render-list (node-reads node))))
