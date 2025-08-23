@@ -9,10 +9,17 @@
   (emit (make-node :Schedule :NonAffine writes reads :items items)))
 
 (defmethod print-node ((node Node) (id (eql :Affine)))
-  ;; [TODO] Moduleと考えて内部のItemsをpprintする
   (with-output-to-string (out)
-    (format out "<Affine : ~a <- (~a)" (render-list (node-writes node)) (render-list (node-reads node)))
-    (format out "~%>")))
+    (format out "~a = Affine(~a){~%" (render-list (node-writes node)) (render-list (node-reads node)))
+    (format out "    TODO: [Program]")
+    (format out "~%}")))
 
 (defmethod print-node ((node Node) (id (eql :NonAffine)))
-  (format nil "<NonAffine : ~a <- (~a)>" (render-list (node-writes node)) (render-list (node-reads node))))
+  (with-output-to-string (out)
+    (format out "~a = NonAffine(~a){~%" (render-list (node-writes node)) (render-list (node-reads node)))
+    (dolist (item (getattr node :items))
+      (let ((prefix (if (find (car (node-writes item)) (node-writes node))
+                        (format nil "  return ")
+                        (format nil "  ~(~a~) = " (render-list (node-writes item))))))
+        (format out "~a~(~a~)(~(~a~));~%" prefix (node-type item) (render-list (node-reads item)))))
+    (format out "}")))
