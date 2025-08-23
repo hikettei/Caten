@@ -345,11 +345,13 @@
           (caten/aasm/expr::*expr-no-simplify-mode* t)
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
-      (print items)
       ;; [TODO]
       ;; - Reduction
       ;; - %SETF Handling
-      ;; - extra alloc?
+      ;; - extra alloc? (OK)
+      ;; - Symbolic Schedule Fix
+      ;; - Symbolic SCoP
+      ;; - Matmul Loop Collapse
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -357,47 +359,39 @@
                  (sendexpr (reduce #'expr-add (iteration-space-expr-aref iter typ gids))))
                (%insert-aref (item &aux (item (copy-node item)))
                  (setf (node-id item) (gensym "NID"))
-                 (map
-                  'list
-                  #'(lambda (x)
-                      (case (node-type x)
-                        ((:Allocate :View) (emit x) x) ;; Appeared in the graph
-                        (otherwise (emit x)))) ;; Appeared in the graph + child of progn
-                  (let ((*ctx* (make-graph)))
-                    (append
-                     (loop for r in (node-reads item)
-                           for rt in (relay-reads (read-type-relay item))
-                           for ri in (relay-read-iters (read-type-relay item))
-                           if (and (find r reads) (null (gethash r id->load)))
-                             collect
-                             (let ((index (iter->index ri rt))
-                                   (tmpid (gensym "AREF")))
-                               (setf (gethash r id->load) tmpid)
-                               (%aref r index :out tmpid)))
-                     (loop for w in (node-writes item)
-                           for wt in (relay-writes (read-type-relay item))
-                           for wi in (relay-write-iters (read-type-relay item))
-                           for nth upfrom 0
-                           if (find w writes)
-                             collect
-                             (let ((waypoint (gensym "WP"))
-                                   (new-w (gensym "T"))
-                                   (tmpid (gensym "T"))
-                                   (index (iter->index wi wt)))
-                               (setf (nth nth (node-writes item)) waypoint
-                                     (gethash w id->bind) new-w)
-                               ;; [note] no waypoint user in this items right?
-                               (push (make-node :JIT :BIND (list new-w) (list tmpid) :value w) binds) ;; schedule all item users after %setf
-                               (%setf (%aref w index) waypoint :out tmpid)))
-                     (progn
-                       (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
-                       (case (node-type item)
-                         (:VIEW
-                          (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
-                          nil)
-                         (:Allocate (push item binds) nil)
-                         (otherwise (list (emit item))))))
-                    (graph-nodes *ctx*))))
+                 (append
+                  (loop for r in (node-reads item)
+                        for rt in (relay-reads (read-type-relay item))
+                        for ri in (relay-read-iters (read-type-relay item))
+                        if (and (find r reads) (null (gethash r id->load)))
+                          collect
+                          (let ((index (iter->index ri rt))
+                                (tmpid (gensym "AREF")))
+                            (setf (gethash r id->load) tmpid)
+                            (%aref r index :out tmpid)))
+                  (loop for w in (node-writes item)
+                        for wt in (relay-writes (read-type-relay item))
+                        for wi in (relay-write-iters (read-type-relay item))
+                        for nth upfrom 0
+                        if (find w writes)
+                          collect
+                          (let ((waypoint (gensym "WP"))
+                                (new-w (gensym "T"))
+                                (tmpid (gensym "T"))
+                                (index (iter->index wi wt)))
+                            (setf (nth nth (node-writes item)) waypoint
+                                  (gethash w id->bind) new-w)
+                            ;; [note] no waypoint user in this items right?
+                            (push (make-node :JIT :BIND (list new-w) (list tmpid) :value w) binds) ;; schedule all item users after %setf
+                            (%setf (%aref w index) waypoint :out tmpid)))
+                  (progn
+                    (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
+                    (case (node-type item)
+                      (:VIEW
+                       (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
+                       nil)
+                      (:Allocate (push item binds) nil)
+                      (otherwise (list (emit item)))))))
                (lower-item (item)
                  (case (node-type item)
                    (:INDEX-COMPONENTS (list (sendexpr (make-index-components item gids))))
@@ -446,13 +440,11 @@
              (gids (map 'list #'gid (range 0 (length (the list (car iterspace)))))) ;; todo: initial perm?
              (bp (lower-into-blueprint lctx gids (car iterspace) (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
         (declare (ignore _))
-        (print bp)
         (setf bp (caten/aasm::%simplify-ast bp))
         (fresh-line)
         (caten/codegen/blueprint:print-blueprint bp t)
         ;; [Note]
         ;; CSEをこの段階でやってもいいか。
-;        (print bp)
         ;; 1. generate blueprint
         ;; - 1. Compute Common Iteration Space
         ;; - 2. Lowerblueprint considering SETF (add global ctx)
