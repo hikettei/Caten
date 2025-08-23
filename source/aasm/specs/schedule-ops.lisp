@@ -2,6 +2,8 @@
 
 (defclass ScheduleGraph (FastGraph) nil)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
 (defclass ScheduleItem () nil)
 
 (defclass ScheduleTime (AType) ((type :initarg :type :reader st-type)))
@@ -30,3 +32,5 @@
          :slots ((items :initform nil))
          :type-relay (verify-schedule-item :Nonaffine))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+) ;; eval-when
