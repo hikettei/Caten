@@ -395,7 +395,7 @@
                    (:INDEX-COMPONENTS (list (sendexpr (make-index-components item gids))))
                    (otherwise (%insert-aref item)))))
         (let ((body (%progn (reduce #'append (map 'list #'lower-item items)))))
-          (loop for gid in gids for space in iterspace
+          (loop for gid in (reverse gids) for space in (reverse iterspace)
                 do (setf body (%range gid (sendexpr space) body)))
           (dolist (b binds) (emit b))
           body)))))
@@ -501,11 +501,12 @@
                     collect (grids-init lctx graph grids id->grids id->users (graph-outputs graph)))))
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
-              (graph-outputs g) (graph-outputs graph))
+              (graph-outputs g) (copy-list (graph-outputs graph)))
         (->schedule-graph g)))))
 ;; Solve Graph Partition Problem
 ;; Optimize Lowerer, ISL
-(defun schedule-graph-solve-ilp (schedule-graph)
+(defun schedule-graph-solve-ilp (graph)
+  (declare (type ScheduleGraph graph))
   ;; Objective: Maximize the volume of Affine Nodes
   ;; Firstly, single Affine single reduce
   ;; Secondly, fuse reduction and reduction
@@ -517,15 +518,18 @@
   ;; [TODO] Rename schedule-graph ==> Lowerer
   ;; [TODO] Pinning scalar points
   ;; [TODO] Symbolic
-  ;; [TODO]
+  ;; [TODO] search ==> new-codegen
   ;; - AffineのWritesは，Progの中でAllocateするという意味
   ;; - catenはside effectを認めていない。
   ;; - memory planner include this
   ;; [TODO] 全部いい感じになったら
   ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
+  ;; [TODO] Runtime is a subclass of FastGraph
   )
 
-(defun schedule-graph-compile (schedule-graph))
+(defun schedule-graph-compile (schedule-graph)
+  ;; Finalize Schedule + Compile
+  )
 
 (defun schedule-graph-solve-memory-planner (schedule-graph)
 
