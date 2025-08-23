@@ -1,11 +1,8 @@
 (in-package :caten/aasm)
 
-(defclass ScheduleGraph (FastGraph) nil)
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass ScheduleItem () nil)
-
 (defclass ScheduleTime (AType) ((type :initarg :type :reader st-type)))
 
 (defun verify-schedule-item (self)

@@ -96,4 +96,4 @@
   ;; ScheduleOps
   (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse)
   ;; schedule-ops
-  (:export #:$affine #:$nonaffine))
+  (:export #:ScheduleGraph #:->schedule-graph #:$affine #:$nonaffine))

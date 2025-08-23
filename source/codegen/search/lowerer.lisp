@@ -335,8 +335,6 @@
 
 (defun lower-into-blueprint (lctx gids iterspace items writes reads write-types read-types)
   (with-blueprint (:noopt t)
-    ;; [TODO]
-    ;; Insert %global
     (loop for w in writes for wt in write-types do
       (%global w (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
     (loop for r in reads for rt in read-types do
@@ -504,7 +502,7 @@
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (graph-outputs graph))
-        (->fast-graph g)))))
+        (->schedule-graph g)))))
 ;; Solve Graph Partition Problem
 ;; Optimize Lowerer, ISL
 (defun schedule-graph-solve-ilp (schedule-graph)
@@ -519,10 +517,16 @@
   ;; [TODO] Rename schedule-graph ==> Lowerer
   ;; [TODO] Pinning scalar points
   ;; [TODO] Symbolic
-  ;; [TODO] AffineにAllocを含める
+  ;; [TODO]
+  ;; - AffineのWritesは，Progの中でAllocateするという意味
+  ;; - catenはside effectを認めていない。
+  ;; - memory planner include this
   ;; [TODO] 全部いい感じになったら
   ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
   )
 
+(defun schedule-graph-compile (schedule-graph))
+
 (defun schedule-graph-solve-memory-planner (schedule-graph)
+
   )

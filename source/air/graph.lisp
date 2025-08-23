@@ -141,16 +141,16 @@ Inserts the given nodes (list) into the graph.
     (dolist (w (node-writes node))
       (setf (gethash w (%graph-nodes-table graph)) node))))
 
-(defun ->fast-graph (graph)
+(defun ->fast-graph (graph &key (cls 'FastGraph) (args))
   "
 ```
 (->fast-graph graph)
 ```
 
-Creates a FastGraph object from the given graph."
+Creates a FastGraph (or subclass of FastGraph) object from the given graph."
   (declare (type graph graph))
   (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
-  (let ((fast-graph (make-instance 'FastGraph :output (graph-outputs graph) :seen (graph-seen graph))))
+  (let ((fast-graph (apply #'make-instance cls (append (list :output (graph-outputs graph) :seen (graph-seen graph)) args))))
     (insert-nodes fast-graph (graph-nodes graph))
     fast-graph))
 
