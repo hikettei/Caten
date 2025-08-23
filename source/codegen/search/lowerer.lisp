@@ -361,7 +361,7 @@
                   'list
                   #'(lambda (x)
                       (case (node-type x)
-                        ((:Allocate :View) (emit x) nil) ;; Appeared in the graph
+                        ((:Allocate :View) (emit x) x) ;; Appeared in the graph
                         (otherwise (emit x)))) ;; Appeared in the graph + child of progn
                   (let ((*ctx* (make-graph)))
                     (append

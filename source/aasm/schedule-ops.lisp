@@ -11,8 +11,8 @@
 (defmethod print-node ((node Node) (id (eql :Affine)))
   (with-output-to-string (out)
     (format out "~a = Affine(~a){~%" (render-list (node-writes node)) (render-list (node-reads node)))
-    (format out "    TODO: [Program]")
-    (format out "~%}")))
+    (format out "    TODO: [Program]~%")
+    (format out "}")))
 
 (defmethod print-node ((node Node) (id (eql :NonAffine)))
   (with-output-to-string (out)
