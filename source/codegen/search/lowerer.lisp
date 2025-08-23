@@ -310,6 +310,7 @@
   (flet ((node-is-singleton-p (id &aux (node (id->value graph id)))
            (and
             node
+            (null (getattr node :reduction :allow-undefined t)) ;; Note: Solve Reduction+Activation in Polyhedral Model
             (= 1 (length (gethash (car (node-writes node)) id->users))))))
     (let ((next-id (hash-table-count id->grids)))
       (case (node-type node)
@@ -344,13 +345,11 @@
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
       ;; [TODO]
-      ;; - Reduction
-      ;; - %SETF Handling
-      ;; - extra alloc? (OK)
+      ;; - [ ] BIND handling
+      ;; - Reduction (OK)
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
-      ;; - Matmul Loop Collapse
-      ;; - VIEW SKIP!
+      (print items)
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -383,9 +382,14 @@
                         (setf (car (node-writes item)) waypoint
                               (gethash w id->bind) (make-node :JIT :BIND (list w) (list tmp) :value r))
                         (push (gethash w id->bind) binds)
-                        (list (%setf (gethash r id->load r) waypoint :out tmp)
-                              ;; [TODO] SETF
-                              ))
+                        (print writes)
+                        (print (gethash w id->bind))
+                        (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
+                        ;; tuneni write-to ni naruyouni suru?
+                        (list
+                         (%setf (gethash r id->load r) waypoint :out tmp)
+                         ;;(%setf (gethash r id->load r) tmp)
+                         ))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
                             for wi in (relay-write-iters (read-type-relay item))
@@ -404,9 +408,7 @@
                   (progn
                     (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
                     (case (node-type item)
-                      (:VIEW
-                       (error "view sholld not used here")
-                       nil)
+                      (:VIEW (error "view should be purged from items first."))
                       (:Allocate (push item binds) nil)
                       (otherwise (list (emit item)))))))
                (lower-item (item)
@@ -492,6 +494,7 @@
         ;; Scalarify when?
         ;; Threefry Lowering
         ;; [TODO] Symbolic JIT, ShapeInferenceどうするか。(--> その地点のSYMBOLを記録するだけでOK)
+        ;; [TODO] Optimize EXPR stuff ===> CSEがあるから，Treeを遡る必要はない。
         ($affine grid-writes grid-reads)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Run benchmark!
@@ -567,6 +570,7 @@
   ;; [TODO] 全部いい感じになったら
   ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
   ;; [TODO] Runtime is a subclass of FastGraph
+  ;; [TODO] Introduce LocalGensym
   )
 
 (defun schedule-graph-compile (schedule-graph)
