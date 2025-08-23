@@ -333,6 +333,23 @@
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
 
+(defun copy-item (item &aux (item (copy-node item)))
+  (setf (node-id item) (gensym "NID"))
+  item)
+
+(defun items/fold-toplevel-views (items)
+  (let ((w->r (make-hash-table)))
+    (loop for i in items
+          if (eql (node-type i) :VIEW) do
+            (setf (gethash (car (node-writes i)) w->r) (car (node-reads i))))
+    (flet ((n (id) (gethash id w->r id)))
+      (loop for i in items
+            if (not (eql (node-type i) :VIEW))
+              collect
+              (progn
+                (setf (node-reads i) (map 'list #'n (node-reads i)))
+                i)))))
+
 (defun lower-into-blueprint (lctx gids iterspace items writes reads write-types read-types)
   (with-blueprint (:noopt t)
     (loop for w in writes for wt in write-types do
@@ -340,6 +357,7 @@
     (loop for r in reads for rt in read-types do
       (%global r (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt)))))
     (let ((binds)
+          (items (items/fold-toplevel-views (map 'list #'copy-item items)))
           (caten/aasm/expr::*expr-no-simplify-mode* t)
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
@@ -356,8 +374,7 @@
                  (expr-out expr))
                (iter->index (iter typ)
                  (sendexpr (reduce #'expr-add (iteration-space-expr-aref iter typ gids))))
-               (%insert-aref (item &aux (item (copy-node item)))
-                 (setf (node-id item) (gensym "NID"))
+               (%insert-aref (item)
                  (append
                   (loop for r in (node-reads item)
                         for rt in (relay-reads (read-type-relay item))
@@ -406,15 +423,13 @@
                     (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
                     (case (node-type item)
                       (:VIEW
-                       (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
+                       (error "view sholld not used here")
+;;                       (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
                        nil)
                       (:Allocate (push item binds) nil)
                       (otherwise (list (emit item)))))))
                (lower-item (item)
                  (case (node-type item)
-                   (:VIEW
-                    
-                    )
                    (:INDEX-COMPONENTS (list (sendexpr (make-index-components item gids))))
                    (otherwise (%insert-aref item)))))
         (let ((body (%progn (reduce #'append (map 'list #'lower-item items)))))
@@ -468,6 +483,7 @@
         ;; CSEをこの段階でやってもいいか。
         ;; Scalarify when?
         ;; Threefry Lowering
+        ;; [TODO] Symbolic JIT, ShapeInferenceどうするか。(--> その地点のSYMBOLを記録するだけでOK)
         ($affine grid-writes grid-reads)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Run benchmark!
