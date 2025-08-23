@@ -333,23 +333,6 @@
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
 
-(defun copy-item (item &aux (item (copy-node item)))
-  (setf (node-id item) (gensym "NID"))
-  item)
-
-(defun items/fold-toplevel-views (items)
-  (let ((w->r (make-hash-table)))
-    (loop for i in items
-          if (eql (node-type i) :VIEW) do
-            (setf (gethash (car (node-writes i)) w->r) (car (node-reads i))))
-    (flet ((n (id) (gethash id w->r id)))
-      (loop for i in items
-            if (not (eql (node-type i) :VIEW))
-              collect
-              (progn
-                (setf (node-reads i) (map 'list #'n (node-reads i)))
-                i)))))
-
 (defun lower-into-blueprint (lctx gids iterspace items writes reads write-types read-types)
   (with-blueprint (:noopt t)
     (loop for w in writes for wt in write-types do
@@ -436,6 +419,30 @@
           (dolist (b binds) (emit b))
           body)))))
 
+(defun copy-item (item &aux (item (copy-node item)))
+  (setf (node-id item) (gensym "NID"))
+  item)
+
+(defun items/fold-and-verify-toplevel-views (items reads writes)
+  (declare (optimize (speed 3)) (type list items reads writes))
+  (let ((w->r (make-hash-table)))
+    (loop for i in items
+          if (eql (node-type i) :VIEW) do
+            (assert (find (the symbol (car (node-reads i))) reads)
+                    ()
+                    "Detected illegal scheduling group: Affine groups should not compose multiple views.")
+            (assert (null (find (the symbol (car (node-writes i))) writes))
+                    ()
+                    "Detected illegal scheduling group: Affine groups should not return VIEW.")
+            (setf (gethash (car (node-writes i)) w->r) (car (node-reads i))))
+    (flet ((n (id) (gethash id w->r id)))
+      (loop for i in items
+            if (not (eql (node-type i) :VIEW))
+              collect
+              (progn
+                (setf (node-reads i) (map 'list #'n (node-reads i)))
+                i)))))
+
 (defun grids-init (lctx graph grids id->grids id->users graph-outputs)
   (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
   (when (and (= 1 (length (grids-items grids)))
@@ -468,7 +475,9 @@
            (grid-read-types  (map 'list #'cdr grid-reads*)))
       (unless (grids-is-affine grids)
         (return-from grids-init ($nonaffine grid-writes grid-reads :items (grids-items grids))))
-      (setf (grids-items grids) (items/fold-toplevel-views (map 'list #'copy-item (grids-items grids))))
+      ;; If grids is affine => prepare for scheduling ...
+      (setf (grids-items grids)
+            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (grids-items grids)) grid-reads grid-writes))
       ;; Early Loop Coalesce (Cannot judged in polyhedral model)
       (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
              (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
