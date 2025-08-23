@@ -24,6 +24,7 @@
    (:file "search/ast")
    (:file "search/evaluator")
    (:file "search/autotune")
+   (:file "search/lowerer")
    
    (:file "jit")
    (:file "package")

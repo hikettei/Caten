@@ -1,10 +1,10 @@
-(defpackage :caten/codegen/schedule-graph
+(defpackage :caten/codegen/lowerer
   (:documentation "TensorGraph => ScheduleGraph Lowerer")
   (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers)
   (:export
    #:tensor-graph->schedule-graph))
 
-(in-package :caten/codegen/schedule-graph)
+(in-package :caten/codegen/lowerer)
 ;; ~~ Grids ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Grids
   (is-affine t :type boolean)
