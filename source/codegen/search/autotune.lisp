@@ -3,7 +3,7 @@
         :caten/codegen/search/optimization-rule)
   (:export
    #:online-autotune-kernel
-   #:fuse
+   #:ApplyReschedule
    ))
 
 (in-package :caten/codegen/search/autotune)

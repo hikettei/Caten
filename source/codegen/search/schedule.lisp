@@ -741,7 +741,7 @@ Procedure:
          (part*   (align-params/umap part   model-space))
          (udom*   (align-params/uset user-domain model-space))
          (full    (isl::union-map-flat-range-product prefix* part*)) ; Dom -> (Prefix × Band)
-         (full   (isl::union-map-intersect-domain full (copy udom*)))
+         (full    (isl::union-map-intersect-domain full (copy udom*)))
          (rng     (isl::union-map-range full)))
     rng))
 

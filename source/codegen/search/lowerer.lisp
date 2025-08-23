@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/lowerer
   (:documentation "TensorGraph => ScheduleGraph Lowerer")
   (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers
-        :caten/codegen/search/polyhedral)
+        :caten/codegen/search/polyhedral :caten/codegen/search/autotune)
   (:export
    #:tensor-graph->schedule-graph))
 
@@ -632,31 +632,58 @@
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
-        (->schedule-graph g)))))
+        (schedule-graph-fuse (->schedule-graph g))))))
 ;; Solve Graph Partition Problem
 ;; Optimize Lowerer, ISL
-(defun schedule-graph-solve-ilp (graph)
+;; Objective: Maximize the volume of Affine Nodes
+;; Firstly, single Affine single reduce
+;; Secondly, fuse reduction and reduction
+;; Create this form first:
+;; ACC      |
+;;   REDUCE | <== Scalarify!
+;; STORE    |
+;; And then fuse Reduce+Reduce
+;; [TODO] Rename schedule-graph ==> Lowerer
+;; [TODO] Pinning scalar points
+;; [TODO] Symbolic
+;; [TODO] search ==> new-codegen
+;; - AffineのWritesは，Progの中でAllocateするという意味
+;; - catenはside effectを認めていない。
+;; - memory planner include this
+;; [TODO] 全部いい感じになったら
+;; [TODO] ScheduleGraph, TensorGraph, etc を作る
+;; [TODO] Runtime is a subclass of FastGraph
+;; [TODO] Introduce LocalGensym
+(defun fuse (src parents)
+  (when (null parents) (return-from fuse nil))
+  (flet ((m (x) (getattr x :polyhedron)))
+    (let* ((t+0 (m src))
+           (t-1 (reduce #'psi. (map 'list #'m parents))))
+      (ApplyReschedule (psi. t-1 t+0))
+      nil)))
+
+(defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
   (declare (type ScheduleGraph graph))
-  ;; Objective: Maximize the volume of Affine Nodes
-  ;; Firstly, single Affine single reduce
-  ;; Secondly, fuse reduction and reduction
-  ;; Create this form first:
-  ;; ACC      |
-  ;;   REDUCE | <== Scalarify!
-  ;; STORE    |
-  ;; And then fuse Reduce+Reduce
-  ;; [TODO] Rename schedule-graph ==> Lowerer
-  ;; [TODO] Pinning scalar points
-  ;; [TODO] Symbolic
-  ;; [TODO] search ==> new-codegen
-  ;; - AffineのWritesは，Progの中でAllocateするという意味
-  ;; - catenはside effectを認めていない。
-  ;; - memory planner include this
-  ;; [TODO] 全部いい感じになったら
-  ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
-  ;; [TODO] Runtime is a subclass of FastGraph
-  ;; [TODO] Introduce LocalGensym
-  )
+  (labels ((mergeable-item-p (id)
+             (let ((node (id->value graph id)))
+               (and
+                (eql (node-type node) :AFFINE)
+                ;; [TODO] Optimize id->users
+                (= 1 (length (id->users graph id))))))
+           (explore (id &aux (node (id->value graph id)))
+             (when (or (null node) (gethash (node-id node) seen))
+               (return-from explore))
+             (when (eql (node-type node) :AFFINE)
+               (let* ((items (loop for r in (node-reads node)
+                                   if (mergeable-item-p r) collect (id->value graph r)))
+                      (fused (fuse node items)))
+                 fused
+                 ;; (setf node fused)
+                 ))
+             (mapc #'explore (node-reads node))))
+    (mapc #'explore (graph-outputs graph))
+    graph))
+    
 
 (defun schedule-graph-compile (schedule-graph)
   ;; Finalize Schedule + Compile
