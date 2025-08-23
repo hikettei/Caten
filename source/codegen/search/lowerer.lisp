@@ -654,6 +654,9 @@
 ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym
+;; [TODO]
+;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
+;; - LLM => BatchSizeをIterateしてBEAM Search...
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
   (flet ((m (x) (getattr x :polyhedron)))
@@ -674,8 +677,9 @@
              (when (or (null node) (gethash (node-id node) seen))
                (return-from explore))
              (when (eql (node-type node) :AFFINE)
-               (let* ((items (loop for r in (node-reads node)
-                                   if (mergeable-item-p r) collect (id->value graph r)))
+               (let* ((items
+                        (loop for r in (node-reads node)
+                              if (mergeable-item-p r) collect (id->value graph r)))
                       (fused (fuse node items)))
                  fused
                  ;; (setf node fused)
@@ -683,7 +687,6 @@
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
     graph))
-    
 
 (defun schedule-graph-compile (schedule-graph)
   ;; Finalize Schedule + Compile
