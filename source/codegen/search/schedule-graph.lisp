@@ -395,7 +395,7 @@
                          (:VIEW
                           (setf (gethash (car (node-writes item)) id->load) (car (node-reads item)))
                           nil)
-                         (:Allocate (push item binds))
+                         (:Allocate (push item binds) nil)
                          (otherwise (list (emit item))))))
                     (graph-nodes *ctx*))))
                (lower-item (item)
@@ -446,10 +446,13 @@
              (gids (map 'list #'gid (range 0 (length (the list (car iterspace)))))) ;; todo: initial perm?
              (bp (lower-into-blueprint lctx gids (car iterspace) (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
         (declare (ignore _))
+        (print bp)
         (setf bp (caten/aasm::%simplify-ast bp))
         (fresh-line)
         (caten/codegen/blueprint:print-blueprint bp t)
-        
+        ;; [Note]
+        ;; CSEをこの段階でやってもいいか。
+;        (print bp)
         ;; 1. generate blueprint
         ;; - 1. Compute Common Iteration Space
         ;; - 2. Lowerblueprint considering SETF (add global ctx)
@@ -511,6 +514,7 @@
               (graph-outputs g) (graph-outputs graph))
         (->fast-graph g)))))
 ;; Solve Graph Partition Problem
+;; Optimize Lowerer, ISL
 (defun schedule-graph-solve-ilp (schedule-graph)
   ;; Objective: Maximize the volume of Affine Nodes
   ;; Firstly, single Affine single reduce
