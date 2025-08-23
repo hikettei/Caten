@@ -12,8 +12,7 @@
   ;; iterator
   (items nil :type list))
 
-(defstruct LowerCtx
-  (id->bind (make-hash-table) :type hash-table))
+(defstruct LowerCtx (id->bind (make-hash-table) :type hash-table))
 ;; ~~ Early Coalesce ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Iteration-Space
   (shape nil :type list)
@@ -42,7 +41,7 @@
   (loop for w in (relay-reads relay)
         for v in value
         do (when w (setf (tensor-relay-iterspace w) v))))
-
+;; ~~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun reveal-buffer (object)
   (if (typep object 'TensorRelay)
       (if (null (tensor-relay-shape object))
@@ -61,7 +60,7 @@
         (expr-const val dtype)
         ;; Merge only scalar path!
         (expr-from-graph val (apply #'caten/air:make-graph (gather-only-scalars (graph-nodes graph)))))))
-
+;; ~~ Loop Coalesce (Tensor Level) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
   "Mergeable axis = view is not created."
   (when (null view) (return-from mergeable-view-p t))
@@ -358,6 +357,20 @@
     (dolist (n items)
       (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
       (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
+
+(defun iterspace-depend-idx-list (iterspace gids &aux
+                                                   (shapes (make-list (length gids)))
+                                                   (strides (make-list (length gids))))
+  (flet ((no-dep-p (size stride) (or (expr-equal-to size 1) (expr-equal-to stride 0))))
+    (loop for axis upfrom 0
+          for shape in (iteration-space-shape iterspace)
+          for stride in (iteration-space-strides iterspace)
+          do (push shape (nth axis shapes)) (push stride (nth axis strides)))
+    (loop for g in gids
+          for size in shapes
+          for stride in strides
+          if (not (every #'no-dep-p size stride))
+            collect g)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-grids-from-node (graph node id->grids id->users)
   (declare (type node node))
@@ -387,7 +400,7 @@
                    (setf (gethash w id->grids) new-grids)))
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
-
+;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
 (defun lower-into-blueprint (lctx gids iterspace items writes reads write-types read-types)
   (with-blueprint (:noopt t)
     (loop for w in writes for wt in write-types do
@@ -395,6 +408,9 @@
     (loop for r in reads for rt in read-types do
       (%global r (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt)))))
     (let ((binds)
+          (loads)    ;; float acc_0 = 0.0f;
+          (alus) ;; for (int i=0; i<100; i++) acc_0 += ...;
+          (stores)     ;; out[0] = acc_0;
           (caten/aasm/expr::*expr-no-simplify-mode* t)
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
@@ -403,27 +419,28 @@
       ;; - Reduction (OK)
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
-      (print items)
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
                (iter->index (iter typ)
                  (sendexpr (reduce #'expr-add (iteration-space-expr-aref iter typ gids))))
+               (scope= (queue current-dim)
+                 (find current-dim (car queue)))
                (%insert-aref (item)
-                 (append
-                  (loop for r in (node-reads item)
-                        for rt in (relay-reads (read-type-relay item))
-                        for ri in (relay-read-iters (read-type-relay item))
-                        if (and (find r reads) (null (gethash r id->load)))
-                          collect
-                          (let ((index (iter->index ri rt))
-                                (tmpid (gensym "AREF")))
-                            (setf (gethash r id->load) tmpid)
-                            (%aref r index :out tmpid)))
+                 (loop for r in (node-reads item)
+                       for rt in (relay-reads (read-type-relay item))
+                       for ri in (relay-read-iters (read-type-relay item))
+                       if (and (find r reads) (null (gethash r id->load)))
+                         collect
+                         (let ((index (iter->index ri rt))
+                               (tmpid (gensym "AREF")))
+                           (setf (gethash r id->load) tmpid)
+                           (push (cons (iterspace-depend-idx-list ri gids) (%aref r index :out tmpid)) loads)))
                   (if (getattr item :reduction :allow-undefined t)
                       (let* ((type (read-type-relay item))
                              (w (car (node-writes item)))
-                             (index (iter->index (car (relay-write-iters type)) (car (relay-writes type))))
+                             (wi (car (relay-write-iters type)) )
+                             (index (iter->index wi (car (relay-writes type))))
                              (r (car (node-reads item)))
                              (waypoint (gensym "WP"))
                              (tmp (gensym "R")))
@@ -435,19 +452,18 @@
                         (assert (= 1 (length (node-writes item))))
                         ;; TODO: make it global?
                         ;; Fuseした後，BINDがInsertされるようにしたい。
+                        ;; BIND is OK if it is local
                         ;; [TODO]
                         ;; - Permuteするべきか
-                        ;; - Permuteする，sin, reductionのcase?
+                        ;; LOADER    ;; AREFだけ配置すればおk
+                        ;;  REDUCER  ;; AREF以外はここ
+                        ;; STORER    ;; ReductionStoreはここ
                         (setf (car (node-writes item)) waypoint
                               (gethash w id->bind) (make-node :JIT :BIND (list w) (list tmp) :value r))
                         (push (gethash w id->bind) binds)
-                        (print writes)
-                        (print (gethash w id->bind))
                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
-                        ;; tuneni write-to ni naruyouni suru?
-                        (list
-                         (%setf (gethash r id->load r) waypoint :out tmp)
-                         (%setf (%aref w index) tmp)))
+                        (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
+                        (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp)) stores))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
                             for wi in (relay-write-iters (read-type-relay item))
@@ -462,20 +478,35 @@
                                       (gethash w id->bind) (make-node :JIT :BIND (list new-w) (list tmpid) :value w))
                                 ;; [note] no waypoint user in this items right?
                                 (push (gethash w id->bind) binds) ;; schedule all item users after %setf
-                                (%setf (%aref w index) waypoint :out tmpid))))
-                  (progn
-                    (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
-                    (case (node-type item)
-                      (:VIEW (error "view should be purged from items first."))
-                      (:Allocate (push item binds) nil)
-                      (otherwise (list (emit item)))))))
+                                (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) waypoint :out tmpid)) stores))))
+                 (progn
+                   (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
+                   (case (node-type item)
+                     (:VIEW (error "view should be purged from items first."))
+                     (:Allocate (push item binds) nil)
+                     (otherwise (push (emit item) alus)))))
                (lower-item (item)
                  (case (node-type item)
-                   (:INDEX-COMPONENTS (list (sendexpr (make-index-components item gids))))
+                   (:INDEX-COMPONENTS (push (sendexpr (make-index-components item gids)) alus))
                    (otherwise (%insert-aref item)))))
-        (let ((body (%progn (reduce #'append (map 'list #'lower-item items)))))
+        (mapc #'lower-item items)
+        (let ((body (apply #'%progn alus)))
           (loop for gid in (reverse gids) for space in (reverse iterspace)
-                do (setf body (%range gid (sendexpr space) body)))
+                do (setf body
+                         (%range
+                          gid (sendexpr space)
+                          ;; Loads
+                          (apply
+                           #'%progn
+                           (loop for queue in loads for nth upfrom 0
+                                 when (and queue (scope= queue gid))
+                                   collect (progn (setf (nth nth loads) nil) (cdr queue)))
+                           ;; ALUs
+                           (list body)
+                           ;; Stores
+                           (loop for queue in stores for nth upfrom 0
+                                 when (and queue (scope= queue gid))
+                                   collect (progn (setf (nth nth stores) nil) (cdr queue)))))))
           (dolist (b binds) (emit b))
           (%progn (node->id body)))))))
 
