@@ -350,6 +350,7 @@
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
       ;; - Matmul Loop Collapse
+      ;; - VIEW SKIP!
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -367,21 +368,40 @@
                                 (tmpid (gensym "AREF")))
                             (setf (gethash r id->load) tmpid)
                             (%aref r index :out tmpid)))
-                  (loop for w in (node-writes item)
-                        for wt in (relay-writes (read-type-relay item))
-                        for wi in (relay-write-iters (read-type-relay item))
-                        for nth upfrom 0
-                        if (find w writes)
-                          collect
-                          (let ((waypoint (gensym "WP"))
-                                (new-w (gensym "T"))
-                                (tmpid (gensym "T"))
-                                (index (iter->index wi wt)))
-                            (setf (nth nth (node-writes item)) waypoint
-                                  (gethash w id->bind) new-w)
-                            ;; [note] no waypoint user in this items right?
-                            (push (make-node :JIT :BIND (list new-w) (list tmpid) :value w) binds) ;; schedule all item users after %setf
-                            (%setf (%aref w index) waypoint :out tmpid)))
+                  (if (getattr item :reduction :allow-undefined t)
+                      (let* ((w (car (node-writes item)))
+                             (r (car (node-reads item)))
+                             (waypoint (gensym "WP"))
+                             (tmp (gensym "R")))
+                        ;; Reduction is lowered as:
+                        ;; A <- Binary(B, C, reduction=T)
+                        ;; ==>
+                        ;; TMP = SETF(AREF(B, idx1), Binary(AREF(B, idx2), AREF(C, idx3)))
+                        ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
+                        (assert (= 1 (length (node-writes item))))
+                        ;; TODO: make it global?
+                        ;; Fuseした後，BINDがInsertされるようにしたい。
+                        (setf (car (node-writes item)) waypoint
+                              (gethash w id->bind) (make-node :JIT :BIND (list w) (list tmp) :value r))
+                        (push (gethash w id->bind) binds)
+                        (list (%setf (gethash r id->load r) waypoint :out tmp)
+                              ;; [TODO] SETF
+                              ))
+                      (loop for w in (node-writes item)
+                            for wt in (relay-writes (read-type-relay item))
+                            for wi in (relay-write-iters (read-type-relay item))
+                            for nth upfrom 0
+                            if (find w writes)
+                              collect
+                              (let ((waypoint (gensym "WP"))
+                                    (new-w (gensym "T"))
+                                    (tmpid (gensym "T"))
+                                    (index (iter->index wi wt)))
+                                (setf (nth nth (node-writes item)) waypoint
+                                      (gethash w id->bind) (make-node :JIT :BIND (list new-w) (list tmpid) :value w))
+                                ;; [note] no waypoint user in this items right?
+                                (push (gethash w id->bind) binds) ;; schedule all item users after %setf
+                                (%setf (%aref w index) waypoint :out tmpid))))
                   (progn
                     (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
                     (case (node-type item)
@@ -392,6 +412,9 @@
                       (otherwise (list (emit item)))))))
                (lower-item (item)
                  (case (node-type item)
+                   (:VIEW
+                    
+                    )
                    (:INDEX-COMPONENTS (list (sendexpr (make-index-components item gids))))
                    (otherwise (%insert-aref item)))))
         (let ((body (%progn (reduce #'append (map 'list #'lower-item items)))))
@@ -443,14 +466,9 @@
         (caten/codegen/blueprint:print-blueprint bp t)
         ;; [Note]
         ;; CSEをこの段階でやってもいいか。
-        ;; 1. generate blueprint
-        ;; - 1. Compute Common Iteration Space
-        ;; - 2. Lowerblueprint considering SETF (add global ctx)
-        ;; - index components
-        ;; - 3. Lower %for first
-        ;; - 4. Scalarify
-        ($affine grid-writes grid-reads)
-        ))))
+        ;; Scalarify when?
+        ;; Threefry Lowering
+        ($affine grid-writes grid-reads)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Run benchmark!
 (defun tensor-graph->schedule-graph (graph)
