@@ -1,23 +1,33 @@
 (in-package :caten/aasm)
 ;; ~~ ScheduleGraph ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass ScheduleGraph (FastGraph)
-  ((symbolic :initarg :symbolic)))
+  ;; [TODO]
+  ;; - Symbolics (e.g.: DynamicShape)
+  ;; - Inputs (e.g.: TensorInput)
+  ((symbolic :initarg :symbolic :accessor schedule-graph-symbolcs)))
 
 (defmethod print-object ((graph ScheduleGraph) stream)
   (format stream "
-ScheduleGraph[outputs=~a] {
+ScheduleGraph[() -> (~a)] {
 ~a}
 "
-	  (graph-outputs graph)
+          (render-list (graph-outputs graph))
 	  (with-output-to-string (out)
 	    (dolist (node (graph-nodes (->graph-with-tpsort graph)))
               (loop for line in (cl-ppcre:split "\\n" (print-object node nil))
                     do (format out "    ~a~%" line))))))
 
+(defmethod verify-schedule-graph ((graph ScheduleGraph))
+  (dolist (item (graph-nodes graph))
+    (assert (or (eql (node-type item) :Affine) (eql (node-type item) :NonAffine))
+            ()
+            "verify-schedule-graph: ScheduleGraph should be consisted of :Affine or :NonAffine, getting ~a" item))
+  graph)
+
 (defun ->schedule-graph (graph)
   (declare (type Graph graph))
   (assert (null (graph-seen graph)) () "->schedule-graph: Partial graph should not be a schedule-graph! (remove graph-seen)")
-  (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil)))
+  (verify-schedule-graph (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil))))
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun $affine (writes reads)
   (declare (type list writes reads))
