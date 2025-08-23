@@ -1,6 +1,7 @@
 (defpackage :caten/codegen/lowerer
   (:documentation "TensorGraph => ScheduleGraph Lowerer")
-  (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers)
+  (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers
+        :caten/codegen/search/polyhedral)
   (:export
    #:tensor-graph->schedule-graph))
 
@@ -415,8 +416,9 @@
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
       ;; [TODO]
-      ;; - [ ] BIND handling
-      ;; - [ ] BIND Local?
+      ;; - [ ] BIND Handling
+      ;; - [ ] SETF+BIND Case Testing after Fusion
+      ;; - [ ] HERE: id->valueでArefに到達できるならArefへ書き込む。
       ;; - Reduction (OK)
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
@@ -457,8 +459,7 @@
                         (push (gethash w id->bind) binds)
                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
                         (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
-                        ;; [TODO] id->valueがArefに到達するならば,
-                        ;; Arefをもう一つ作成してそこへ書き込む
+                        ;; [TODO] Here
                         (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp1)) stores))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
@@ -575,15 +576,11 @@
              (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
         (declare (ignore _ __))
         (setf bp (caten/aasm::%simplify-ast bp))
-        (fresh-line)
-        (caten/codegen/blueprint:print-blueprint bp t)
         ;; [Note]
         ;; CSEをこの段階でやってもいいか。
         ;; Scalarify when?
         ;; Threefry Lowering
-        ;; [TODO] Symbolic JIT, ShapeInferenceどうするか。(--> その地点のSYMBOLを記録するだけでOK)
-        ;; [TODO] Optimize EXPR stuff ===> CSEがあるから，Treeを遡る必要はない。
-        ($affine grid-writes grid-reads)))))
+        ($affine grid-writes grid-reads :polyhedron (make-polyhedral-schedule-item bp :scal->array nil))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Run benchmark!
 (defun tensor-graph->schedule-graph (graph)

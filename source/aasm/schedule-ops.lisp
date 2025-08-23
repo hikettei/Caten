@@ -29,9 +29,9 @@ ScheduleGraph[() -> (~a)] {
   (assert (null (graph-seen graph)) () "->schedule-graph: Partial graph should not be a schedule-graph! (remove graph-seen)")
   (verify-schedule-graph (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil))))
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun $affine (writes reads)
+(defun $affine (writes reads &key (polyhedron))
   (declare (type list writes reads))
-  (emit (make-node :Schedule :Affine writes reads)))
+  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron)))
 
 (defun $nonaffine (writes reads &key (items))
   (declare (type list writes reads))
@@ -40,8 +40,17 @@ ScheduleGraph[() -> (~a)] {
 (defmethod print-node ((node Node) (id (eql :Affine)))
   (with-output-to-string (out)
     (format out "~a = Affine(~a){~%" (render-list (node-writes node)) (render-list (node-reads node)))
-    (format out "    TODO: [Program]~%")
-    (format out "}")))
+    (let ((sched (uiop:symbol-call
+                  :caten/codegen/search/ast :ast->str
+                  (uiop:symbol-call
+                   :caten/codegen/search/ast
+                   :compute-ast-from-schedule
+                   (uiop:symbol-call
+                    :caten/codegen/search/polyhedral
+                    :psi-theta (getattr node :polyhedron))))))
+      (loop for line in (cl-ppcre:split "\\n" sched) do
+        (format out "  ~a~%" line))
+      (format out "}"))))
 
 (defmethod print-node ((node Node) (id (eql :NonAffine)))
   (with-output-to-string (out)
