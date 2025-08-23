@@ -485,10 +485,10 @@ A <- L
           (if changed-p (ast-ensure-expr-is-singleton graph) graph))))))
 
 (defun %make-parse-ctx (graph)
-  (let* ((ctx (uiop:symbol-call :caten/codegen/polyhedral :make-scop-ctx-from-blueprint graph :allow-if t))
-         (node-to-loops (uiop:symbol-call :caten/codegen/polyhedral :ctx-node-to-loops ctx))
-         (allloops (uiop:symbol-call :caten/codegen/polyhedral :ctx-all-loops ctx))
-         (exprs (uiop:symbol-call :caten/codegen/polyhedral :ctx-exprs ctx)))
+  (let* ((ctx (uiop:symbol-call :caten/codegen/search/polyhedral :make-scop-ctx-from-blueprint graph :allow-if t))
+         (node-to-loops (uiop:symbol-call :caten/codegen/search/polyhedral :ctx-node-to-loops ctx))
+         (allloops (uiop:symbol-call :caten/codegen/search/polyhedral :ctx-all-loops ctx))
+         (exprs (uiop:symbol-call :caten/codegen/search/polyhedral :ctx-exprs ctx)))
     (values node-to-loops allloops exprs)))
 
 (defun ast-rewrite-ssa-style-as-tree (graph)

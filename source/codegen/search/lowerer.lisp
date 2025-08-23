@@ -304,6 +304,60 @@
             collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
           else
             collect (expr-mul (if (numberp i) (expr-const i :int64) i) s))))
+;; ~~ Permute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun node-reduced-axes (node)
+  (let ((is (car (relay-write-iters (read-type-relay node)))))
+    (when is
+      (loop for s in (iteration-space-strides is)
+            if (expr-equal-to s 0)
+              collect t
+            else
+              collect nil))))
+
+(defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
+  (when (null axes) (setf axes (make-list (length gids))))
+  (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
+  (when (getattr node :reduction :allow-undefined t)
+    (loop for nth upfrom 0
+          for r in axes
+          if r collect (nth nth gids))))
+
+(defun items-reduced-axes (items rank-size)
+  (let ((reduced-axes (make-list rank-size)))
+    (dolist (node items)
+      ;; Broadcasting information are always stored by the highest rank tensor.
+      (when (and
+             (getattr node :reduction :allow-undefined t)
+             (car (relay-write-iters (read-type-relay node))))
+        (when (= rank-size (length (iteration-space-shape (car (relay-write-iters (read-type-relay node))))))
+          (loop for nth upfrom 0
+                for r in (node-reduced-axes node)
+                if r do (setf (nth nth reduced-axes) t)))))
+    reduced-axes))
+
+(defun initial-loop-permutation (items rank)
+  (let ((reduced (items-reduced-axes items rank))
+        (stashed))
+    ;; reduced axes should be the last
+    `(,@(loop for p in (range 0 rank)
+              for r in reduced
+              if r ;; (reduced)
+                do (push p stashed)
+              else
+                collect p)
+      ,@(nreverse stashed))))
+
+(defun items-permute-all (items order)
+  (flet ((swizzle (id space)
+           (when space
+             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
+             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
+                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
+                   (iteration-space-views space) (permute-list order (iteration-space-views space))
+                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
+    (dolist (n items)
+      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
+      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-grids-from-node (graph node id->grids id->users)
   (declare (type node node))
@@ -367,7 +421,9 @@
                             (setf (gethash r id->load) tmpid)
                             (%aref r index :out tmpid)))
                   (if (getattr item :reduction :allow-undefined t)
-                      (let* ((w (car (node-writes item)))
+                      (let* ((type (read-type-relay item))
+                             (w (car (node-writes item)))
+                             (index (iter->index (car (relay-write-iters type)) (car (relay-writes type))))
                              (r (car (node-reads item)))
                              (waypoint (gensym "WP"))
                              (tmp (gensym "R")))
@@ -379,6 +435,9 @@
                         (assert (= 1 (length (node-writes item))))
                         ;; TODO: make it global?
                         ;; Fuseした後，BINDがInsertされるようにしたい。
+                        ;; [TODO]
+                        ;; - Permuteするべきか
+                        ;; - Permuteする，sin, reductionのcase?
                         (setf (car (node-writes item)) waypoint
                               (gethash w id->bind) (make-node :JIT :BIND (list w) (list tmp) :value r))
                         (push (gethash w id->bind) binds)
@@ -388,8 +447,7 @@
                         ;; tuneni write-to ni naruyouni suru?
                         (list
                          (%setf (gethash r id->load r) waypoint :out tmp)
-                         ;;(%setf (gethash r id->load r) tmp)
-                         ))
+                         (%setf (%aref w index) tmp)))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
                             for wi in (relay-write-iters (read-type-relay item))
@@ -419,7 +477,7 @@
           (loop for gid in (reverse gids) for space in (reverse iterspace)
                 do (setf body (%range gid (sendexpr space) body)))
           (dolist (b binds) (emit b))
-          body)))))
+          (%progn (node->id body)))))))
 
 (defun copy-item (item &aux (item (copy-node item)))
   (setf (node-id item) (gensym "NID"))
@@ -483,9 +541,12 @@
       ;; Early Loop Coalesce (Cannot judged in polyhedral model)
       (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
              (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
-             (gids (map 'list #'gid (range 0 (length (the list (car iterspace)))))) ;; todo: initial perm?
-             (bp (lower-into-blueprint lctx gids (car iterspace) (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
-        (declare (ignore _))
+             (order (initial-loop-permutation (grids-items grids) (length (the list (car iterspace)))))
+             (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
+             (group-size (permute-list order (car iterspace)))
+             (__ (items-permute-all (grids-items grids) order))
+             (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
+        (declare (ignore _ __))
         (setf bp (caten/aasm::%simplify-ast bp))
         (fresh-line)
         (caten/codegen/blueprint:print-blueprint bp t)
