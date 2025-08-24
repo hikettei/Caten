@@ -87,15 +87,15 @@ Returns:
            (schedule-constraints-on-domain domain))
          (schedule-constraints
            (schedule-constraints-set-coincidence
-            schedule-constraints
+            (! schedule-constraints)
             dependencies))
          (schedule-constraints
            (schedule-constraints-set-validity
-            schedule-constraints
+            (! schedule-constraints)
             dependencies))
          (schedule-constraints
            (schedule-constraints-set-proximity
-            schedule-constraints
+            (! schedule-constraints)
             dependencies)))
     schedule-constraints))
 

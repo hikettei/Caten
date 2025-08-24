@@ -246,14 +246,14 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                        (setf region (append region exprs-in-body))
                        (if (string= band "[{}]")
                            body-sched
-                           (caten/isl:schedule-insert-partial-schedule body-sched (caten/isl:multi-union-pw-aff-from-str band))))))
+                           (isl:schedule-insert-partial-schedule (isl:! body-sched) (isl:! (isl:multi-union-pw-aff-from-str band)))))))
                   (:IF
                    ;; [Note] How to dump :IF Node?
                    (error "not ready"))
                   ;; EXPR ==> Rewrite as a filter, and is a leaf of graph.
                   (:EXPR
                    (setf region (append region (list node)))
-                   (caten/isl:schedule-from-domain (caten/isl:union-set-from-str (format nil "{ ~a }" (render-domain-for-node blueprint node node-to-loops)))))
+                   (caten/isl:schedule-from-domain (isl:! (caten/isl:union-set-from-str (format nil "{ ~a }" (render-domain-for-node blueprint node node-to-loops))))))
                   (:PROGN
                     ;; [todo] you can use reduce
                     (let ((tmp-schedule :nothing))
@@ -262,7 +262,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                           (setf region (append region reg))
                           (if (eql tmp-schedule :nothing)
                               (setf tmp-schedule sched)
-                              (setf tmp-schedule (caten/isl:schedule-sequence tmp-schedule sched)))))
+                              (setf tmp-schedule (caten/isl:schedule-sequence (isl:! tmp-schedule) (isl:! sched))))))
                       (assert (not (eql tmp-schedule :nothing)))
                       tmp-schedule))
                   (otherwise (error "No handling case for ~a" (node-type node))))
@@ -285,7 +285,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
-                   :dependency-graph (time (compute-dependence-relation reads writes schedule))
+                   :dependency-graph (compute-dependence-relation reads writes schedule)
                    :initial-theta schedule :read reads :write writes
                    :domain domain :strategy strategy)))
 
