@@ -285,7 +285,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a
 Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
-                   :dependency-graph (compute-dependence-relation reads writes schedule)
+                   :dependency-graph (time (compute-dependence-relation reads writes schedule))
                    :initial-theta schedule :read reads :write writes
                    :domain domain :strategy strategy)))
 
