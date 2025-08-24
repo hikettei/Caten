@@ -257,7 +257,7 @@ ID <- SETF(AREF(TARGET, IDX), EXPR(...))
 ```
 Writes the value of EXPR into the corresponding region of AREF.
 "
-         :type-relay (make-type-relay 0))
+         :type-relay (make-type-relay 0)) ;; TODO, (car (node-reads node)) is always :AREF or :EXPR
 
 (defnode (:JIT :BIND) ()
          "

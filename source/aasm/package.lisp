@@ -95,5 +95,6 @@
   (:export #:$sink #:$kernel #:$sync)
   ;; ScheduleOps
   (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse)
+  (:Export #:ast-remove-extra-memloads #:ast-concrete-sequence)
   ;; schedule-ops
   (:export #:ScheduleGraph #:->schedule-graph #:$affine #:$nonaffine))

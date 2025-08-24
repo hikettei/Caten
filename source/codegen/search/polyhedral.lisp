@@ -114,7 +114,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
     ((numberp id) (format nil "~a" id))
     (node
      (let ((id (if (eql (node-type node) :EXPR) (car (node-reads node)) id)))
-       (render-node (make-instance 'Default-Renderer :graph graph) id)))
+       (render-node (make-instance 'Default-Renderer :graph graph :render-expr->expr t) id)))
     (t (error "The variable ~a is not defined. ~a" id node))))
 
 (defun render-domain-for-node (blueprint node loop-info)

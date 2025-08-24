@@ -134,7 +134,7 @@
       (from-expr (iteration-space-shape is) components))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
-  nil
+  ((render-expr->expr :initarg :render-expr->expr :initform nil))
   (:documentation "Default Renderer used to print-object in repl"))
 
 (defmethod %render-const ((renderer Default-Renderer) obj)
@@ -231,7 +231,9 @@
           (render-node renderer (third (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :EXPR)) node)
-  (%render-const renderer (car (node-writes node))))
+  (if (slot-value renderer 'render-expr->expr)
+      (render-node renderer (car (node-reads node)))
+      (%render-const renderer (car (node-writes node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :DEFINE-LOCAL)) node)
   (%render-const renderer (car (node-writes node))))

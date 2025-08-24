@@ -424,6 +424,7 @@
       ;; - Reduction (OK)
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
+      (print items)
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -432,6 +433,17 @@
                (scope= (queue current-dim)
                  (find current-dim (car queue)))
                (%insert-aref (item)
+                 ;; Update BINDs
+                 ;; [PostApply]?
+                 (loop for r in (node-reads item) for nth upfrom 0
+                       for b = (gethash r id->bind)
+                       if b do
+                         (print "B")
+                         (push b binds)
+                       ;  (%global (car (node-writes b)) :float32 t)
+                       ;  (setf (nth nth (node-reads item)) (car (node-writes b)))
+                       )
+                 ;; Memory Loads
                  (loop for r in (node-reads item)
                        for rt in (relay-reads (read-type-relay item))
                        for ri in (relay-read-iters (read-type-relay item))
@@ -441,6 +453,7 @@
                                (tmpid (gensym "val_")))
                            (setf (gethash r id->load) tmpid)
                            (push (cons (iterspace-depend-idx-list ri gids) (%aref r index :out tmpid)) loads)))
+                 ;; Reductions/Stores
                   (if (getattr item :reduction :allow-undefined t)
                       (let* ((type (read-type-relay item))
                              (w (car (node-writes item)))
@@ -578,16 +591,15 @@
              (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
         (declare (ignore _ __))
         (setf bp (caten/aasm::%simplify-ast bp))
+        (print bp)
         ;; [Note]
-        ;; CSEをこの段階でやってもいいか。
-        ;; Scalarify when?
         ;; Threefry Lowering
         ($affine grid-writes grid-reads
                  :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
                  :blueprint bp)))))
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
-;; - [ ] Rename: make-schedule-graph
+;; - [x] Rename: make-schedule-graph
 ;; - [ ] Schedule involving scalars
 ;; - [ ] Schedule threefry (Reduce)
 ;; - [ ] KVCache Scheduling
@@ -705,11 +717,23 @@
     (when (eql (node-type item) :Affine)
       (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
         (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
-
-        (caten/codegen/blueprint:print-blueprint (car kernels) t)
-        (setf (getattr item :blueprint) (car kernels)
-              (getattr item :polyhedron)
-              (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission)))))
+        (let* ((singletons
+                 (loop for r in (node-reads item)
+                       if (= 1 (length (id->users graph r))) ;; [todo] optimize id->users
+                         collect r))
+               (kernel (ast-remove-extra-memloads (car kernels) singletons)))
+          (print singletons)
+          (caten/codegen/blueprint:print-blueprint kernel t)
+          ;; [TODO]
+          ;; - 1 [x] ApplyCSEする (OK)
+          ;; - 2 [x] ApplyCSE実施後もSchedulingできるようにする (OK)
+          ;; - 3 [ ] val[g_1] = val_[g_2] をFusion
+          ;; - 4 [ ] IndexComputationはScheduleに含めないでいいから，(AREF P IDX)へCopy
+          ;; - 5. [ ] ここで不要なAllocationを刈り取れるようにする
+          ;; - Note: ReductionのBindを直す
+          (setf (getattr item :blueprint) kernel
+                (getattr item :polyhedron)
+                (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission))))))
   graph)
 
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))

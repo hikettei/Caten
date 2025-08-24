@@ -1613,3 +1613,68 @@ for x in range(M*N*K):
       (insert-nodes graph (list outerband))
       (simplify-ast graph)
       graph)))
+
+(defun ast-concrete-sequence (blueprint &aux (visited (make-hash-table)))
+  "Concretes the execution order such as:
+```
+val_1[idx] = ...;   // EXPR(STORE) OUT=A
+val_2 = val_1[idx]; // ==> BIND(A, val_1)
+```
+so that cse won't break the blueprint."
+  (declare (type FastGraph blueprint))
+  (let ((id->bind (make-hash-table)))
+    (labels ((f (item)
+               (loop for n in (node-reads item) for nth upfrom 0
+                     for k = (gethash n id->bind)
+                     if k do
+                       (setf (nth nth (node-reads item)) (car (node-writes k))))
+               ;; // EXPR(STORE)
+               (let* ((parent (id->value blueprint (car (node-reads item))))
+                      (setf/out
+                        (when (and parent (eql (node-type parent) :SETF))
+                          (id->value blueprint (car (node-reads parent))))))
+                 (when (and
+                        (eql (node-type item) :EXPR)
+                        parent setf/out
+                        (eql :SETF (node-type parent)))
+                   (let* ((val (case (node-type setf/out)
+                                 (:AREF (car (node-reads setf/out)))
+                                 (:EXPR (car (node-writes setf/out)))
+                                 (otherwise (error "ast-concrete-sequence: detected illegal order. SETF(X, Y), X should be AREF or EXPR."))))
+                          (tmpid (gensym "BIND"))
+                          (bind (make-node :JIT :BIND (list tmpid) (node-writes item) :value val)))
+                     (setf (gethash val id->bind) bind)
+                     (insert-nodes blueprint (list bind))))))
+             (explore (id bfs &aux (node (id->value blueprint id)))
+               (when (or (null node) (gethash (node-id node) visited))
+                 (return-from explore))
+               (setf (gethash (node-id node) visited) t)
+               (if (or bfs (eql (node-type node) :EXPR))
+                   (progn
+                     (mapc #'(lambda (x) (explore x t)) (node-reads node))
+                     (f node))
+                   (progn
+                     (f node)
+                     (mapc #'(lambda (x) (explore x bfs)) (node-reads node))))))
+      (mapc #'(lambda (x) (explore x nil)) (graph-outputs blueprint))
+      blueprint)))
+
+(defun ast-remove-extra-memloads (blueprint singletons)
+  "Rewrites the following pattern but val_1 is a member of singletons.
+```
+idx = ai+b;
+val_1[idx] = 0.0;
+float acc = val_1[idx];
+```
+===>
+```
+float acc = 0.0;
+```
+"
+  (declare (type FastGraph blueprint) (type list singletons))
+  blueprint
+  )
+
+(defun ast-fold-expr-used-by-aref (blueprint)
+  blueprint
+  )
