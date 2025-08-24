@@ -658,29 +658,23 @@
 ;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
 ;; - LLM => BatchSizeをIterateしてBEAM Search...
 ;; - remove marks
-(defun %fuse (src parent)
-  (let* ((fused (ApplyReschedule (psi. parent src))))
-    (if fused
-        (values fused nil)
-        (values src parent))))
-
+;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun merge-affine (a1 a2 new-poly)
   (let ((r (loop for r in (append (node-reads a1) (node-reads a2))
                  if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
                    collect r)))
     ($affine (node-writes a1) (remove-duplicates r) :polyhedron new-poly)))
 
-(defun fuse (src parents)
-  (when (null parents) (return-from fuse nil))
+(defun affine/fusion (src parents)
+  (declare (type Node src) (type list parents))
+  (assert parents)
   (flet ((m (x) (getattr x :polyhedron)))
-    (let* ((t+0 src)
-           (t-1 parents)
-           (new-parents))
+    (let* ((t+0 src) (t-1 parents) (new-parents))
       (dolist (tn t-1)
-        (multiple-value-bind (new-src new-parent) (%fuse (m t+0) (m tn))
-          (if new-parent ;; failed to fuse
-              (push tn new-parents)
-              (setf t+0 (merge-affine t+0 tn new-src)))))
+        (let ((fused (ILP/SolveProximity (psi. (m t+0) (m tn)))))
+          (if fused
+              (setf t+0 (merge-affine t+0 tn fused))
+              (push tn new-parents))))
       (values t+0 new-parents))))
 
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
@@ -699,7 +693,7 @@
                        (loop for r in (node-reads node)
                              if (mergeable-item-p r) collect (id->value graph r))))
                  (when items
-                   (multiple-value-bind (fused-item unfused-items) (fuse node items)
+                   (multiple-value-bind (fused-item unfused-items) (affine/fusion node items)
                      (remnode graph (car (node-writes node)))
                      (dolist (i items) (remnode graph (car (node-writes i))))
                      (when fused-item (insert-nodes graph (list fused-item)))
@@ -709,7 +703,7 @@
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
     graph))
-;; remove marks from polyhedron
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-graph-compile (schedule-graph)
   ;; Finalize Schedule + Compile
   )

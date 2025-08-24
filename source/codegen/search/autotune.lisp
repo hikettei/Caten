@@ -3,7 +3,7 @@
         :caten/codegen/search/optimization-rule)
   (:export
    #:online-autotune-kernel
-   #:ApplyReschedule
+   #:ILP/SolveProximity
    ))
 
 (in-package :caten/codegen/search/autotune)
@@ -169,7 +169,7 @@ BEAM Search Workflow:
 ;;   - [ ] Optimize ISL
 ;;   - [ ] CostModel
 ;;   - [ ] If it works well ==> apply this function algo end2end
-(defun ApplyReschedule (polyhedral &key (cost-model))
+(defun ILP/SolveProximity (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
@@ -182,7 +182,7 @@ BEAM Search Workflow:
                (when (null (sgt-items gen0))
                  (let ((last-item (car prev-items)))
                    (return-from
-                    ApplyReschedule
+                    ILP/SolveProximity
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
                          nil
                          (progn
@@ -200,53 +200,5 @@ BEAM Search Workflow:
 ;; - [ ] Move renderer.lisp ==> byoc or runtime
 ;; - [ ] Move codegen
 ;; - [ ] Remove realize
-;; - [ ] Create ScheduleGraph (each node is Polyhedral w/ Lexiographical Order)
+;; - [x] Create ScheduleGraph (each node is Polyhedral w/ Lexiographical Order)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun fuse (src parents)
-  (when (null parents) (return-from fuse nil))
-  (dolist (item (reverse (append (list src) parents)))
-    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
-  (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)) :scal->array nil)))
-    (let* ((t+0 (m src))
-           (t-1 (reduce #'psi. (map 'list #'m parents))))
-      (ApplyReschedule (psi. t-1 t+0))
-      nil)))
-
-(defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
-  (declare (type Graph graph))
-  (labels ((mergeable-item-p (id)
-             (let ((node (id->value graph id)))
-               (and
-                (eql (node-type node) :KERNEL)
-                (= 1 (length (id->users graph id))))))
-           (explore (id &aux (node (id->value graph id)))
-             (when (or (null node) (gethash (node-id node) seen))
-               (return-from explore))
-             (when (eql (node-type node) :KERNEL)
-               (let* ((items (loop for r in (node-reads node)
-                                   if (mergeable-item-p r) collect (id->value graph r)))
-                      (fused (fuse node items)))
-                 (print (length fused))
-                 (error "STOP")
-                 ;; TODO: Replace myself w/ new kernel
-                 ))
-             (mapc #'explore (node-reads node))))
-    (mapc #'explore (graph-outputs graph))
-    (print graph)
-    ;(error "STOP")
-    ))
-
-
-;; [Workload]
-;; - 100% LoopFusion (FlashX Generation)
-;; - 
-;; TensorGraphからFlashAttention行けそうなんだよなぁ
-;; SequenceにFilter/Bandが混在するとき，Topological Sortをする。
-;; 次にやること 
-;; タイルアクセスを解析して、インターチェンジが有効な次元がどれか列挙する方法はないか考える
-;; はじめにテンプレート生成(実行なし)
-;; 次にタイルなど細かい最適化
-;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
-;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
-;; - TensorGraphから演算の可換などを考慮してSHA256 Hash作れないかな？
-;; - Node -> Always IMMUTABLE and singleton, can we do that?
