@@ -48,6 +48,8 @@ ScheduleGraph[() -> (~a)] {
                    (uiop:symbol-call
                     :caten/codegen/search/polyhedral
                     :psi-theta (getattr node :polyhedron))))))
+      (dolist (w (node-writes node))
+        (format out "  ~(~a~) = get_from_memory_pool(:~(~a~));~%" w w))
       (loop for line in (cl-ppcre:split "\\n" sched) do
         (format out "  ~a~%" line))
       (format out "}"))))
