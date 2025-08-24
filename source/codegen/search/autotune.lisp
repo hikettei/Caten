@@ -178,6 +178,7 @@ BEAM Search Workflow:
                (sgt-apply-transformations
                 gen0
                 '(:Transpose :Reshape :Fuse))
+               (assert (<= (length (sgt-items gen0)) 1))
                ;; [TODO] Sort TopK
                (when (null (sgt-items gen0))
                  (let ((last-item (car prev-items)))

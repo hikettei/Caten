@@ -139,7 +139,8 @@ TODO:
                   (list (make-instance 'NoOpt))
                   (list
                    (make-instance 'Fission :at pos :sizes sizes)))
-              (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))))))))
+              ;; (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))
+              ))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
   (with-slots ((at at) (sizes sizes)) optrule
