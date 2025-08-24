@@ -1,6 +1,7 @@
 (defpackage :caten/codegen/isl
   (:shadow #:set #:map #:space)
-  (:use :cl :cffi))
+  (:use :cl :cffi)
+  (:export :!))
 
 (in-package :caten/codegen/isl)
 
