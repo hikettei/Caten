@@ -438,7 +438,7 @@
                        if (and (find r reads) (null (gethash r id->load)))
                          collect
                          (let ((index (iter->index ri rt))
-                               (tmpid (gensym "AREF")))
+                               (tmpid (gensym "val_")))
                            (setf (gethash r id->load) tmpid)
                            (push (cons (iterspace-depend-idx-list ri gids) (%aref r index :out tmpid)) loads)))
                   (if (getattr item :reduction :allow-undefined t)
@@ -591,7 +591,7 @@
 ;; - [ ] Schedule involving scalars
 ;; - [ ] Schedule threefry (Reduce)
 ;; - [ ] KVCache Scheduling
-;; - [ ] ...
+;; - [ ] SETF Bind failing case w/ Softmax CSE
 (defun make-schedule-graph (graph)
   "Constructs ScheduleGraph from the given tensorgraph."
   (declare (type Graph graph) (optimize (speed 3)))
@@ -705,7 +705,8 @@
     (when (eql (node-type item) :Affine)
       (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
         (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
-        
+
+        (caten/codegen/blueprint:print-blueprint (car kernels) t)
         (setf (getattr item :blueprint) (car kernels)
               (getattr item :polyhedron)
               (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission)))))
@@ -753,7 +754,9 @@
 (defun schedule-graph-solve-memory-planner (graph)
   "Solve ILP to minimize the number of temporary buffer allocation."
   (declare (type ScheduleGraph graph))
-  
+  ;; Default:
+  ;; - (*) write_id = get_from_memory_pool(id)
+  ;; id is subject to optimize.
   )
 
 (defun schedule-graph-finalize (graph)
