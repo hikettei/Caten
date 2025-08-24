@@ -3,7 +3,8 @@
   (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers
         :caten/codegen/search/polyhedral :caten/codegen/search/autotune)
   (:export
-   #:tensor-graph->schedule-graph))
+   #:make-schedule-graph
+   #:schedule-graph-fuse))
 
 (in-package :caten/codegen/lowerer)
 ;; ~~ Grids ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -580,10 +581,14 @@
         ;; CSEをこの段階でやってもいいか。
         ;; Scalarify when?
         ;; Threefry Lowering
-        ($affine grid-writes grid-reads :polyhedron (make-polyhedral-schedule-item bp :scal->array nil))))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Run benchmark!
-(defun tensor-graph->schedule-graph (graph)
+        ($affine grid-writes grid-reads
+                 :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
+                 :blueprint bp)))))
+;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO]
+;; - [ ] Rename: make-schedule-graph
+;; - [ ] 
+(defun make-schedule-graph (graph)
   "Constructs ScheduleGraph from the given tensorgraph."
   (declare (type Graph graph) (optimize (speed 3)))
   (graph-infer-type-relay graph)
@@ -632,7 +637,7 @@
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
-        (schedule-graph-fuse (->schedule-graph g))))))
+        (->schedule-graph g)))))
 ;; Solve Graph Partition Problem
 ;; Optimize Lowerer, ISL
 ;; Objective: Maximize the volume of Affine Nodes
@@ -654,16 +659,26 @@
 ;; [TODO] ScheduleGraph, TensorGraph, etc を作る
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym
-;; [TODO]
 ;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
 ;; - LLM => BatchSizeをIterateしてBEAM Search...
 ;; - remove marks
+;; [TODO] Reimplement api
+;; - Node is always singleton (Cache)
+;; - Faster compilation time
 ;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun blueprint-sequence (x y)
+  (with-blueprint (:noopt t)
+    (insert-nodes *ctx* (graph-nodes x))
+    (insert-nodes *ctx* (graph-nodes y))
+    (%progn (graph-outputs x) (graph-outputs y))))
+
 (defun merge-affine (a1 a2 new-poly)
   (let ((r (loop for r in (append (node-reads a1) (node-reads a2))
                  if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
                    collect r)))
-    ($affine (node-writes a1) (remove-duplicates r) :polyhedron new-poly)))
+    ($affine (node-writes a1) (remove-duplicates r)
+             :polyhedron new-poly
+             :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint)))))
 
 (defun affine/fusion (src parents)
   (declare (type Node src) (type list parents))
@@ -676,7 +691,7 @@
               (setf t+0 (merge-affine t+0 tn fused))
               (push tn new-parents))))
       (values t+0 new-parents))))
-
+;; ~~~ Toplevel for ScheduleGraph ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
   (declare (type ScheduleGraph graph))
   (labels ((mergeable-item-p (id)
@@ -703,13 +718,19 @@
                        (return-from explore nil))))))
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
-    ;; [TODO] Applying Render and SCoP again?
     graph))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun schedule-graph-compile (schedule-graph)
-  ;; Finalize Schedule + Compile
+
+(defun schedule-graph-search (schedule-graph)
+  ;; [TODO]
+  ;; - BEAM Search: ScheduleGraphの状態のまま解く
+  ;; - Symbolicも最適化できるようにする
+  ;; - Nonaffineも普通に実行すればいい
   )
 
 (defun schedule-graph-solve-memory-planner (schedule-graph)
 
+  )
+
+(defun schedule-graph-finalize (schedule-graph)
+  ;;
   )

@@ -929,12 +929,12 @@ schedule: ... --------| // Returned
   (let ((new-filters (permute-list order (schedule-node-sequence-get-filters components)))
         (new-filter-list (isl::union-set-list-alloc 0)))
     (dolist (f new-filters)
-      (setf new-filter-list (isl::union-set-list-add new-filter-list f)))
+      (setf new-filter-list (isl::union-set-list-add (! new-filter-list) f)))
     (schedule-node-first-child
      (schedule-node-insert-mark
       (isl::schedule-node-insert-sequence
-       components
-       new-filter-list)
+       (! components)
+       (! new-filter-list))
       (isl::make-id-from-str (format nil "@ApplyOptimization{REORDER}~a" order))))))
 
 (declaim (ftype (function (isl::schedule-node-sequence) list) schedule-node-sequence-tpsort))
@@ -945,7 +945,7 @@ schedule: ... --------| // Returned
     ;; verify-legality is a heavy op...
     ;; verify-legality => あんまり信用してない >< if it is fast, generate multiple candidates
     ;; to smolify the exploration space, group sequence of filters as one.
-    ;(print filters)
+    
     ;; [TODO]
     filter-ids
     ))

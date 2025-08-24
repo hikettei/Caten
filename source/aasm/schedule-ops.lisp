@@ -29,9 +29,9 @@ ScheduleGraph[() -> (~a)] {
   (assert (null (graph-seen graph)) () "->schedule-graph: Partial graph should not be a schedule-graph! (remove graph-seen)")
   (verify-schedule-graph (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil))))
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun $affine (writes reads &key (polyhedron))
+(defun $affine (writes reads &key (polyhedron) (blueprint))
   (declare (type list writes reads))
-  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron)))
+  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron :blueprint blueprint)))
 
 (defun $nonaffine (writes reads &key (items))
   (declare (type list writes reads))
