@@ -125,7 +125,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (let ((constraints
               (loop for l in (reverse loops)
                     for step = (getf l :step)
-                    if (= step 1)
+                    if (string= (r step) "1")
                       collect (format nil "0 <= ~(~a~) < ~a" (getf l :idx) (r (getf l :size)))
                     else ;; [NOTE] Not Tested!!
                       collect (format nil "exists e : ~(~a~) = ~a*e and 0 <= ~(~a~) < ~a" (getf l :idx) (r step) (getf l :idx) (r (getf l :size))))))

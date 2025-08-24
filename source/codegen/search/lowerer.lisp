@@ -1,7 +1,8 @@
 (defpackage :caten/codegen/lowerer
   (:documentation "TensorGraph => ScheduleGraph Lowerer")
   (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers
-        :caten/codegen/search/polyhedral :caten/codegen/search/autotune)
+   :caten/codegen/search/polyhedral :caten/codegen/search/autotune
+   :caten/codegen/search/ast)
   (:export
    #:make-schedule-graph
    #:schedule-graph-fuse))
@@ -305,7 +306,7 @@
             collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
           else
             collect (expr-mul (if (numberp i) (expr-const i :int64) i) s))))
-;; ~~ Permute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Permute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun node-reduced-axes (node)
   (let ((is (car (relay-write-iters (read-type-relay node)))))
     (when is
@@ -587,7 +588,10 @@
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [ ] Rename: make-schedule-graph
-;; - [ ] 
+;; - [ ] Schedule involving scalars
+;; - [ ] Schedule threefry (Reduce)
+;; - [ ] KVCache Scheduling
+;; - [ ] ...
 (defun make-schedule-graph (graph)
   "Constructs ScheduleGraph from the given tensorgraph."
   (declare (type Graph graph) (optimize (speed 3)))
@@ -628,6 +632,7 @@
            (declare (ignore id))
            (setf (gethash (grids-id grids) all-grids) grids))
        id->grids)
+      ;; [todo] parallelize grids-init w/ lparallel!
       (let ((g
               (loop with lctx = (make-lowerctx)
                     for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
@@ -691,9 +696,24 @@
               (setf t+0 (merge-affine t+0 tn fused))
               (push tn new-parents))))
       (values t+0 new-parents))))
-;; ~~~ Toplevel for ScheduleGraph ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
+;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun schedule-graph-apply-schedule (graph &key (allow-fission nil))
+  "Recompute (out-of-date) blueprint w/ updated schedule."
   (declare (type ScheduleGraph graph))
+  ;; [TODO] use lparallel:pdotimes, this can be parallelized.
+  (dolist (item (graph-nodes graph))
+    (when (eql (node-type item) :Affine)
+      (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
+        (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
+        (setf (getattr item :blueprint) (car kernels)
+              (getattr item :polyhedron)
+              (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission)))))
+  graph)
+
+(defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
+  "Solve ILP to minimize proximity"
+  (declare (type ScheduleGraph graph))
+  (schedule-graph-apply-schedule graph)
   (labels ((mergeable-item-p (id)
              (let ((node (id->value graph id)))
                (and
@@ -718,19 +738,25 @@
                        (return-from explore nil))))))
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
+    
     graph))
 
-(defun schedule-graph-search (schedule-graph)
+(defun schedule-graph-search (graph)
+  (declare (type ScheduleGraph graph))
   ;; [TODO]
   ;; - BEAM Search: ScheduleGraphの状態のまま解く
   ;; - Symbolicも最適化できるようにする
   ;; - Nonaffineも普通に実行すればいい
   )
 
-(defun schedule-graph-solve-memory-planner (schedule-graph)
-
+(defun schedule-graph-solve-memory-planner (graph)
+  "Solve ILP to minimize the number of temporary buffer allocation."
+  (declare (type ScheduleGraph graph))
+  
   )
 
-(defun schedule-graph-finalize (schedule-graph)
-  ;;
+(defun schedule-graph-finalize (graph)
+  "Finalize ScheduleGraph+Construct a runtime graph."
+  (declare (type ScheduleGraph graph))
+
   )

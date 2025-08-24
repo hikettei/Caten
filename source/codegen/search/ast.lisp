@@ -520,7 +520,7 @@ Returns:
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        parse-ctx (pctx-scop-ctx parse-ctx)
        (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast blueprint)))
-    (values (ast-apply-cse (apply-directives new-bp)) extra-allocs)))
+    (values (apply-directives new-bp) extra-allocs)))
 
 (defun apply-schedule (schedule blueprint &key (ctx (make-scop-ctx-from-blueprint blueprint)))
   "
