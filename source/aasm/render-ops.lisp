@@ -1688,8 +1688,8 @@ float acc = 0.0;
                                   (id->users blueprint (car (node-writes bind)))))
                     (aref-child (when (and aref-child (= 1 (length aref-child)))
                                   (car aref-child))))
-               (when (and aref-child (eql (second (node-reads aref-child))
-                                          (second (node-reads aref))))
+               ;; [TODO] Assert aref-child.reads[1] == aref.reads[1]
+               (when (and aref-child)
                  ;; remove expr
                  (push (car (node-writes expr)) deleted)
                  (dolist (usr (id->users blueprint (car (node-writes aref-child))))
