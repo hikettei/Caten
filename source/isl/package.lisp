@@ -1,5 +1,6 @@
-(defpackage :caten/codegen/isl
+(defpackage :caten/isl
   (:shadow #:set #:map #:space)
+  (:nicknames #:isl)
   (:use :cl :cffi)
   (:export :!))
 

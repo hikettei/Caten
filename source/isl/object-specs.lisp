@@ -1,4 +1,4 @@
-(in-package :caten/codegen/isl)
+(in-package :caten/isl)
 
 (deftype size () '(and unsigned-byte fixnum))
 (deftype ast-expr-type () `(member ,@(remove :ast-expr-error (cffi:foreign-enum-keyword-list 'isl-ast-expr-type))))

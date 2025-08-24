@@ -1,4 +1,4 @@
-(in-package :caten/codegen/isl)
+(in-package :caten/isl)
 ;;;; Identifiers
 (export 'make-id-from-str)
 (defun make-id-from-str (name)

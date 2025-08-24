@@ -1,4 +1,4 @@
-(in-package :caten/codegen/isl)
+(in-package :caten/isl)
 
 (defgeneric copy (isl-object))
 (defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))

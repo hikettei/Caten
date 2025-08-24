@@ -1,4 +1,4 @@
-(in-package :caten/codegen/isl)
+(in-package :caten/isl)
 
 (pkg-config-cflags "isl")
 

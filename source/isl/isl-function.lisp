@@ -1,4 +1,4 @@
-(in-package :caten/codegen/isl)
+(in-package :caten/isl)
 
 (defun parse-isl-args (args)
   (loop for arg in args
