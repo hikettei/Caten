@@ -18,6 +18,7 @@ TODO:
    #:optrule-apply-transform-on-polyhedral
    #:optrule-apply-transform-on-blueprint
    #:apply-optimization
+   #:psi-get-first-unoptimized-sequence
    
    #:NoOpt
    ;; Fusuion/Parallelism

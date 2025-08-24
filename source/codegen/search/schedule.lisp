@@ -929,9 +929,9 @@ schedule: ... --------| // Returned
     ;; verify-legality is a heavy op...
     ;; verify-legality => あんまり信用してない >< if it is fast, generate multiple candidates
     ;; to smolify the exploration space, group sequence of filters as one.
-    (print filters)
+    ;(print filters)
     ;; [TODO]
-    (print filter-ids)
+    filter-ids
     ))
 
 (defun schedule-node-sequence-group-sequence (components)

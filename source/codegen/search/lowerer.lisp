@@ -657,13 +657,31 @@
 ;; [TODO]
 ;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
 ;; - LLM => BatchSizeをIterateしてBEAM Search...
+;; - remove marks
+(defun %fuse (src parent)
+  (let* ((fused (ApplyReschedule (psi. parent src))))
+    (if fused
+        (values fused nil)
+        (values src parent))))
+
+(defun merge-affine (a1 a2 new-poly)
+  (let ((r (loop for r in (append (node-reads a1) (node-reads a2))
+                 if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
+                   collect r)))
+    ($affine (node-writes a1) (remove-duplicates r) :polyhedron new-poly)))
+
 (defun fuse (src parents)
   (when (null parents) (return-from fuse nil))
   (flet ((m (x) (getattr x :polyhedron)))
-    (let* ((t+0 (m src))
-           (t-1 (reduce #'psi. (map 'list #'m parents))))
-      (ApplyReschedule (psi. t-1 t+0))
-      nil)))
+    (let* ((t+0 src)
+           (t-1 parents)
+           (new-parents))
+      (dolist (tn t-1)
+        (multiple-value-bind (new-src new-parent) (%fuse (m t+0) (m tn))
+          (if new-parent ;; failed to fuse
+              (push tn new-parents)
+              (setf t+0 (merge-affine t+0 tn new-src)))))
+      (values t+0 new-parents))))
 
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
   (declare (type ScheduleGraph graph))
@@ -677,13 +695,17 @@
              (when (or (null node) (gethash (node-id node) seen))
                (return-from explore))
              (when (eql (node-type node) :AFFINE)
-               (let* ((items
-                        (loop for r in (node-reads node)
-                              if (mergeable-item-p r) collect (id->value graph r)))
-                      (fused (fuse node items)))
-                 fused
-                 ;; (setf node fused)
-                 ))
+               (let ((items
+                       (loop for r in (node-reads node)
+                             if (mergeable-item-p r) collect (id->value graph r))))
+                 (when items
+                   (multiple-value-bind (fused-item unfused-items) (fuse node items)
+                     (remnode graph (car (node-writes node)))
+                     (dolist (i items) (remnode graph (car (node-writes i))))
+                     (when fused-item (insert-nodes graph (list fused-item)))
+                     (dolist (i unfused-items) (when i (insert-nodes graph (list i))))
+                     (when fused-item (mapc #'explore (node-writes fused-item)))
+                     (return-from explore nil)))))
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
     graph))

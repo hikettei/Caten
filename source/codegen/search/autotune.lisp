@@ -172,23 +172,21 @@ BEAM Search Workflow:
 (defun ApplyReschedule (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
-  ;; [TODO]
-  ;; - RescheduleSeenをMarkする
-  ;; - FlashAttention ==> InnerMostがReductionだとFullFuseできない？How to separate?
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate (&aux (prev-items (sgt-items gen0)))
                ;; Search Valid Permutation, Reshape, and Fusion
                (sgt-apply-transformations
                 gen0
                 '(:Transpose :Reshape :Fuse))
+               ;; [TODO] Sort TopK
                (when (null (sgt-items gen0))
-                 (print "Finished")
-                 (print prev-items)
-                 ;; [TODO] How to solve the best one?
-                 (return-from ApplyReschedule gen0))
-               t))
-      (time (loop while t do (generate)))
-      nil)))
+                 (let ((last-item (car prev-items)))
+                   (return-from
+                    ApplyReschedule
+                     (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
+                         nil
+                         last-item))))))
+      (loop while t do (generate)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] BlockLevel Fusion (e.g.: Group multiple sequence of EXPR into a single group)
 ;; [Note]
