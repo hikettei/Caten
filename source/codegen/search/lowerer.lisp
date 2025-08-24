@@ -673,8 +673,8 @@
 ;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun blueprint-sequence (x y)
   (with-blueprint (:noopt t)
-    (insert-nodes *ctx* (graph-nodes x))
-    (insert-nodes *ctx* (graph-nodes y))
+    (dolist (e (graph-nodes x)) (emit e))
+    (dolist (e (graph-nodes y)) (emit e))
     (%progn (graph-outputs x) (graph-outputs y))))
 
 (defun merge-affine (a1 a2 new-poly)
@@ -705,6 +705,7 @@
     (when (eql (node-type item) :Affine)
       (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
         (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
+        
         (setf (getattr item :blueprint) (car kernels)
               (getattr item :polyhedron)
               (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission)))))
@@ -713,7 +714,6 @@
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
   "Solve ILP to minimize proximity"
   (declare (type ScheduleGraph graph))
-  (schedule-graph-apply-schedule graph)
   (labels ((mergeable-item-p (id)
              (let ((node (id->value graph id)))
                (and
@@ -738,7 +738,7 @@
                        (return-from explore nil))))))
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
-    
+    (schedule-graph-apply-schedule graph)
     graph))
 
 (defun schedule-graph-search (graph)
@@ -747,6 +747,7 @@
   ;; - BEAM Search: ScheduleGraphの状態のまま解く
   ;; - Symbolicも最適化できるようにする
   ;; - Nonaffineも普通に実行すればいい
+  ;; - TensorID -> (cons speed kernel) mitaini cache sitai
   )
 
 (defun schedule-graph-solve-memory-planner (graph)

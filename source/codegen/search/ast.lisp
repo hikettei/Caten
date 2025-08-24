@@ -227,7 +227,10 @@ Returns:
 	   (id         (isl::%isl-ast-expr-id-get-id first-expr))
 	   (name       (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
 	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i) :toplevel-p nil)))
-           (node (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp))
+           (node
+             (or
+              (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp)
+              (error "The node ~a is not found in the given blueprint during applying schedule." name)))
            (node-to-loops (reverse (gethash (node-id node) (ctx-node-to-loops (pctx-scop-ctx ctx)))))
            (rewrite-map (make-hash-table))
            (new-idx-map (make-hash-table)))
