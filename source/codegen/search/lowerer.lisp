@@ -702,6 +702,7 @@
                      (return-from explore nil)))))
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
+    ;; [TODO] Applying Render and SCoP again?
     graph))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-graph-compile (schedule-graph)
