@@ -710,7 +710,9 @@
                        if (and (= 0 (length (id->users graph r))) ;; todo:optimize id->users
                                (null (find r (graph-outputs graph))))
                          collect r))
-               (kernel (ast-remove-extra-memloads (car kernels) singletons))
+               (kernel
+                 (ast-merge-expr-from-aref-subgraph
+                  (ast-remove-extra-memloads (car kernels) singletons)))
                (args (loop for item in (graph-nodes kernel)
                            if (eql (node-type item) :DEFINE-GLOBAL)
                              collect (car (node-writes item)))))
@@ -721,8 +723,8 @@
           ;; - 2 [x] ApplyCSE実施後もSchedulingできるようにする (OK)
           ;; - 3 [x] val[g_1] = val_[g_2] をFusion
           ;; - 4 [ ] IndexComputationはScheduleに含めないでいいから，(AREF P IDX)へCopy
-          ;; - 5. [ ] ここで不要なAllocationを刈り取れるようにする
-          ;; - Note: ReductionのBindを直す
+          ;; - 5. [x] ここで不要なAllocationを刈り取れるようにする
+          ;; - Note: [x] ReductionのBindを直す
           (setf
            (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
            (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)

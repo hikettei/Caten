@@ -1709,6 +1709,28 @@ float acc = 0.0;
     (verify-graph blueprint)
     blueprint))
 
-(defun ast-fold-expr-used-by-aref (blueprint)
-  blueprint
-  )
+(defun ast-merge-expr-from-aref-subgraph (blueprint &aux (seen (make-hash-table)))
+  (declare (type FastGraph blueprint))
+  (labels ((explore (id is-aref-subgraph &aux (node (id->value blueprint id)))
+             (when (or (null node) (gethash (node-id node) seen))
+               (when (null is-aref-subgraph)
+                 (return-from explore)))
+             (setf (gethash (node-id node) seen) t)
+             (when (or is-aref-subgraph (eql (node-type node) :AREF))
+               (let ((new-reads
+                       (loop for r in (node-reads node)
+                             for v = (id->value blueprint r)
+                             if (and v (eql (node-type v) :EXPR))
+                               collect (car (node-reads v))
+                             else
+                               collect r)))
+                 (setf (node-reads node) new-reads)))
+             (if (eql (node-type node) :AREF)
+                 (progn
+                   (assert (null is-aref-subgraph))
+                   (explore (nth 0 (node-reads node)) nil)
+                   (explore (nth 1 (node-reads node)) t))
+                 (mapc #'(lambda (x) (explore x is-aref-subgraph)) (node-reads node)))))
+    (mapc #'(lambda (x) (explore x nil)) (graph-outputs blueprint))
+    (verify-graph blueprint)
+    (%simplify-ast blueprint)))
