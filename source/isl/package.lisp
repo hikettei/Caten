@@ -4,7 +4,7 @@
   (:use :cl :cffi)
   (:export :!))
 
-(in-package :caten/codegen/isl)
+(in-package :caten/isl)
 
 (labels ((load-helper ()
 	   (restart-case

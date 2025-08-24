@@ -14,4 +14,3 @@
    (:file "isl-function")
    (:file "object-specs")
    (:file "function-specs")))
-(asdf:defsystem "caten.codegen.is
