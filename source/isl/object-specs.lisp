@@ -166,8 +166,13 @@
     (write-string (%isl-schedule-to-str (schedule-handle value)) stream)))
 ;;;; union-access
 
-(define-isl-object union-access-info :free %isl-union-access-info-free :copy %isl-union-access-info-copy)
-(define-isl-object union-flow :free %isl-union-flow-free :copy %isl-union-flow-copy)
+(define-isl-object union-access-info
+  :free %isl-union-access-info-free
+  :copy %isl-union-access-info-copy)
+
+(define-isl-object union-flow
+  :free %isl-union-flow-free
+  :copy %isl-union-flow-copy)
 ;;;; mupa
 (define-isl-object multi-union-pw-aff
   :free %isl-multi-union-pw-aff-free

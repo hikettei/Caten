@@ -2,7 +2,7 @@
   (:shadow #:set #:map #:space)
   (:nicknames #:isl)
   (:use :cl :cffi)
-  (:export :!))
+  (:export :! :copy))
 
 (in-package :caten/isl)
 

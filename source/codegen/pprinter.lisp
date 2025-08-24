@@ -21,7 +21,7 @@
   (apply #'caten/common.logger:print-info content args)
   (caten/common.logger:lformat "~a~%" (get-separator-up position)))
 
-(defmethod pprint-isl-schedule ((schedule schedule))
+(defmethod pprint-isl-schedule ((schedule isl::schedule))
   (let ((schedule (yaml:parse (schedule-to-str schedule))))
     (with-output-to-string (out)
       (format out "~%")

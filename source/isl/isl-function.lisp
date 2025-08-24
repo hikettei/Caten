@@ -7,7 +7,7 @@
         (ecase type
           (:keep `(:keep ,(second arg) ,(gensym (symbol-name (second arg)))))
           (:parm arg)
-          (:take `(:keep ,(second arg) ,(gensym (symbol-name (second arg))))))))
+          (:take `(:take ,(second arg) ,(gensym (symbol-name (second arg))))))))
 
 (defun infer-result-wrapper (result-type)
   (cond ((isl-object-name-p result-type)
@@ -55,6 +55,6 @@
                           `(the ,lisp-type ,(third arg))))
                      (:take
                       (if (isl-object-name-p lisp-type)
-                          `(isl-object-handle (__isl_give ,value))
+                          `(isl-object-handle (__isl_take ,value))
                           value))
                      (:null (error "Arguments with :null qualifier are not allowed."))))))))))
