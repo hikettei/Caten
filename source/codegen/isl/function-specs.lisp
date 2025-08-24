@@ -809,11 +809,6 @@
   (:take schedule)
   (:take schedule))
 
-(define-isl-function ast-build-node-from-schedule %isl-ast-build-node-from-schedule
-  (:give ast-node)
-  (:keep ast-build)
-  (:take schedule))
-
 (define-isl-function schedule-from-domain %isl-schedule-from-domain
   (:give schedule)
   (:take union-set))
@@ -898,9 +893,11 @@
   (:take union-pw-aff)
   (:take value))
 
+(export 'multi-union-pw-aff-get-union-pw-aff)
 (defun multi-union-pw-aff-get-union-pw-aff (mupa int)
   (%make-union-pw-aff (%isl-multi-union-pw-aff-get-union-pw-aff (multi-union-pw-aff-handle (copy mupa)) int)))
 
+(export 'multi-union-pw-aff-size)
 (defun multi-union-pw-aff-size (mupa)
   (%isl-multi-union-pw-aff-size (multi-union-pw-aff-handle (copy mupa))))
 
@@ -908,12 +905,15 @@
   (:give multi-val)
   (:take multi-union-pw-aff))
 
+(export 'multi-val-get-val)
 (defun multi-val-get-val (mval nth)
   (%make-value (%isl-multi-val-get-val (multi-val-handle (copy mval)) nth)))
 
+(export 'multi-val-set-val)
 (defun multi-val-set-val (mval nth val)
   (%make-multi-val (%isl-multi-val-set-val (multi-val-handle (copy mval)) nth (value-handle (copy val)))))
 
+(export 'multi-union-pw-aff-set-union-pw-aff)
 (defun multi-union-pw-aff-set-union-pw-aff (mupa pos upa)
   (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-set-union-pw-aff (multi-union-pw-aff-handle (copy mupa)) pos (union-pw-aff-handle (copy upa)))))
 
@@ -940,6 +940,7 @@
   (:give space)
   (:keep union-pw-aff))
 
+(export 'pw-aff-var-on-domain)
 (defun pw-aff-var-on-domain (local-space dim pos)
   (%make-pw-aff (%isl-pw-aff-var-on-domain (local-space-handle local-space) dim pos)))
   
@@ -957,6 +958,7 @@
 ;  (:take union-pw-aff)
 ;  (:take union-pw-aff))
 
+(export 'multi-union-pw-aff-drop-dims)
 (defun multi-union-pw-aff-drop-dims (mupa dim first n)
   (%make-multi-union-pw-aff
    (%isl-multi-union-pw-aff-drop-dims (multi-union-pw-aff-handle mupa) dim first n)))
@@ -979,6 +981,7 @@
   (:give pw-aff-list)
   (:keep union-pw-aff))
 
+(export 'pw-aff-list-get-at)
 (defun pw-aff-list-get-at (pw-aff-list n)
   (%make-pw-aff (%isl-pw-aff-list-get-at (pw-aff-list-handle pw-aff-list) n)))
 
@@ -990,24 +993,31 @@
   (:give pw-aff)
   (:take pw-aff))
 
+(export 'multi-union-pw-aff-reset-tuple-id)
 (defun multi-union-pw-aff-reset-tuple-id (mupa type)
   (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (copy mupa)) type)))
 
+(export 'multi-union-pw-aff-get-tuple-name)
 (defun multi-union-pw-aff-get-tuple-name (mupa type)
   (%isl-multi-union-pw-aff-get-tuple-name (multi-union-pw-aff-handle mupa) type))
 
+(export 'multi-union-pw-aff-get-dim-id)
 (defun multi-union-pw-aff-get-dim-id (mupa type pos)
   (%make-identifier (%isl-multi-union-pw-aff-get-dim-id (multi-union-pw-aff-handle mupa) type pos)))
 
+(export 'multi-union-pw-aff-get-dim-name)
 (defun multi-union-pw-aff-get-dim-name (mupa type pos)
   (%isl-id-to-str (identifier-handle (multi-union-pw-aff-get-dim-id mupa type pos))))
 
+(export 'multi-union-pw-aff-dim)
 (defun multi-union-pw-aff-dim (mupa type)
   (%isl-multi-union-pw-aff-dim (multi-union-pw-aff-handle mupa) type))
 
+(export 'pw-aff-get-dim-name)
 (defun pw-aff-get-dim-name (pa type pos)
   (%isl-pw-aff-get-dim-name (pw-aff-handle pa) type pos))
 
+(export 'pw-aff-dim)
 (defun pw-aff-dim (pa type)
   (%isl-pw-aff-dim (pw-aff-handle pa) type))
 
@@ -1075,6 +1085,7 @@
   (:keep ast-expr)
   (:keep ast-expr))
 
+(export '%make-ast-expr)
 (defun %make-ast-expr (handle)
   (ecase (%isl-ast-expr-get-type handle)
     (:ast-expr-error (isl-error))
@@ -1082,6 +1093,7 @@
     (:ast-expr-id (%make-id-expr handle))
     (:ast-expr-int (%make-int-expr handle))))
 
+(export '%make-op-expr)
 (defun %make-op-expr (handle)
   (ecase (%isl-ast-expr-op-get-type handle)
     (:ast-expr-op-error (isl-error))
@@ -1121,6 +1133,7 @@
   (:keep ast-expr)
   (:keep fixnum))
 
+(export 'op-expr-get-list-args)
 (defun op-expr-get-list-args (ast)
   ;; assert type ast-exp op
   (let ((n (op-expr-get-n-arg ast)))
@@ -1188,6 +1201,7 @@
   (:give ast-expr)
   (:keep ast-node))
 
+(export '%make-ast-node)
 (defun %make-ast-node (handle)
   (ecase (%isl-ast-node-get-type handle)
     (:ast-expr-error (isl-error))
@@ -1220,6 +1234,7 @@
   (:take identifier-list))
 ;;;; ScheduleNode
 
+(export '%make-schedule-node)
 (defun %make-schedule-node (handle)
   (ecase (%isl-schedule-node-get-type handle)
     (:Schedule-Node-Leaf (%make-schedule-node-leaf handle))
@@ -1283,12 +1298,15 @@
   (:give space)
   (:keep schedule-node))
 
+(export 'schedule-node-get-child)
 (defun schedule-node-get-child (schedule-node n)
   (%make-schedule-node (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
 
+(export 'schedule-node-get-ancestor)
 (defun schedule-node-get-ancestor (schedule-node generation)
   (%make-schedule-node (%isl-schedule-node-ancestor (schedule-node-handle schedule-node) generation)))
 
+(export 'schedule-node-get-children)
 (defun schedule-node-get-children (schedule-node)
   (declare (type schedule-node schedule-node))
   (when (eql :bool-true (%isl-schedule-node-has-children (schedule-node-handle schedule-node)))
@@ -1296,6 +1314,7 @@
       (loop for nth upfrom 0 below n
 	    collect (%make-schedule-node (%isl-schedule-node-child (schedule-node-handle (copy schedule-node)) nth))))))
 
+(export 'schedule-node-get-type)
 (defun schedule-node-get-type (schedule-node)
   (declare (type schedule-node schedule-node))
   (%isl-schedule-node-get-type (schedule-node-handle schedule-node)))
@@ -1347,9 +1366,11 @@
   (:give set)
   (:keep schedule-node))
 
+(export 'schedule-node-band-member-set-isolate-ast-loop-type)
 (defun schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-band pos type)
   (%make-schedule-node (%isl-schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
 
+(export 'schedule-node-band-member-set-ast-loop-type)
 (defun schedule-node-band-member-set-ast-loop-type (schedule-node-band pos type)
   (%make-schedule-node (%isl-schedule-node-band-member-set-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
 
@@ -1357,10 +1378,12 @@
   (:give identifier)
   (:keep schedule-node))
 
+(export 'schedule-node-get-schedule-depth)
 (defun schedule-node-get-schedule-depth (node)
   (declare (type schedule-node node))
   (%isl-schedule-node-get-schedule-depth (schedule-node-handle node)))
 
+(export 'schedule-node-band-split)
 (defun schedule-node-band-split (node pos)
   (declare (type schedule-node node))
   (%make-schedule-node (%isl-schedule-node-band-split (schedule-node-handle (copy node)) pos)))
@@ -1369,9 +1392,11 @@
   (:give schedule-node)
   (:take schedule-node))
 
+(export 'schedule-node-band-member-set-coincident)
 (defun schedule-node-band-member-set-coincident (band pos val)
   (%make-schedule-node (%isl-schedule-node-band-member-set-coincident (schedule-node-handle (copy band)) pos val)))
 
+(export 'schedule-node-band-set-permutable)
 (defun schedule-node-band-set-permutable (band val)
   (%make-schedule-node (%isl-schedule-node-band-set-permutable (schedule-node-handle (copy band)) val)))
 
@@ -1379,6 +1404,7 @@
   (:give schedule-node)
   (:take schedule-node))
 
+(export 'schedule-node-is-equal)
 (defun schedule-node-is-equal (band1 band2)
   (declare (type schedule-node band1 band2))
   (%isl-schedule-node-is-equal (schedule-node-handle band1) (schedule-node-handle band2)))
@@ -1429,6 +1455,7 @@
   (:take schedule-node)
   (:take union-set))
 
+(export 'schedule-node-sequence-splice-child)
 (defun schedule-node-sequence-splice-child (node pos)
   (%make-schedule-node (%isl-schedule-node-sequence-splice-child (schedule-node-handle (copy node)) pos)))
 
