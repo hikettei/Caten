@@ -709,7 +709,7 @@
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
     graph))
-
+;; remove marks from polyhedron
 (defun schedule-graph-compile (schedule-graph)
   ;; Finalize Schedule + Compile
   )

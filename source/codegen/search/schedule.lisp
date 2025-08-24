@@ -28,6 +28,7 @@
    #:schedule-gather-path
    #:schedule-node-at-path
    #:schedule-get-non-marked-sequence/set
+   #:schedule-remove-all-marks
    #:schedule-node-sequence-check-fusible
    #:schedule-node-sequence-full-fuse
    #:schedule-node-sequence-get-band-sizes
@@ -645,6 +646,21 @@ Procedure:
             (schedule-node-get-schedule
              (isl::schedule-node-delete
               (schedule-node-at-path (schedule-get-root schedule) path)))))
+    schedule))
+
+(defun schedule-remove-all-marks (schedule) ;; todo: optimize
+  (let ((paths
+          (schedule-gather-path
+           (schedule-get-root schedule)
+           #'(lambda (node path)
+               (declare (ignore path))
+               (eql :schedule-node-mark (schedule-node-get-type node))))))
+    (when paths
+      (setf schedule
+            (schedule-node-get-schedule
+             (isl::schedule-node-delete
+              (schedule-node-at-path (schedule-get-root schedule) (car paths)))))
+      (return-from schedule-remove-all-marks (schedule-remove-all-marks schedule)))
     schedule))
 
 (defun schedule-node-sequence-check-fusible (components)

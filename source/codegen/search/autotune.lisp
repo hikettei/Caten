@@ -185,7 +185,9 @@ BEAM Search Workflow:
                     ApplyReschedule
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
                          nil
-                         last-item))))))
+                         (progn
+                           (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
+                           last-item)))))))
       (loop while t do (generate)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] BlockLevel Fusion (e.g.: Group multiple sequence of EXPR into a single group)
