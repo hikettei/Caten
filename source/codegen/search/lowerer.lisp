@@ -671,7 +671,7 @@
   (flet ((m (x) (getattr x :polyhedron)))
     (let* ((t+0 src) (t-1 parents) (new-parents))
       (dolist (tn t-1)
-        (let ((fused (ILP/SolveProximity (psi. (m t+0) (m tn)))))
+        (let ((fused (ILP/SolveProximity (psi. (m tn) (m t+0)))))
           (if fused
               (setf t+0 (merge-affine t+0 tn fused))
               (push tn new-parents))))
