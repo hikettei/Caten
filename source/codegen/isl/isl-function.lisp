@@ -9,6 +9,15 @@
           (:parm arg)
           (:take `(:keep ,(second arg) ,(gensym (symbol-name (second arg))))))))
 
+(defun infer-result-wrapper (result-type)
+  (cond ((isl-object-name-p result-type)
+         (isl-object-%make result-type))
+        ((eql result-type 'boolean)
+         'lispify-isl-bool)
+        ((eql result-type 'size)
+         'lispify-isl-size)
+        (t 'identity)))
+
 (defmacro define-isl-function (name primitive result &rest args)
   (check-type name symbol)
   (check-type primitive symbol)
