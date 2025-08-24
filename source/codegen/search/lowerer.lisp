@@ -710,7 +710,10 @@
                        if (and (= 0 (length (id->users graph r))) ;; todo:optimize id->users
                                (null (find r (graph-outputs graph))))
                          collect r))
-               (kernel (ast-remove-extra-memloads (car kernels) singletons)))
+               (kernel (ast-remove-extra-memloads (car kernels) singletons))
+               (args (loop for item in (graph-nodes kernel)
+                           if (eql (node-type item) :DEFINE-GLOBAL)
+                             collect (car (node-writes item)))))
           (print singletons)
           (caten/codegen/blueprint:print-blueprint kernel t)
           ;; [TODO]
@@ -720,9 +723,12 @@
           ;; - 4 [ ] IndexComputationはScheduleに含めないでいいから，(AREF P IDX)へCopy
           ;; - 5. [ ] ここで不要なAllocationを刈り取れるようにする
           ;; - Note: ReductionのBindを直す
-          (setf (getattr item :blueprint) kernel
-                (getattr item :polyhedron)
-                (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission))))))
+          (setf
+           (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
+           (getattr item :blueprint) kernel
+           (getattr item :polyhedron)
+           (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission))))))
+  (verify-graph graph)
   graph)
 
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
