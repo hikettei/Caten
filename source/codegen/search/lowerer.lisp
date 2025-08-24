@@ -716,15 +716,6 @@
                (args (loop for item in (graph-nodes kernel)
                            if (eql (node-type item) :DEFINE-GLOBAL)
                              collect (car (node-writes item)))))
-          (print singletons)
-          (caten/codegen/blueprint:print-blueprint kernel t)
-          ;; [TODO]
-          ;; - 1 [x] ApplyCSEする (OK)
-          ;; - 2 [x] ApplyCSE実施後もSchedulingできるようにする (OK)
-          ;; - 3 [x] val[g_1] = val_[g_2] をFusion
-          ;; - 4 [ ] IndexComputationはScheduleに含めないでいいから，(AREF P IDX)へCopy
-          ;; - 5. [x] ここで不要なAllocationを刈り取れるようにする
-          ;; - Note: [x] ReductionのBindを直す
           (setf
            (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
            (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
