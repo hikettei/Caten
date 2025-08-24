@@ -418,13 +418,12 @@
           (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
       ;; [TODO]
-      ;; - [ ] BIND Handling
-      ;; - [ ] SETF+BIND Case Testing after Fusion
+      ;; - [x] BIND Handling
+      ;; - [x] SETF+BIND Case Testing after Fusion
       ;; - [ ] HERE: id->valueでArefに到達できるならArefへ書き込む。
       ;; - Reduction (OK)
       ;; - Symbolic Schedule Fix
       ;; - Symbolic SCoP
-      (print items)
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -433,16 +432,6 @@
                (scope= (queue current-dim)
                  (find current-dim (car queue)))
                (%insert-aref (item)
-                 ;; Update BINDs
-                 ;; [PostApply]?
-                 (loop for r in (node-reads item) for nth upfrom 0
-                       for b = (gethash r id->bind)
-                       if b do
-                         (print "B")
-                         (push b binds)
-                       ;  (%global (car (node-writes b)) :float32 t)
-                       ;  (setf (nth nth (node-reads item)) (car (node-writes b)))
-                       )
                  ;; Memory Loads
                  (loop for r in (node-reads item)
                        for rt in (relay-reads (read-type-relay item))
@@ -591,7 +580,6 @@
              (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
         (declare (ignore _ __))
         (setf bp (caten/aasm::%simplify-ast bp))
-        (print bp)
         ;; [Note]
         ;; Threefry Lowering
         ($affine grid-writes grid-reads
@@ -693,7 +681,7 @@
   (let ((r (loop for r in (append (node-reads a1) (node-reads a2))
                  if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
                    collect r)))
-    ($affine (node-writes a1) (remove-duplicates r)
+    ($affine (append (node-writes a1) (node-writes a2)) (remove-duplicates r)
              :polyhedron new-poly
              :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint)))))
 
@@ -718,8 +706,9 @@
       (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
         (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
         (let* ((singletons
-                 (loop for r in (node-reads item)
-                       if (= 1 (length (id->users graph r))) ;; [todo] optimize id->users
+                 (loop for r in (node-writes item)
+                       if (and (= 0 (length (id->users graph r))) ;; todo:optimize id->users
+                               (null (find r (graph-outputs graph))))
                          collect r))
                (kernel (ast-remove-extra-memloads (car kernels) singletons)))
           (print singletons)
@@ -773,6 +762,9 @@
   ;; - Symbolicも最適化できるようにする
   ;; - Nonaffineも普通に実行すればいい
   ;; - TensorID -> (cons speed kernel) mitaini cache sitai
+  ;; - symbolic graph fusion?
+  ;; - quasi affine?
+  ;; - AccessMapさえ作れればいい。gidの係数ごとにlexiographical order?
   )
 
 (defun schedule-graph-solve-memory-planner (graph)
