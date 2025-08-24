@@ -12,6 +12,4 @@
    (:file "isl-binding")
    (:file "isl-object")
    (:file "isl-function")
-   (:file "object-specs")
-;;   (:file "specs/")
-   ))
+   (:file "object-specs")))
