@@ -1659,7 +1659,7 @@ so that cse won't break the blueprint."
       (mapc #'(lambda (x) (explore x nil)) (graph-outputs blueprint))
       blueprint)))
 
-(defun ast-remove-extra-memloads (blueprint singletons)
+(defun ast-remove-extra-memloads (blueprint singletons &aux (deleted))
   "Rewrites the following pattern but val_1 is a member of singletons.
 ```
 idx = ai+b;
@@ -1672,8 +1672,41 @@ float acc = 0.0;
 ```
 "
   (declare (type FastGraph blueprint) (type list singletons))
-  blueprint
-  )
+  (labels ((getchild (id type)
+             (let ((children (id->users blueprint id)))
+               (when (and (= 1 (length children)) (eql type (node-type (car children))))
+                 (car children))))
+           (replace-for-id (id)
+             (let* ((aref (getchild id :AREF))
+                    (setf (when aref (getchild (car (node-writes aref)) :SETF)))
+                    (expr/bind (when setf (id->users blueprint (car (node-writes setf)))))
+                    (expr (when (and (= 2 (length expr/bind)) (find :EXPR expr/bind :key #'node-type))
+                            (find :EXPR expr/bind :key #'node-type)))
+                    (bind (when (and (= 2 (length expr/bind)) (find :BIND expr/bind :key #'node-type))
+                            (find :BIND expr/bind :key #'node-type)))
+                    (aref-child (when (and expr bind (not (eql (node-id expr) (node-id bind))))
+                                  (id->users blueprint (car (node-writes bind)))))
+                    (aref-child (when (and aref-child (= 1 (length aref-child)))
+                                  (car aref-child))))
+               (when aref-child
+                 ;; remove expr
+                 (push (car (node-writes expr)) deleted)
+                 (dolist (usr (id->users blueprint (car (node-writes aref-child))))
+                   (setf (node-reads usr)
+                         (loop for r in (node-reads usr)
+                               if (eql r (car (node-writes aref-child)))
+                                 collect (second (node-reads setf))
+                               else
+                                 collect r)))))))
+    (mapc #'replace-for-id singletons)
+    (dolist (node (graph-nodes blueprint))
+      (when (eql (node-type node) :PROGN)
+        (setf (node-reads node)
+              (loop for r in (node-reads node)
+                    if (null (find r deleted))
+                      collect r))))
+    (verify-graph blueprint)
+    blueprint))
 
 (defun ast-fold-expr-used-by-aref (blueprint)
   blueprint

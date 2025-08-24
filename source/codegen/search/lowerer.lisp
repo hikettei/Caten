@@ -719,11 +719,12 @@
           ;; [TODO]
           ;; - 1 [x] ApplyCSEする (OK)
           ;; - 2 [x] ApplyCSE実施後もSchedulingできるようにする (OK)
-          ;; - 3 [ ] val[g_1] = val_[g_2] をFusion
+          ;; - 3 [x] val[g_1] = val_[g_2] をFusion
           ;; - 4 [ ] IndexComputationはScheduleに含めないでいいから，(AREF P IDX)へCopy
           ;; - 5. [ ] ここで不要なAllocationを刈り取れるようにする
           ;; - Note: ReductionのBindを直す
           (setf
+           (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
            (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
            (getattr item :blueprint) kernel
            (getattr item :polyhedron)
@@ -771,6 +772,11 @@
   ;; - symbolic graph fusion?
   ;; - quasi affine?
   ;; - AccessMapさえ作れればいい。gidの係数ごとにlexiographical order?
+  ;;   - w/ assuming each coefficient is constant.
+  ;;   - 次元数も関係ない。
+  ;;   | M*N | M | 1 |
+  ;;   --------------|
+  ;; S |  0  | 0 | 1 | = index
   )
 
 (defun schedule-graph-solve-memory-planner (graph)
