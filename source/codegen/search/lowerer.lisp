@@ -11,9 +11,12 @@
 ;; ~~ Grids ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Grids
   (is-affine t :type boolean)
+  (is-zero-cost nil :Type boolean)
   (id 0 :type fixnum)
   ;; iterator
-  (items nil :type list))
+  (items nil :type list)
+  (writes nil :type list)
+  (reads nil :type list))
 
 (defstruct LowerCtx (id->bind (make-hash-table) :type hash-table))
 ;; ~~ Early Coalesce ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -520,9 +523,9 @@
   (let ((w->r (make-hash-table)))
     (loop for i in items
           if (eql (node-type i) :VIEW) do
-            (assert (find (the symbol (car (node-reads i))) reads)
-                    ()
-                    "Detected illegal scheduling group: Affine groups should not compose multiple views.")
+;;            (assert (find (the symbol (car (node-reads i))) reads)
+;;                    ()
+;;                    "Detected illegal scheduling group: Affine groups should not compose multiple views.")
             (assert (null (find (the symbol (car (node-writes i))) writes))
                     ()
                     "Detected illegal scheduling group: Affine groups should not return VIEW.")
@@ -535,18 +538,26 @@
                 (setf (node-reads i) (map 'list #'n (node-reads i)))
                 i)))))
 
-(defun grids-init (lctx graph grids id->grids id->users graph-outputs)
-  (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
+(defun grids-ensure-affine (grids)
   ;; Affine composed of a single VIEW = NonAffine
   (when (and (= 1 (length (grids-items grids)))
              (eql :VIEW (node-type (car (grids-items grids)))))
     (setf (grids-is-affine grids) nil))
   ;; Scalar Graph = NonAffine
-  (when (and (null (find :VIEW (grids-items grids) :key #'node-type))
-             (let ((allocs (loop for a in (grids-items grids) if (eql (node-type a) :ALLOCATE) collect a)))
-               (every #'(lambda (x) (null (node-reads x))) allocs)))
-    (setf (grids-is-affine grids) nil))
-               
+  (when (and
+         (grids-is-affine grids)
+         (every
+          #'(lambda (node)
+              (and
+               (every #'(lambda (x) (or (null x) (= 0 (the fixnum (tensor-relay-nrank x))))) (relay-writes (read-type-relay node)))
+               (every #'(lambda (x) (or (null x) (= 0 (the fixnum (tensor-relay-nrank x))))) (relay-reads (read-type-relay node)))))
+          (grids-items grids)))
+    (setf (grids-is-affine grids) nil
+          (grids-is-zero-cost grids)
+          (every #'(lambda (node) (find (node-type node) `(:ALLOCATE :LOAD))) (grids-items grids)))))
+
+(defun grids-init-edges (grids id->grids id->users graph-outputs)
+  (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
   (labels ((node-is-output-p (node)
              (or
               (some
@@ -561,37 +572,51 @@
                    for g = (gethash r id->grids)
                    if (and (symbolp r) g (not (= (grids-id grids) (grids-id g)))) ;; collect when definition is not self
                      collect (cons r typ))))
-    (let* ((grid-writes*
-             (loop for item in (grids-items grids)
-                   if (node-is-output-p item)
-                     collect (cons (car (node-writes item)) (car (relay-writes (read-type-relay item))))))
-           (grid-reads*
-             (loop for item in (grids-items grids)
-                   append (node-reads-from-another-grids item)))
-           (grid-writes (map 'list #'car grid-writes*))
-           (grid-reads (map 'list #'car grid-reads*))
-           (grid-write-types (map 'list #'cdr grid-writes*))
-           (grid-read-types  (map 'list #'cdr grid-reads*)))
-      (unless (grids-is-affine grids)
-        (return-from grids-init ($nonaffine grid-writes grid-reads :items (grids-items grids))))
-      ;; If grids is affine => prepare for scheduling ...
+    (let ((grid-writes*
+            (loop for item in (grids-items grids)
+                  if (node-is-output-p item)
+                    collect (cons (car (node-writes item)) (car (relay-writes (read-type-relay item))))))
+          (grid-reads*
+            (loop for item in (grids-items grids)
+                  append (node-reads-from-another-grids item))))
+      (setf (grids-writes grids) grid-writes*
+            (grids-reads grids) grid-reads*))))
+
+(defun grids->schedule-item (lctx graph grids val->grids)
+  (assert (grids-writes grids))
+  (let ((grid-reads (map 'list #'car (grids-reads grids)))
+        (grid-writes (map 'list #'car (grids-writes grids)))
+        (grid-read-types (map 'list #'cdr (grids-reads grids)))
+        (grid-write-types (map 'list #'cdr (grids-writes grids))))
+    (when (null (grids-is-affine grids))
+      (return-from grids->schedule-item ($nonaffine grid-writes grid-reads :items (grids-items grids))))
+    ;; If grids is affine => prepare for scheduling ...
+    (let ((extra-items
+            (loop for r in grid-reads for nth upfrom 0
+                  for g = (gethash r val->grids)
+                  if (and g (grids-is-zero-cost g))
+                    do (setf (nth nth grid-reads) (map 'list #'car (grids-reads g))
+                             (nth nth grid-read-types) (map 'list #'cdr (grids-reads g)))
+                    and append (grids-items g))))
+      (setf grid-reads (alexandria:flatten grid-reads)
+            grid-read-types (alexandria:flatten grid-read-types))
       (setf (grids-items grids)
-            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (grids-items grids)) grid-reads grid-writes))
-      ;; Early Loop Coalesce (Cannot judged in polyhedral model)
-      (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
-             (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
-             (order (initial-loop-permutation (grids-items grids) (length (the list (car iterspace)))))
-             (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
-             (group-size (permute-list order (car iterspace)))
-             (__ (items-permute-all (grids-items grids) order))
-             (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
-        (declare (ignore _ __))
-        (setf bp (caten/aasm::%simplify-ast bp))
-        ;; [Note]
-        ;; Threefry Lowering
-        ($affine grid-writes grid-reads
-                 :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
-                 :blueprint bp)))))
+            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (append extra-items (grids-items grids))) grid-reads grid-writes)))
+    ;; Early Loop Coalesce (Cannot judged in polyhedral model)
+    (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
+           (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
+           (order (initial-loop-permutation (grids-items grids) (length (the list (car iterspace)))))
+           (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
+           (group-size (permute-list order (car iterspace)))
+           (__ (items-permute-all (grids-items grids) order))
+           (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
+      (declare (ignore _ __))
+      (setf bp (caten/aasm::%simplify-ast bp))
+      ;; [Note]
+      ;; Threefry Lowering
+      ($affine grid-writes grid-reads
+               :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
+               :blueprint bp))))
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [x] Rename: make-schedule-graph
@@ -631,30 +656,31 @@
     (assert (= 0 (hash-table-count out-degrees)) ()
             "The following nodes are not scheduled. circular dependencies?~%~a" (alexandria:hash-table-values out-degrees))
     ;; Construct Graph
-    (let ((all-grids (make-hash-table)) (n-scheduled 0))
+    (let ((all-grids (make-hash-table)) (n-scheduled 0) (val->grids (make-hash-table)))
       (declare (type fixnum n-scheduled))
       ;; circular dependency of schedule graph? will it happen?
       (maphash
        #'(lambda (id grids)
            (declare (ignore id))
-           (print (grids-items grids))
-           ;; [todo]
-           ;; - symbolic viewsを綺麗にしたい。
-           ;; - a*bとかはそのまま最適化で使いたい。
            (setf (gethash (grids-id grids) all-grids) grids))
        id->grids)
       ;; [todo] parallelize grids-init w/ lparallel!
+      (mapc #'grids-ensure-affine (alexandria:hash-table-values id->grids))
+      (mapc
+       #'(lambda (x)
+           (grids-init-edges x id->grids id->users (graph-outputs graph))
+           (dolist (w (grids-writes x))
+             (setf (gethash (car w) val->grids) x)))
+       (alexandria:hash-table-values id->grids))
       (let ((g
               (loop with lctx = (make-lowerctx)
                     for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
-                    for grids = (gethash key all-grids)                    do (incf n-scheduled (length (the list (grids-items grids))))
-                    collect (grids-init lctx graph grids id->grids id->users (graph-outputs graph)))))
+                    for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
+                    collect (grids->schedule-item lctx graph grids val->grids))))
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
         (->schedule-graph g)))))
-
-
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym
 ;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
