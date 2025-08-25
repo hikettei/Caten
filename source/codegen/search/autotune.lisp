@@ -2,7 +2,7 @@
   (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc :caten/codegen/search/evaluator
         :caten/codegen/search/optimization-rule)
   (:export
-   #:online-autotune-kernel
+   #:ILP/Search
    #:ILP/SolveProximity
    ))
 
@@ -103,15 +103,16 @@ pruned (Top-k), and expanded to produce the next generation."))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - TILE Parameter Space?
-(defun setup-autotune (runtime blueprint)
+(defun setup-autotune (cost-model)
   (values
    (ctx:getenv :BEAM)
    (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)
-   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint :version (ctx:getenv :BACKEND))
+   cost-model
+;;   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint :version (ctx:getenv :BACKEND))
    ;; evaluator2
    ))
 
-(defun online-autotune-kernel (runtime node)
+(defun ILP/Search (affine &key (cost-model nil))
   "
 BEAM Search Workflow:
                 [Input Blueprint]
@@ -120,21 +121,14 @@ BEAM Search Workflow:
                         |
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
-  (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
-  (let ((blueprint (kernel-blueprint (getattr node :kernel-info))))
-    (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime blueprint)
-      (caten/isl::with-isl-context
-        ;; - BEAM Search With Early Pruning
-        ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
-        ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
-        ;; [TODO] No Ondevice Profiling Mode
-        (let* ((root (make-polyhedral-schedule-item blueprint))
-               (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-          ;; [Template Construction] (Which is the best?)
-          ;; - Option1: BEAM Search + LightWeight Cost Function
-          ;; - Option2: ISL Reschedule
-          ;; - Option3: No Template Search
-;;          (print (car (sgt-items gen0)))
+  (declare (type node affine))
+  (assert (eql (node-type affine) :Affine))
+  (let ((blueprint (getattr affine :blueprint))
+        (polyhedral (getattr affine :polyhedron)))
+    (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune cost-model)
+      (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
+        ;; 1. Maximize band depth first
+          (print (car (sgt-items gen0)))
 ;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
 ;;
 ;;          (sgt-apply-transformations gen0 :Interchange)
@@ -147,28 +141,9 @@ BEAM Search Workflow:
           ;;  - うまくArrayをCopy
           ;; - First Kernel Generation
           ;; - Vectorize/Tile etc generation and finish implementing beam search
-          (error "STOP")
           t
-          )))))
-;; [TODO] Prevent Non-beneficial fusion (e.g.: Matmul+Matmul)
-;; ==> CostFunction Design
-;; ==> CmdHistoryから求める？(Less Transpose/Reshape The Better)
-;; [TODO] Faster Exploration Time (Call ISL APIs Directly?)
-;; [TODO] ↓をSCCsのみで実行するようにして，End2EndでILP Based Polyhedral Compiler
-;; [TODO]
-;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
-;;   - Restrict the exploration space
-;;   - Optimize ISL ops
-;;   - Transpose ==> How to pickup just "relavant" dim?
-;; - FlashAttention => Avoid FullFuse
-;; - Restrict The Exploration Space for Transpose
-;; - Finish Reorder? Should we search it?
-;; - [TODO] Finalize Fusion
-;;   - [ ] Reorder
-;;   - [ ] Flash
-;;   - [ ] Optimize ISL
-;;   - [ ] CostModel
-;;   - [ ] If it works well ==> apply this function algo end2end
+          ))))
+
 (defun ILP/SolveProximity (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
@@ -182,7 +157,7 @@ BEAM Search Workflow:
                ;; [TODO] Sort TopK
                (when (null (sgt-items gen0))
                  (let ((last-item (car prev-items)))
-                   (return-from
+g                   (return-from
                     ILP/SolveProximity
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
                          nil
@@ -190,16 +165,3 @@ BEAM Search Workflow:
                            (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
                            last-item)))))))
       (loop while t do (generate)))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] BlockLevel Fusion (e.g.: Group multiple sequence of EXPR into a single group)
-;; [Note]
-;; - Assume the compiler gives a multiple section of tensors enclosured by two VIEWS
-;; - G1: [VIEW] -> Add -> Sub -> [VIEW]
-;; - G2: [VIEW] -> Mul -> Exp -> [VIEW]
-;; The function (will be responsible for) fusion G1 and G2 correctly
-;; - [ ] Move byoc.lisp ==> runtime or byoc
-;; - [ ] Move renderer.lisp ==> byoc or runtime
-;; - [ ] Move codegen
-;; - [ ] Remove realize
-;; - [x] Create ScheduleGraph (each node is Polyhedral w/ Lexiographical Order)
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

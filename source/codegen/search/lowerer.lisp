@@ -798,8 +798,8 @@
     (apply #'values (map 'list #'v (node-writes node)))))
 
 (defmethod realize-node ((node-type (eql :Affine)) runtime node args)
-  (car args)
-  )
+  (ILP/Search node) ;; :cost-model (make-instance runtime args)
+  (error "STOP"))
 
 (defun schedule-graph-search (graph)
   "BEAM Search for Affine Schedule Items"
