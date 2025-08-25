@@ -775,6 +775,7 @@
     graph))
 
 (defun schedule-graph-search (graph)
+  "BEAM Search for Affine Schedule Items"
   (declare (type ScheduleGraph graph))
   ;; [TODO]
   ;; - BEAM Search: ScheduleGraphの状態のまま解く
@@ -789,6 +790,8 @@
   ;;   | M*N | M | 1 |
   ;;   --------------|
   ;; S |  0  | 0 | 1 | = index
+  ;; Affine/NonAffineのまま動かすために
+  ;; 
   )
 
 (defun schedule-graph-solve-memory-planner (graph)

@@ -9,11 +9,8 @@
 (in-package :caten/codegen/search/evaluator)
 
 (defclass Evaluator () nil)
-
 (defclass Random-Forest () nil)
-
 (defclass Proximity () nil)
-
 ;; [TODO] というかこれは丸ごとCommonにしてDISKへ保存する。
 ;; GlobalParamにDeviceMeasurerを配置する
 (defclass DeviceMeasurer (Evaluator)

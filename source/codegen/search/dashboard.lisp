@@ -8,3 +8,7 @@
 ;; [TODO] WebUI PlaceHolder
 ;; - BEAM SearchのCost/Node Tree Visualization (Mouse ClickでCreateNewWindow+Display the kernel)
 ;; - Launched on Clack
+;; - Memo
+;;   - 1. ScheduleCacheをDBに記録する
+;;   - 2. 流れたDBを閲覧するWebUI
+
