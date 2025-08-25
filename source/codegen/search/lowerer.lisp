@@ -763,7 +763,7 @@
                        (return-from explore nil))))))
              (mapc #'explore (node-reads node))))
     (mapc #'explore (graph-outputs graph))
-    (schedule-graph-apply-schedule graph)
+    (schedule-graph-apply-schedule graph :allow-fission t)
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph

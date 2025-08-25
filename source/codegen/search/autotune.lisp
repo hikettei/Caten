@@ -123,12 +123,13 @@ BEAM Search Workflow:
 "
   (declare (type node affine))
   (assert (eql (node-type affine) :Affine))
-  (let ((blueprint (getattr affine :blueprint))
-        (polyhedral (getattr affine :polyhedron)))
+  (let ((polyhedral (getattr affine :polyhedron)))
     (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune cost-model)
       (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
+        (sgt-apply-transformations gen0 :Maximize-Band-Depth) ;; Preprocessing
         ;; 1. Maximize band depth first
-          (print (car (sgt-items gen0)))
+        (print (car (sgt-items gen0)))
+        ;; [TODO] Recompute exp2
 ;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
 ;;
 ;;          (sgt-apply-transformations gen0 :Interchange)
@@ -136,13 +137,8 @@ BEAM Search Workflow:
 ;;          (sgt-add-evaluations gen0 cost1 blueprint)
 ;;          (sgt-prune-topk gen0 3)
 ;;          (print (sgt-make-nextgen gen0))
-          ;; 次やること(ちょっとむずい)
-          ;; - online-autotune-kernel終了時点で，正しい計算結果をReturnする(Bring Back Replayer)
-          ;;  - うまくArrayをCopy
-          ;; - First Kernel Generation
-          ;; - Vectorize/Tile etc generation and finish implementing beam search
-          t
-          ))))
+        t
+        ))))
 
 (defun ILP/SolveProximity (polyhedral &key (cost-model))
   "Generates a maximum fused graph"

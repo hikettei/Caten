@@ -40,7 +40,8 @@
    #:schedule-node-sequence-splice-children
    #:schedule-node-sequence-reorder
    #:schedule-node-sequence-tpsort
-   #:schedule-node-sequence-group-sequence))
+   #:schedule-node-sequence-group-sequence
+   #:schedule-compute-parallel))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -254,7 +255,6 @@ Returns:
         (loop for i upfrom 0 below depth do
               (setf band (isl::schedule-node-band-member-set-coincident band i (nth i coincidents-new))))
         band))))
-
 ;; ~~ DomainMaximaResults ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defvar *domain-maxima-results*)
 (cffi:defcfun ("isl_map_domain_tuple_dim" %isl-map-domain-tuple-dim) :int (x :pointer))
@@ -974,6 +974,26 @@ schedule: ... --------| // Returned
     (isl::schedule-node-insert-sequence
      components
      new-filter-list)))
+
+(cffi:defcallback schedule/compute-parallel :pointer
+    ((node :pointer) (user :pointer))
+  (when (eql (isl::%isl-schedule-node-get-type node) :schedule-node-band)
+    (assert (= 1 (isl::%isl-schedule-node-band-n-member node)) () "schedule/compute-parallel: do not fuse band before computing coincidence")
+    (isl::%isl-schedule-node-band-member-set-coincident
+     node
+     0
+     (if (schedule-node-band-parallel-legal-p (isl::%make-schedule-node node) (isl::%make-union-map user))
+         1 0)))
+  node)
+
+(defun schedule-compute-parallel (schedule deps)
+  (declare (type isl::schedule schedule) (type isl::union-map deps))
+  (isl::%make-schedule
+   (isl::%isl-schedule-map-schedule-node-bottom-up
+    (isl::schedule-handle (isl::__isl_take schedule))
+    (cffi:callback schedule/compute-parallel)
+    (isl::union-map-handle (isl::__isl_take deps)))))
+;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (progn ;; foreach-map
   (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil

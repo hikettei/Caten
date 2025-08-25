@@ -71,7 +71,11 @@ TODO:
   (setf (psi-theta poly)
         (ecase (rt-rule optrule)
           (:Maximize-Filter-Candidates (schedule-split-all-band (psi-theta poly)))
-          (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly))))))
+          (:Maximize-Band-Depth
+           (let ((a (schedule-compute-parallel (psi-theta poly) (psi-dependency-graph poly))))
+             (print (isl::schedule-get-root a))
+             ;; (schedule-fuse-all-band  (psi-theta poly))
+             a)))))
 ;; ~~ Optimizations on schedule-node-sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun psi-get-first-unoptimized-sequence (poly) (car (schedule-get-non-marked-sequence/set (psi-theta poly))))
 
