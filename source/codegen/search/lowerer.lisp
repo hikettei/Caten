@@ -2,7 +2,7 @@
   (:documentation "TensorGraph => ScheduleGraph Lowerer")
   (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers
    :caten/codegen/search/polyhedral :caten/codegen/search/autotune
-   :caten/codegen/search/ast)
+   :caten/codegen/search/ast :caten/runtime)
   (:export
    #:make-schedule-graph
    #:schedule-graph-fuse))
@@ -681,14 +681,6 @@
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
         (->schedule-graph g)))))
-;; [TODO] Runtime is a subclass of FastGraph
-;; [TODO] Introduce LocalGensym
-;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
-;; - LLM => BatchSizeをIterateしてBEAM Search...
-;; - remove marks
-;; [TODO] Reimplement api
-;; - Node is always singleton (Cache)
-;; - Faster compilation time
 ;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun blueprint-sequence (x y)
   (with-blueprint (:noopt t)
@@ -774,25 +766,57 @@
     (schedule-graph-apply-schedule graph)
     graph))
 
+;; [TODO] Runtime is a subclass of FastGraph
+;; [TODO] Introduce LocalGensym
+;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする
+;; - LLM => BatchSizeをIterateしてBEAM Search...
+;; - remove marks
+;; [TODO] Reimplement api
+;; - Node is always singleton (Cache)
+;; - Faster compilation time
+;; [TODO]
+;; - BEAM Search: ScheduleGraphの状態のまま解く
+;; - Symbolicも最適化できるようにする
+;; - Nonaffineも普通に実行すればいい
+;; - TensorID -> (cons speed kernel) mitaini cache sitai
+;; - symbolic graph fusion?
+;; - quasi affine?
+;; - AccessMapさえ作れればいい。gidの係数ごとにlexiographical order?
+;;   - w/ assuming each coefficient is constant.
+;;   - 次元数も関係ない。
+;;   | M*N | M | 1 |
+;;   --------------|
+;; S |  0  | 0 | 1 | = index
+;; Affine/NonAffineのまま動かすために
+;;
+(defmethod realize-node ((node-type (eql :NonAffine)) runtime node args)
+  (flet ((v (id) (if (symbolp id) (runtime-getvar runtime id) id)))
+    (dolist (item (getattr node :items))
+      (loop for w in (node-writes node)
+            for v in (multiple-value-list (realize-node (node-type item) runtime item (map 'list #'v (node-reads item))))
+            do (runtime-setvar runtime w v)))
+    (apply #'values (map 'list #'v (node-writes node)))))
+
+(defmethod realize-node ((node-type (eql :Affine)) runtime node args)
+  (car args)
+  )
+
 (defun schedule-graph-search (graph)
   "BEAM Search for Affine Schedule Items"
   (declare (type ScheduleGraph graph))
-  ;; [TODO]
-  ;; - BEAM Search: ScheduleGraphの状態のまま解く
-  ;; - Symbolicも最適化できるようにする
-  ;; - Nonaffineも普通に実行すればいい
-  ;; - TensorID -> (cons speed kernel) mitaini cache sitai
-  ;; - symbolic graph fusion?
-  ;; - quasi affine?
-  ;; - AccessMapさえ作れればいい。gidの係数ごとにlexiographical order?
-  ;;   - w/ assuming each coefficient is constant.
-  ;;   - 次元数も関係ない。
-  ;;   | M*N | M | 1 |
-  ;;   --------------|
-  ;; S |  0  | 0 | 1 | = index
-  ;; Affine/NonAffineのまま動かすために
-  ;; 
-  )
+  (let ((runtime
+          (make-runtime
+           (make-graph)
+           :runtime (caten/codegen/byoc:get-runtime-type)
+           :buffer-type (caten/codegen/byoc:get-buffer-type))))
+    (flet ((v (id) (if (symbolp id) (runtime-getvar runtime id) id)))
+      (dolist (item (tpsort-graph graph))
+        (ecase (node-type item)
+          ((:Affine :NonAffine)
+           (loop for w in (node-writes item)
+                 for v in (multiple-value-list (realize-node (node-type item) runtime item (map 'list #'v (node-reads item))))
+                 do (runtime-setvar runtime w v)))))
+      (free-runtime runtime))))
 
 (defun schedule-graph-solve-memory-planner (graph)
   "Solve ILP to minimize the number of temporary buffer allocation."
@@ -807,3 +831,14 @@
   (declare (type ScheduleGraph graph))
 
   )
+;; 1. これ実装したらcodegen置き換える
+;; 2. API作り直し(BEAM Cache)
+(defun codegen (graph)
+  (declare (type Graph graph))
+  (let ((sched (make-schedule-graph graph)))
+    (schedule-graph-fuse sched)
+    (schedule-graph-search sched)
+    (schedule-graph-solve-memory-planner sched)
+    (schedule-graph-finalize sched)
+    sched))
+
