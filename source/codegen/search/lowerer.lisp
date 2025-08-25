@@ -537,9 +537,16 @@
 
 (defun grids-init (lctx graph grids id->grids id->users graph-outputs)
   (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
+  ;; Affine composed of a single VIEW = NonAffine
   (when (and (= 1 (length (grids-items grids)))
              (eql :VIEW (node-type (car (grids-items grids)))))
     (setf (grids-is-affine grids) nil))
+  ;; Scalar Graph = NonAffine
+  (when (and (null (find :VIEW (grids-items grids) :key #'node-type))
+             (let ((allocs (loop for a in (grids-items grids) if (eql (node-type a) :ALLOCATE) collect a)))
+               (every #'(lambda (x) (null (node-reads x))) allocs)))
+    (setf (grids-is-affine grids) nil))
+               
   (labels ((node-is-output-p (node)
              (or
               (some
@@ -591,7 +598,7 @@
 ;; - [ ] Schedule involving scalars
 ;; - [ ] Schedule threefry (Reduce)
 ;; - [ ] KVCache Scheduling
-;; - [ ] SETF Bind failing case w/ Softmax CSE
+;; - [x] SETF Bind failing case w/ Softmax CSE
 (defun make-schedule-graph (graph)
   "Constructs ScheduleGraph from the given tensorgraph."
   (declare (type Graph graph) (optimize (speed 3)))
@@ -630,38 +637,24 @@
       (maphash
        #'(lambda (id grids)
            (declare (ignore id))
+           (print (grids-items grids))
+           ;; [todo]
+           ;; - symbolic viewsを綺麗にしたい。
+           ;; - a*bとかはそのまま最適化で使いたい。
            (setf (gethash (grids-id grids) all-grids) grids))
        id->grids)
       ;; [todo] parallelize grids-init w/ lparallel!
       (let ((g
               (loop with lctx = (make-lowerctx)
                     for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
-                    for grids = (gethash key all-grids)
-                    do (incf n-scheduled (length (the list (grids-items grids))))
+                    for grids = (gethash key all-grids)                    do (incf n-scheduled (length (the list (grids-items grids))))
                     collect (grids-init lctx graph grids id->grids id->users (graph-outputs graph)))))
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
         (->schedule-graph g)))))
-;; Solve Graph Partition Problem
-;; Optimize Lowerer, ISL
-;; Objective: Maximize the volume of Affine Nodes
-;; Firstly, single Affine single reduce
-;; Secondly, fuse reduction and reduction
-;; Create this form first:
-;; ACC      |
-;;   REDUCE | <== Scalarify!
-;; STORE    |
-;; And then fuse Reduce+Reduce
-;; [TODO] Rename schedule-graph ==> Lowerer
-;; [TODO] Pinning scalar points
-;; [TODO] Symbolic
-;; [TODO] search ==> new-codegen
-;; - AffineのWritesは，Progの中でAllocateするという意味
-;; - catenはside effectを認めていない。
-;; - memory planner include this
-;; [TODO] 全部いい感じになったら
-;; [TODO] ScheduleGraph, TensorGraph, etc を作る
+
+
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym
 ;; - CostModelを切り替えて，OfflineでBEAM Search, OnlineでBEAM Search, 両方可能にする

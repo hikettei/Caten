@@ -61,6 +61,9 @@ ScheduleGraph[() -> (~a)] {
       (let ((prefix (if (find (car (node-writes item)) (node-writes node))
                         (format nil "  return ")
                         (format nil "  ~(~a~) = " (render-list (node-writes item))))))
-        (format out "~a~(~a~)(~(~a~));~%" prefix (node-type item) (render-list (node-reads item)))))
+        (let ((attrs ""))
+          (when (eql (node-type item) :LOAD)
+            (setf attrs (format nil ", value=~a" (getattr item :value))))
+          (format out "~a~(~a~)(~(~a~)~a);~%" prefix (node-type item) (render-list (node-reads item)) attrs))))
     (format out "}")))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
