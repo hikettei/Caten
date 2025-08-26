@@ -125,20 +125,37 @@ BEAM Search Workflow:
   (assert (eql (node-type affine) :Affine))
   (let ((polyhedral (getattr affine :polyhedron)))
     (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune cost-model)
-      (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
-        (sgt-apply-transformations gen0 :Maximize-Band-Depth) ;; Preprocessing
-        ;; 1. Maximize band depth first
+      ;; [TODO]
+      ;; - [ ] exp2 recomputation
+      ;; - [ ] opt-history ==> Extend
+      ;; - [ ] smoll exploration space
+      (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral)))
+            (minimized nil))
+        ;; Stage1: ScheduleTree Preprocessing (MaximizeBandDepth, ComputeParallel)
+        ;; - [ ] todo: compute permutable
+        (sgt-apply-transformations gen0 :Maximize-Band-Depth)
         (print (car (sgt-items gen0)))
-        ;; [TODO] Recompute exp2
-;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
-;;
-;;          (sgt-apply-transformations gen0 :Interchange)
-;;          (sgt-apply-transformations gen0 :Parallel :TileGPU)
-;;          (sgt-add-evaluations gen0 cost1 blueprint)
-;;          (sgt-prune-topk gen0 3)
-;;          (print (sgt-make-nextgen gen0))
-        t
-        ))))
+        (error "STOP (BEAM Search)")
+        ;; Step1. Mapping then w/ Parallel
+        (sgt-apply-transformations gen0 :Interchange)
+        (sgt-apply-transformations gen0 :Parallel :TileGPU)
+        ;; CPUだと無条件でParallel
+        ;; itemsが1の時はevalしない
+        ;; TILEGPU ==> GLOBAL/LOCALで分ける
+        ;; LOCALはGLOBALとMarkされたLoopをParallelizeできる。
+        ;; (select_best)
+        ;; Step2. Profile based tuning
+        ;; - [ ] microkernel: create 256x256x256 tile (tileall+sink)
+        (labels ((next (&aux (prev-items (sgt-items gen0)))
+                   (sgt-apply-transformations
+                    gen0
+                    '(:Tile :Vectorize))
+                   ;; (select_best_topk) (sgt-prune-topk gen0 3)
+                   (when (null (sgt-items gen0))
+                     (setf minimized t))))
+          ;; (loop while (null minimized) do (next))
+          )
+        t))))
 
 (defun ILP/SolveProximity (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
@@ -153,7 +170,7 @@ BEAM Search Workflow:
                ;; [TODO] Sort TopK
                (when (null (sgt-items gen0))
                  (let ((last-item (car prev-items)))
-g                   (return-from
+                   (return-from
                     ILP/SolveProximity
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
                          nil
