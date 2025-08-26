@@ -565,9 +565,10 @@ Return (value (list kernels) tmp-buffer-allocations)
                      k))
              (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
 ;; ~~ Printer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast->str (ast)
+(defun ast->str (ast &key (indent 0))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+         (p     (isl::%isl-printer-set-indent p indent))
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
     str))
