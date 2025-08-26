@@ -199,6 +199,9 @@
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
+      
+      ;;(mapc #'explore items)
+      ;;(setf candidates (alexandria:hash-table-keys pid2space))
       (mapc #'(lambda (x) (explore x :noopt nil)) items)
       (setf candidates (alexandria:hash-table-keys pid2space))
       (mapc #'explore items)
@@ -711,6 +714,8 @@
     (when (eql (node-type item) :Affine)
       (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
         (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
+        (PRINT "DEBUG")
+        (caten/codegen/blueprint:print-blueprint (car kernels) t)
         (let* ((singletons
                  (loop for r in (node-writes item)
                        if (and (= 0 (length (id->users graph r))) ;; todo:optimize id->users
@@ -722,6 +727,8 @@
                (args (loop for item in (graph-nodes kernel)
                            if (eql (node-type item) :DEFINE-GLOBAL)
                              collect (car (node-writes item)))))
+          (print "DEBUG")
+          (caten/codegen/blueprint:print-blueprint kernel t)
           (setf
            (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
            (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
