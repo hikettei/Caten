@@ -146,10 +146,17 @@ BEAM Search Workflow:
         ;; (select_best)
         ;; Step2. Profile based tuning
         ;; - [ ] microkernel: create 256x256x256 tile (tileall+sink)
-        (labels ((next (&aux (prev-items (sgt-items gen0)))
+        ;; - [ ] (!matmul (make-tensor `(n 512 512 512)) (make-tensor `(n 512 512 512)))
+        ;;       ^ 2回目以降BEAMする意味ある？
+        (labels ((search1 ()
+                   ;; [TODO] ここで全てのRecompute可能なbufferだけデータをProfileする
+                   (sgt-apply-transformations gen0 :Recompute))
+                 (next (&aux (prev-items (sgt-items gen0)))
                    (sgt-apply-transformations
                     gen0
-                    '(:Tile :Vectorize))
+                    :MicroKernel ;; これはどうやって4dim から 3dimをselectするかが難しい
+                    :Tile :Vectorize
+                    :Local :Interchange :SplitReduce)
                    ;; (select_best_topk) (sgt-prune-topk gen0 3)
                    (when (null (sgt-items gen0))
                      (setf minimized t))))
