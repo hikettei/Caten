@@ -51,7 +51,8 @@ TODO:
 (defun apply-optimization (polyhedral optrule)
   (declare (type Polyhedral-Schedule-Item polyhedral) (type OptimizationRule optrule))
   (let ((polyhedral (psi-clone-for-next-generation polyhedral)))
-    (when (not (typep optrule 'NoOpt)) (push optrule (psi-opt-history polyhedral)))
+    (when (not (typep optrule 'NoOpt))
+      (setf (psi-opt-history polyhedral) (nconc (psi-opt-history polyhedral) (list optrule))))
     (optrule-apply-transform-on-polyhedral polyhedral optrule)
     polyhedral))
 ;; ~~ NoOpt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
