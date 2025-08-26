@@ -200,6 +200,7 @@
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
       
+      ;; [todo] remove loop collapse at tensor lvl for symbolic fusion
       ;;(mapc #'explore items)
       ;;(setf candidates (alexandria:hash-table-keys pid2space))
       (mapc #'(lambda (x) (explore x :noopt nil)) items)
@@ -541,7 +542,8 @@
   ;; Affine composed of a single VIEW = NonAffine
   (when (and (= 1 (length (grids-items grids)))
              (eql :VIEW (node-type (car (grids-items grids)))))
-    (setf (grids-is-affine grids) nil))
+    (setf (grids-is-affine grids) nil
+          (grids-is-zero-cost grids) t))
   ;; Scalar Graph = NonAffine
   (when (and
          (grids-is-affine grids)
@@ -829,7 +831,7 @@
 (defun schedule-graph-finalize (graph)
   "Finalize ScheduleGraph+Construct a runtime graph."
   (declare (type ScheduleGraph graph))
-  (dolist (item (graph-nodes graph))
+  (dolist (item (tpsort-graph graph))
     (when (eql (node-type item) :Affine)
       (caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t))))
 ;; 1. これ実装したらcodegen置き換える
