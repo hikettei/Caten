@@ -18,7 +18,6 @@
   (writes nil :type list)
   (reads nil :type list))
 
-(defstruct LowerCtx (id->bind (make-hash-table) :type hash-table))
 ;; ~~ Early Coalesce ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Iteration-Space
   (shape nil :type list)
@@ -407,7 +406,7 @@
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
 ;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
-(defun lower-into-blueprint (lctx gids iterspace items writes reads write-types read-types)
+(defun lower-into-blueprint (gids iterspace items writes reads write-types read-types)
   (with-blueprint (:noopt t)
     (loop for w in writes for wt in write-types do
       (%global w (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
@@ -418,7 +417,6 @@
           (alus)     ;; for (int i=0; i<100; i++) acc_0 += ...;
           (stores)   ;; out[0] = acc_0;
           (caten/aasm/expr::*expr-no-simplify-mode* t)
-          (id->bind (lowerctx-id->bind lctx))
           (id->load (make-hash-table))) ;; cache is created for each kernel
       ;; [TODO]
       ;; - [x] BIND Handling
@@ -461,9 +459,8 @@
                         ;; TMP = SETF(AREF(B, idx1), Binary(AREF(B, idx2), AREF(C, idx3)))
                         ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
                         (assert (= 1 (length (node-writes item))))
-                        (setf (car (node-writes item)) waypoint
-                              (gethash w id->bind) (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r )))
-                        (push (gethash w id->bind) binds)
+                        (setf (car (node-writes item)) waypoint)
+                        (push  (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
                         (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
                         ;; [TODO] Here
@@ -478,10 +475,9 @@
                                     (new-w (gensym "T"))
                                     (tmpid (gensym "T"))
                                     (index (iter->index wi wt)))
-                                (setf (nth nth (node-writes item)) waypoint
-                                      (gethash w id->bind) (make-node :JIT :BIND (list new-w) (list tmpid) :value w))
+                                (setf (nth nth (node-writes item)) waypoint)
                                 ;; [note] no waypoint user in this items right?
-                                (push (gethash w id->bind) binds) ;; schedule all item users after %setf
+                                (push (make-node :JIT :BIND (list new-w) (list tmpid) :value w) binds) ;; schedule all item users after %setf
                                 (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) waypoint :out tmpid)) stores))))
                  (progn
                    (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
@@ -582,7 +578,7 @@
       (setf (grids-writes grids) grid-writes*
             (grids-reads grids) grid-reads*))))
 
-(defun grids->schedule-item (lctx graph grids val->grids)
+(defun grids->schedule-item (graph grids val->grids)
   (assert (grids-writes grids))
   (let ((grid-reads (map 'list #'car (grids-reads grids)))
         (grid-writes (map 'list #'car (grids-writes grids)))
@@ -609,7 +605,7 @@
            (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
            (group-size (permute-list order (car iterspace)))
            (__ (items-permute-all (grids-items grids) order))
-           (bp (lower-into-blueprint lctx gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
+           (bp (lower-into-blueprint gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
       (declare (ignore _ __))
       (setf bp (caten/aasm::%simplify-ast bp))
       ;; [Note]
@@ -673,10 +669,9 @@
              (setf (gethash (car w) val->grids) x)))
        (alexandria:hash-table-values id->grids))
       (let ((g
-              (loop with lctx = (make-lowerctx)
-                    for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
+              (loop for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
                     for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
-                    collect (grids->schedule-item lctx graph grids val->grids))))
+                    collect (grids->schedule-item graph grids val->grids))))
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
@@ -831,15 +826,16 @@
 (defun schedule-graph-finalize (graph)
   "Finalize ScheduleGraph+Construct a runtime graph."
   (declare (type ScheduleGraph graph))
-
-  )
+  (dolist (item (graph-nodes graph))
+    (when (eql (node-type item) :Affine)
+      (caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t))))
 ;; 1. これ実装したらcodegen置き換える
 ;; 2. API作り直し(BEAM Cache)
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
     (schedule-graph-fuse sched)
-    (schedule-graph-search sched)
+    ;(schedule-graph-search sched)
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))
