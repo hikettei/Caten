@@ -156,6 +156,8 @@ BEAM Search Workflow:
 (defun ILP/SolveProximity (polyhedral &key (cost-model))
   "Generates a maximum fused graph"
   (declare (type Polyhedral-Schedule-Item polyhedral))
+  (PRINT "INPUT")
+  (print polyhedral)
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate (&aux (prev-items (sgt-items gen0)))
                ;; Search Valid Permutation, Reshape, and Fusion

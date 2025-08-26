@@ -739,7 +739,7 @@
   (verify-graph graph)
   graph)
 
-(defun schedule-graph-fuse (graph &aux (seen (make-hash-table)))
+(defun schedule-graph-fuse (graph &aux (seen (make-hash-table)) (changed-p nil))
   "Solve ILP to minimize proximity"
   (declare (type ScheduleGraph graph))
   (labels ((mergeable-item-p (id)
@@ -758,14 +758,24 @@
                  (when items
                    (multiple-value-bind (fused-item unfused-items) (affine/fusion node items)
                      (when (not (= (length unfused-items) (length items)))
+                       ;; [todo] clean up ...
+                       (setf changed-p t)
                        (remnode graph (car (node-writes node)))
                        (dolist (i items) (remnode graph (car (node-writes i))))
                        (when fused-item (insert-nodes graph (list fused-item)))
                        (dolist (i unfused-items) (when i (insert-nodes graph (list i))))
                        (when fused-item (mapc #'explore (node-writes fused-item)))
                        (return-from explore nil))))))
-             (mapc #'explore (node-reads node))))
-    (mapc #'explore (graph-outputs graph))
+             (mapc #'explore (node-reads node)))
+           (fuse-all-edges ()
+             (setf seen (make-hash-table)
+                   changed-p nil)
+             (mapc #'explore (graph-outputs graph))
+             (verify-graph graph)
+             changed-p))
+    (fuse-all-edges) ;; fuse reduction+reduction
+    (fuse-all-edges) ;; [TODO] 一意なIDを割り当てて別のSeenPairを作成する
+    
     (schedule-graph-apply-schedule graph :allow-fission t)
     graph))
 
