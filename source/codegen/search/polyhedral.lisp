@@ -299,4 +299,4 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                    :dependency-graph (compute-dependence-relation new-read new-write new-schedule)
                    :initial-theta new-schedule :read new-read :write new-write
                    :domain new-domain :strategy (psi-strategy psi1-before)
-                   :opt-history (append (psi-opt-history psi2-after) (psi-opt-history psi1-before)))))
+                   :opt-history (append (psi-opt-history psi1-before) (psi-opt-history psi2-after)))))
