@@ -181,7 +181,8 @@
 
 (define-isl-object union-pw-aff
   :free %isl-union-pw-aff-free
-  :copy %isl-union-pw-aff-copy)
+  :copy %isl-union-pw-aff-copy
+  :list-type union-pw-aff-list)
 
 (define-isl-object multi-val
   :free %isl-multi-val-free

@@ -580,9 +580,26 @@ Procedure:
     ((band :pointer) (user :pointer))
   (declare (ignore user))
   (if (eql (isl::%isl-schedule-node-get-type band) :schedule-node-band)
-      (let ((depth (schedule-node-band-get-depth (isl::%%make-schedule-node-band band))))
-        ;; [TODO] 
-        band)
+      (let ((depth (schedule-node-band-get-n-chain (isl::%%make-schedule-node-band band))))
+        (if (= 0 depth)
+            band
+            (let ((coincidents)
+                  (mupa (schedule-node-band-get-partial-schedule (isl::%%make-schedule-node-band band))))
+              (dotimes (nth-band (isl::%isl-schedule-node-band-n-member band))
+                (push (isl::%isl-schedule-node-band-member-get-coincident band nth-band) coincidents))
+              (dotimes (i depth)
+                (setf band (isl::%isl-schedule-node-delete band))
+                (let ((sched (schedule-node-band-get-partial-schedule (isl::%%make-schedule-node-band band))))
+                  (setf mupa (multi-union-pw-aff-flat-range-product mupa sched))
+                  (dotimes (nth-band (isl::%isl-schedule-node-band-n-member band))
+                    (push (isl::%isl-schedule-node-band-member-get-coincident band nth-band) coincidents))))
+              (let ((band (isl::%isl-schedule-node-insert-partial-schedule (isl::%isl-schedule-node-delete band) (isl::multi-union-pw-aff-handle mupa))))
+                (setf coincidents (reverse coincidents))
+                (dotimes (i (length coincidents))
+                  (setf band (isl::%isl-schedule-node-band-member-set-coincident
+                              band i
+                              (if (eql :bool-true (nth i coincidents)) 1 0))))
+                band))))
       band))
 
 (defun schedule-split-all-band (schedule)

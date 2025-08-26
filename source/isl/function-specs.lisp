@@ -893,6 +893,16 @@
   (:take union-pw-aff)
   (:take value))
 
+(define-isl-function union-pw-aff-list-alloc %isl-union-pw-aff-list-alloc
+  (:give union-pw-aff-list)
+  (:parm context *context*)
+  (:take fixnum))
+
+(define-isl-function union-pw-aff-list-add %isl-union-pw-aff-list-add
+  (:give union-pw-aff-list)
+  (:take union-pw-aff-list)
+  (:take union-pw-aff))
+
 (export 'multi-union-pw-aff-get-union-pw-aff)
 (defun multi-union-pw-aff-get-union-pw-aff (mupa int)
   (%make-union-pw-aff (%isl-multi-union-pw-aff-get-union-pw-aff (multi-union-pw-aff-handle (__isl_take mupa)) int)))
