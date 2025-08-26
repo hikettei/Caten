@@ -722,8 +722,9 @@
                                (null (find r (graph-outputs graph))))
                          collect r))
                (kernel
-                 (ast-merge-expr-from-aref-subgraph
-                  (ast-remove-extra-memloads (car kernels) singletons)))
+                 (caten/aasm::%simplify-ast
+                  (ast-merge-expr-from-aref-subgraph
+                   (ast-remove-extra-memloads (car kernels) singletons))))
                (args (loop for item in (graph-nodes kernel)
                            if (eql (node-type item) :DEFINE-GLOBAL)
                              collect (car (node-writes item)))))
