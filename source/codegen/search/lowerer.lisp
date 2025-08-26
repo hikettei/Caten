@@ -732,7 +732,9 @@
            (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
            (getattr item :blueprint) kernel
            (getattr item :polyhedron)
-           (make-polyhedral-schedule-item (getattr item :blueprint) :scal->array allow-fission))))))
+           (make-polyhedral-schedule-item
+            (getattr item :blueprint) :scal->array allow-fission
+            :opt-history (psi-opt-history (getattr item :polyhedron))))))))
   (verify-graph graph)
   graph)
 

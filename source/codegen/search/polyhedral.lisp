@@ -270,7 +270,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (assert (= 1 (length (graph-outputs blueprint))))
       (rewrite-node (car (graph-outputs blueprint))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy))
+(defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy) (opt-history))
   "
 - scal->array[bool]
   - If set to T, scalar values are rendered as tensor (to maximize parallelism)
@@ -287,7 +287,7 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation reads writes schedule)
                    :initial-theta schedule :read reads :write writes
-                   :domain domain :strategy strategy)))
+                   :domain domain :strategy strategy :opt-history opt-history)))
 
 (defun psi. (psi1-before psi2-after)
   "Merges two schedule into a single schedule"
@@ -298,4 +298,5 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation new-read new-write new-schedule)
                    :initial-theta new-schedule :read new-read :write new-write
-                   :domain new-domain :strategy (psi-strategy psi1-before))))
+                   :domain new-domain :strategy (psi-strategy psi1-before)
+                   :opt-history (append (psi-opt-history psi2-after) (psi-opt-history psi1-before)))))

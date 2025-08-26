@@ -89,17 +89,6 @@ pruned (Top-k), and expanded to produce the next generation."))
 (defun sgt-improvements (old-sgt new-sgt)
   (assert (and (sgt-best-score old-sgt) (sgt-best-score new-sgt)))
   (/ (sgt-best-score new-sgt) (sgt-best-score old-sgt)))
-;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun sgt-prepare-for-sketch-generation (sgt)
-  (sgt-apply-transformations sgt :Serialize)
-  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
-
-(defun sgt-finalize-sketch (sgt)
-  (sgt-apply-transformations sgt :Coincidence)
-  (sgt-apply-transformations sgt :Maximize-Band-Depth))
-
-(defun sgt-prepare-for-device-optimization (sgt)
-  (sgt-apply-transformations sgt :Interchange :Tile :Vectorize :SplitReduce))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - TILE Parameter Space?
