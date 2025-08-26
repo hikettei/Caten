@@ -140,7 +140,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
   (labels ((explore (id &aux (node (id->value blueprint id)))
              (when (or (null node) (gethash (node-id node) visited)) (return-from explore))
              (when (eql (node-type node) :BIND)
-               (push (cons (cons (getattr node :value) (car (node-reads node))) nil) found)
+               (push (cons (cons (getattr node :value) (getattr node :value)) nil) found)
                (return-from explore))
              (when (eql (node-type node) :EXPR)
                (push (cons (cons (car (node-writes node)) (car (node-writes node))) nil) found)
@@ -148,7 +148,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
              (setf (gethash (node-id node) visited) t)
              (when (eql (node-type node) :AREF)
                (let* ((p (id->value blueprint (car (node-reads node))))
-                      (v (if (and p (eql (node-type p) :BIND)) (car (node-reads p)) (car (node-reads node))))
+                      (v (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node))))
                       (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
                  (push (cons (cons p v) (second (node-reads node))) found)
                  (return-from explore)))
@@ -198,7 +198,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                      (read-region  (extract-buffer-access-info (second (node-reads expr-entry-point)) blueprint)))
                  (assert (= 1 (length write-region)))
                  (dolist (w write-region)
-                   (let ((macc (cons (caar w) (car (node-writes expr))))) ;; visible as (caar w) but internally expr.writes[0]
+                   (let ((macc (cons (caar w) (caar w)))) ;; visible as (caar w) but internally expr.writes[0]
                      (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint :scal->array scal->array) writes)))
                  (dolist (r read-region)
                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array) reads))))
