@@ -201,11 +201,11 @@
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
       
       ;; [todo] remove loop collapse at tensor lvl for symbolic fusion
-      ;;(mapc #'explore items)
-      ;;(setf candidates (alexandria:hash-table-keys pid2space))
-      (mapc #'(lambda (x) (explore x :noopt nil)) items)
-      (setf candidates (alexandria:hash-table-keys pid2space))
       (mapc #'explore items)
+      (setf candidates (alexandria:hash-table-keys pid2space))
+      ;;(mapc #'(lambda (x) (explore x :noopt nil)) items)
+      ;;(setf candidates (alexandria:hash-table-keys pid2space))
+      ;;(mapc #'explore items)
       (let ((new-procedure))
         (dolist (c (sort (copy-list candidates) #'< :key #'length))
           (when (every #'(lambda (x) (null (find x (alexandria:flatten new-procedure)))) c)
@@ -840,7 +840,6 @@
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
     (schedule-graph-fuse sched)
-    ;(schedule-graph-search sched)
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))

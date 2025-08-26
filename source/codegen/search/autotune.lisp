@@ -169,7 +169,10 @@ BEAM Search Workflow:
                    (return-from
                     ILP/SolveProximity
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
-                         nil
+                         (progn
+                           (PRINT "FAILED")
+                           (print last-item)
+                           nil)
                          (progn
                            (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
                            last-item)))))))

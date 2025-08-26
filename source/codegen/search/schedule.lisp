@@ -1011,6 +1011,10 @@ schedule: ... --------| // Returned
     (cffi:callback schedule/compute-parallel)
     (isl::union-map-handle (isl::__isl_take deps)))))
 ;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
+
+
+
+
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (progn ;; foreach-map
   (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil
