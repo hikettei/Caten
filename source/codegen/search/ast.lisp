@@ -239,7 +239,7 @@ Returns:
       (loop for base-domain in node-to-loops
             for new-args in args
             do (setf (gethash (getf base-domain :idx) rewrite-map) new-args))
-      ;; Creating a clone of subgraph
+      ;; Creating a clone of expr subgraph but indexes are replaced.
       (labels ((e (id &aux (node (id->value (pctx-blueprint ctx) id)))
                  (when (or (null node) (gethash (node-id node) visited)) (return-from e (gethash id new-idx-map id)))
                  (when (eql (node-type node) :EXPR) (return-from e (gethash id new-idx-map id)))
@@ -277,8 +277,8 @@ Returns:
                    (emit node)
                    new-id)))
         (let ((node (copy-node node)))
-          (setf (node-id node) (gensym "NID"))
-          (setf (node-reads node) (map 'list #'e (node-reads node)))
+          (setf (node-id node) (gensym "NID")
+                (node-reads node) (map 'list #'e (node-reads node)))
           (emit node)
           (setf (gethash (node-id node) (pctx-expr2args ctx))
                 (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
@@ -523,7 +523,7 @@ Returns:
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        parse-ctx (pctx-scop-ctx parse-ctx)
        (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast blueprint)))
-    (values (ast-apply-cse (ast-concrete-sequence (apply-directives new-bp))) extra-allocs)))
+    (values (ast-concrete-sequence (ast-apply-cse (ast-concrete-sequence (apply-directives new-bp)))) extra-allocs)))
 
 (defun apply-schedule (schedule blueprint &key (ctx (make-scop-ctx-from-blueprint blueprint)))
   "

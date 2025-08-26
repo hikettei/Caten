@@ -464,7 +464,7 @@
                         ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
                         (assert (= 1 (length (node-writes item))))
                         (setf (car (node-writes item)) waypoint)
-                        (push  (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
+                        (push (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
                         (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
                         ;; [TODO] Here
@@ -689,12 +689,14 @@
     (%progn (graph-outputs x) (graph-outputs y))))
 
 (defun merge-affine (a1 a2 new-poly)
-  (let ((r (loop for r in (append (node-reads a1) (node-reads a2))
+  (let* ((r (loop for r in (append (node-reads a1) (node-reads a2))
                  if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
-                   collect r)))
-    ($affine (append (node-writes a1) (node-writes a2)) (remove-duplicates r)
-             :polyhedron new-poly
-             :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint)))))
+                   collect r))
+         (new-item
+           ($affine (append (node-writes a1) (node-writes a2)) (remove-duplicates r)
+                    :polyhedron new-poly
+                    :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint)))))
+    new-item))
 
 (defun affine/fusion (src parents)
   (declare (type Node src) (type list parents))
@@ -708,34 +710,40 @@
               (push tn new-parents))))
       (values t+0 new-parents))))
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun schedule-item-apply-schedule (graph item &key (allow-fission ))
+  (declare (type Node item))
+  (assert (eql :Affine (node-type item)))
+  (let ((kernels (apply-schedule (psi-theta (print (getattr item :polyhedron))) (getattr item :blueprint))))
+    (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
+    (let* ((singletons
+             (loop for r in (node-writes item)
+                   if (and (= 0 (length (id->users graph r))) ;; todo:optimize id->users
+                           (null (find r (graph-outputs graph))))
+                     collect r))
+           (kernel
+             (caten/aasm::%simplify-ast
+              (ast-merge-expr-from-aref-subgraph
+               (ast-remove-extra-memloads (car kernels) singletons))))
+           (args (loop for item in (graph-nodes kernel)
+                       if (eql (node-type item) :DEFINE-GLOBAL)
+                         collect (car (node-writes item)))))
+      (setf
+       (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
+       (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
+       (getattr item :blueprint) kernel
+       (getattr item :polyhedron)
+       (make-polyhedral-schedule-item
+        (getattr item :blueprint) :scal->array allow-fission
+                                  :opt-history (psi-opt-history (getattr item :polyhedron))))))
+  item)
+
 (defun schedule-graph-apply-schedule (graph &key (allow-fission nil))
   "Recompute (out-of-date) blueprint w/ updated schedule."
   (declare (type ScheduleGraph graph))
   ;; [TODO] use lparallel:pdotimes, this can be parallelized.
   (dolist (item (graph-nodes graph))
     (when (eql (node-type item) :Affine)
-      (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
-        (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
-        (let* ((singletons
-                 (loop for r in (node-writes item)
-                       if (and (= 0 (length (id->users graph r))) ;; todo:optimize id->users
-                               (null (find r (graph-outputs graph))))
-                         collect r))
-               (kernel
-                 (caten/aasm::%simplify-ast
-                  (ast-merge-expr-from-aref-subgraph
-                   (ast-remove-extra-memloads (car kernels) singletons))))
-               (args (loop for item in (graph-nodes kernel)
-                           if (eql (node-type item) :DEFINE-GLOBAL)
-                             collect (car (node-writes item)))))
-          (setf
-           (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
-           (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
-           (getattr item :blueprint) kernel
-           (getattr item :polyhedron)
-           (make-polyhedral-schedule-item
-            (getattr item :blueprint) :scal->array allow-fission
-            :opt-history (psi-opt-history (getattr item :polyhedron))))))))
+      (schedule-item-apply-schedule graph item :allow-fission allow-fission)))
   (verify-graph graph)
   graph)
 
@@ -772,11 +780,12 @@
                    changed-p nil)
              (mapc #'explore (graph-outputs graph))
              (verify-graph graph)
+             (schedule-graph-apply-schedule graph :allow-fission nil) ;; todo: reschedule only changed ones
              changed-p))
     (fuse-all-edges) ;; fuse reduction+reduction
     (fuse-all-edges) ;; [TODO] 一意なIDを割り当てて別のSeenPairを作成する
-    
-    (schedule-graph-apply-schedule graph :allow-fission t)
+    (fuse-all-edges)
+   
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph

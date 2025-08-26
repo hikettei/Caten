@@ -1622,6 +1622,12 @@ val_2 = val_1[idx]; // ==> BIND(A, val_1)
 ```
 so that cse won't break the blueprint."
   (declare (type FastGraph blueprint))
+  (dolist (node (graph-nodes blueprint))
+    (loop for r in (node-reads node) for nth upfrom 0
+          for n = (id->value blueprint r)
+          if (eql (node-type n) :BIND) do
+            (setf (nth nth (node-reads node)) (getattr n :value))))
+  (verify-graph blueprint)
   (let ((id->bind (make-hash-table)))
     (labels ((f (item)
                (loop for n in (node-reads item) for nth upfrom 0
@@ -1657,6 +1663,7 @@ so that cse won't break the blueprint."
                      (f node)
                      (mapc #'(lambda (x) (explore x bfs)) (node-reads node))))))
       (mapc #'(lambda (x) (explore x nil)) (graph-outputs blueprint))
+      (verify-graph blueprint)
       blueprint)))
 
 (defun ast-remove-extra-memloads (blueprint singletons &aux (deleted))
@@ -1679,11 +1686,9 @@ float acc = 0.0;
            (replace-for-id (id)
              (let* ((aref (getchild id :AREF))
                     (setf (when aref (getchild (car (node-writes aref)) :SETF)))
-                    (expr/bind (when setf (id->users blueprint (car (node-writes setf)))))
-                    (expr (when (and (= 2 (length expr/bind)) (find :EXPR expr/bind :key #'node-type))
-                            (find :EXPR expr/bind :key #'node-type)))
-                    (bind (when (and (= 2 (length expr/bind)) (find :BIND expr/bind :key #'node-type))
-                            (find :BIND expr/bind :key #'node-type)))
+                    (expr (getchild (car (node-writes setf)) :EXPR))
+                    (binds (id->users blueprint (car (node-writes expr))))
+                    (bind (find :BIND binds :key #'node-type))
                     (aref-child (when (and expr bind (not (eql (node-id expr) (node-id bind))))
                                   (id->users blueprint (car (node-writes bind)))))
                     (aref-child (when (and aref-child (= 1 (length aref-child)))

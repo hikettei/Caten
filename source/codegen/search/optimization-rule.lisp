@@ -107,6 +107,8 @@ TODO:
   (with-slots ((at at) (order order)) optrule
     (let* ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))
            (seq (schedule-node-sequence-splice-children seq)))
+;      (PRINT "REORDER")
+;      (print poly)
       (setf
        (psi-theta poly)
        (isl:schedule-node-get-schedule
