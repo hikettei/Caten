@@ -610,14 +610,16 @@
            (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
            (group-size (permute-list order (car iterspace)))
            (__ (items-permute-all (grids-items grids) order))
-           (bp (lower-into-blueprint gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types)))
+           (bp (lower-into-blueprint gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types))
+           (has-reduce-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids))))
       (declare (ignore _ __))
       (setf bp (caten/aasm::%simplify-ast bp))
       ;; [Note]
       ;; Threefry Lowering
       ($affine grid-writes grid-reads
                :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
-               :blueprint bp))))
+               :blueprint bp
+               :reduction has-reduce-p))))
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [x] Rename: make-schedule-graph
@@ -681,39 +683,11 @@
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
         (->schedule-graph g)))))
-;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun blueprint-sequence (x y)
-  (with-blueprint (:noopt t)
-    (dolist (e (graph-nodes x)) (emit e))
-    (dolist (e (graph-nodes y)) (emit e))
-    (%progn (graph-outputs x) (graph-outputs y))))
-
-(defun merge-affine (a1 a2 new-poly)
-  (let* ((r (loop for r in (append (node-reads a1) (node-reads a2))
-                 if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
-                   collect r))
-         (new-item
-           ($affine (append (node-writes a1) (node-writes a2)) (remove-duplicates r)
-                    :polyhedron new-poly
-                    :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint)))))
-    new-item))
-
-(defun affine/fusion (src parents)
-  (declare (type Node src) (type list parents))
-  (assert parents)
-  (flet ((m (x) (getattr x :polyhedron)))
-    (let* ((t+0 src) (t-1 parents) (new-parents))
-      (dolist (tn t-1)
-        (let ((fused (ILP/SolveProximity (psi. (m tn) (m t+0)))))
-          (if fused
-              (setf t+0 (merge-affine t+0 tn fused))
-              (push tn new-parents))))
-      (values t+0 new-parents))))
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-item-apply-schedule (graph item &key (allow-fission ))
   (declare (type Node item))
   (assert (eql :Affine (node-type item)))
-  (let ((kernels (apply-schedule (psi-theta (print (getattr item :polyhedron))) (getattr item :blueprint))))
+  (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
     (assert (= 1 (length kernels)) () "schedule-graph-apply-schedule: Cannot schedule multiple kernels for a single affine object at this level.")
     (let* ((singletons
              (loop for r in (node-writes item)
@@ -746,66 +720,55 @@
       (schedule-item-apply-schedule graph item :allow-fission allow-fission)))
   (verify-graph graph)
   graph)
+;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun blueprint-sequence (x y)
+  (with-blueprint (:noopt t)
+    (dolist (e (graph-nodes x)) (emit e))
+    (dolist (e (graph-nodes y)) (emit e))
+    (%progn (graph-outputs x) (graph-outputs y))))
 
-(defun schedule-graph-fuse (graph &aux (seen (make-hash-table)) (changed-p nil))
-  "Solve ILP to minimize proximity"
-  (declare (type ScheduleGraph graph))
-  ;; [TODO]
-  ;; - 一発で全てFusionできるようにしたい。
-  ;; - DNNFusion?
-  (labels ((mergeable-item-p (id)
-             (let ((node (id->value graph id)))
-               (and
-                (eql (node-type node) :AFFINE)
-                ;; [TODO] Optimize id->users
-                (= 1 (length (id->users graph id))))))
-           (explore (id &aux (node (id->value graph id)))
-             (when (or (null node) (gethash (node-id node) seen))
-               (return-from explore))
-             (when (eql (node-type node) :AFFINE)
-               (let ((items
-                       (loop for r in (node-reads node)
-                             if (mergeable-item-p r) collect (id->value graph r))))
-                 (when items
-                   (multiple-value-bind (fused-item unfused-items) (affine/fusion node items)
-                     (when (not (= (length unfused-items) (length items)))
-                       ;; [todo] clean up ...
-                       (setf changed-p t)
-                       (remnode graph (car (node-writes node)))
-                       (dolist (i items) (remnode graph (car (node-writes i))))
-                       (when fused-item (insert-nodes graph (list fused-item)))
-                       (dolist (i unfused-items) (when i (insert-nodes graph (list i))))
-                       (when fused-item (mapc #'explore (node-writes fused-item)))
-                       (return-from explore nil))))))
-             (mapc #'explore (node-reads node)))
-           (fuse-all-edges ()
-             (setf seen (make-hash-table)
-                   changed-p nil)
-             (mapc #'explore (graph-outputs graph))
-             (verify-graph graph)
-             (schedule-graph-apply-schedule graph :allow-fission nil) ;; todo: reschedule only changed ones
-             changed-p))
-    (fuse-all-edges) ;; fuse reduction+reduction
-    (fuse-all-edges) ;; [TODO] 一意なIDを割り当てて別のSeenPairを作成する
-    (fuse-all-edges)
-    graph))
+(defun merge-affine (a1 a2 new-poly)
+  (let ((r (loop for r in (append (node-reads a1) (node-reads a2))
+                 if (and (null (find r (node-writes a1))) (null (find r (node-writes a2))))
+                   collect r)))
+    ($affine (append (node-writes a1) (node-writes a2)) (remove-duplicates r)
+             :polyhedron new-poly
+             :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint))
+             :reduction (or (getattr a1 :reduction) (getattr a2 :reduction)))))
 
-(defun generate-seed (ops &aux (inf (expt 2 32)))
-  (flet ((item-size (node)
-           (ecase (node-type node)
-             (:NonAffine inf)
-             (:Affine
-              ;; [todo] (if node is OneToOne ... inf)
-              (length (graph-nodes (getattr node :blueprint)))))))
-    (car (sort ops #'< :key #'item-size))))
+(defun affine/solve-ilp-fusion (parent child) ;; parent.order < child.order
+  (declare (type Node parent child))
+  (assert (eql (node-type parent) :Affine)) (assert (eql (node-type child) :Affine))
+  (flet ((m (x) (getattr x :polyhedron)))
+    (let ((fused (ILP/SolveProximity (psi. (m parent) (m child)))))
+      (when fused
+        (merge-affine parent child fused)))))
 
-(defun fuse-predecessor (sp pred block)
+(defun generate-seed (ops)
+  (declare (type list ops))
+  (find-if #'(lambda (node) (and (eql (node-type node) :Affine) (getattr node :reduction))) ops))
 
-  )
-
-(defun fuse-successor (sp suc block)
-
-  )
+(defun fuse-successor (graph sp suc)
+  (declare (type ScheduleGraph graph) (type node sp suc))
+  ;; Only Affine is mergeable
+  (unless (eql :Affine (node-type suc)) (return-from fuse-successor sp))
+  ;;(print "TRY")
+  ;;(print sp)
+  ;;(print suc)
+  (let ((fused (affine/solve-ilp-fusion sp suc)))
+    ;; (when (null fuseD) (PRINT "FAILED"))
+    ;; Stop when no fusable pairs, or fusion is not beneficial.
+    (when (null fused) (return-from fuse-successor sp))
+    (dolist (w (node-writes fused)) (remnode graph w))
+    (insert-nodes graph (list fused))
+    (verify-graph graph)
+    (setf fused (schedule-item-apply-schedule graph fused :allow-fission nil)) ;; [TODO] is it slow?
+    ;; (print "FUSED")
+    ;; (print fused)
+    (dolist (w (node-writes suc))
+      (dolist (usr (id->users graph w))
+        (setf fused (fuse-successor graph fused usr))))
+    fused))
 ;; [MEMO]
 ;; val[x] = 0.0;をFuseしたいかどうかはReductionをどうFuseするかに依存している
 ;; Reduction優先Fusion?
@@ -814,20 +777,21 @@
 (defun schedule-graph-fuse (graph)
   "Solve ILP to minimize (proximity, benefit)"
   (declare (type ScheduleGraph graph))
-  ;; Goal: Pair Reduce+Reduce
-  (let ((unfused-ops (tpsort-graph graph)))
-    (loop for sp = (generate-seed unfused-ops) while sp
-          for block = (list sp) do
+  (let ((unfused-ops (tpsort-graph graph))) ;; explore from leaves to roots.
+    ;; Step1. Explore top-down.
+    (loop for sp = (generate-seed unfused-ops)
+          while sp for block = (list sp) do
+            ;; pop first reduction from unfused-ops, and pair them w/ another reduction who lives in descendants.
             ;; Head to successor
             (dolist (w (node-writes sp))
-              (dolist (suc (id->users graph w)) ;; [TODO] id->users is O(N), create a cache!
-                (fuse-successor sp suc block)))
-            ;; Head to predecessor
-            (dolist (r (node-reads sp))
-              (let ((pred (id->value graph r)))
-                (when pred (fuse-predecessor sp pred block))))
+              (dolist (usr (id->users graph w)) ;; [todo] optimize id->users which is O(N)
+                (print (fuse-successor graph sp usr))))
+            ;; Update unfused-ops
             (loop for b in block do
-              (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))))
+              (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
+    ;; Step2. Explore bottom-up.
+    (print "FINISHED")
+    ))
 
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym

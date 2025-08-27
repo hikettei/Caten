@@ -21,7 +21,7 @@
    [out]
 ```
 "
-         :slots ((polyhedron) (blueprint))
+         :slots ((polyhedron) (blueprint) (reduction :initform nil))
          :type-relay (verify-schedule-item :Affine))
 
 (defnode (:Schedule :NonAffine) (ScheduleItem)
