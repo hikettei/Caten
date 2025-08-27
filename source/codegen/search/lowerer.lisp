@@ -750,6 +750,9 @@
 (defun schedule-graph-fuse (graph &aux (seen (make-hash-table)) (changed-p nil))
   "Solve ILP to minimize proximity"
   (declare (type ScheduleGraph graph))
+  ;; [TODO]
+  ;; - 一発で全てFusionできるようにしたい。
+  ;; - DNNFusion?
   (labels ((mergeable-item-p (id)
              (let ((node (id->value graph id)))
                (and
@@ -785,8 +788,46 @@
     (fuse-all-edges) ;; fuse reduction+reduction
     (fuse-all-edges) ;; [TODO] 一意なIDを割り当てて別のSeenPairを作成する
     (fuse-all-edges)
-   
     graph))
+
+(defun generate-seed (ops &aux (inf (expt 2 32)))
+  (flet ((item-size (node)
+           (ecase (node-type node)
+             (:NonAffine inf)
+             (:Affine
+              ;; [todo] (if node is OneToOne ... inf)
+              (length (graph-nodes (getattr node :blueprint)))))))
+    (car (sort ops #'< :key #'item-size))))
+
+(defun fuse-predecessor (sp pred block)
+
+  )
+
+(defun fuse-successor (sp suc block)
+
+  )
+;; [MEMO]
+;; val[x] = 0.0;をFuseしたいかどうかはReductionをどうFuseするかに依存している
+;; Reduction優先Fusion?
+;; Reduction起点，predecessor優先,
+;; - 並列化の阻害は常にLoadにある。
+(defun schedule-graph-fuse (graph)
+  "Solve ILP to minimize (proximity, benefit)"
+  (declare (type ScheduleGraph graph))
+  ;; Goal: Pair Reduce+Reduce
+  (let ((unfused-ops (tpsort-graph graph)))
+    (loop for sp = (generate-seed unfused-ops) while sp
+          for block = (list sp) do
+            ;; Head to successor
+            (dolist (w (node-writes sp))
+              (dolist (suc (id->users graph w)) ;; [TODO] id->users is O(N), create a cache!
+                (fuse-successor sp suc block)))
+            ;; Head to predecessor
+            (dolist (r (node-reads sp))
+              (let ((pred (id->value graph r)))
+                (when pred (fuse-predecessor sp pred block))))
+            (loop for b in block do
+              (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))))
 
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym
