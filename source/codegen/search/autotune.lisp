@@ -208,5 +208,8 @@ a performance."
 (defun ILP/SolveProximity (polyhedral &key (mode :full))
   (declare (type Polyhedral-Schedule-Item polyhedral) (type (member :full :partial) mode))
   (ecase mode
-    (:full    (ILP/SolveProximity[Full] polyhedral))
+    (:full
+     (or
+      (ILP/SolveProximity[Partial] polyhedral)
+      (ILP/SolveProximity[Full] polyhedral)))
     (:partial (ILP/SolveProximity[Partial] polyhedral))))
