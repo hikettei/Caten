@@ -1006,7 +1006,7 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
     (loop for l in filter-is-load-list
           for id in filter-ids
           if (not l) do (push id new-orders))
-    (print (nreverse new-orders))))
+    (nreverse new-orders)))
 
 (defun schedule-node-sequence-group-sequence (components)
   (declare (type isl::schedule-node-sequence components))

@@ -109,7 +109,7 @@ TODO:
       (setf
        (psi-theta poly)
        (isl:schedule-node-get-schedule
-        (schedule-node-sequence-group-sequence
+        (progn;schedule-node-sequence-group-sequence
          (schedule-node-sequence-reorder seq order)))))))
 
 (defclass Fission (OptimizationRule)

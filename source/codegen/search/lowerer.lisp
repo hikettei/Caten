@@ -684,7 +684,7 @@
               (graph-outputs g) (copy-list (graph-outputs graph)))
         (->schedule-graph g)))))
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun schedule-item-apply-schedule (graph item &key (allow-fission ))
+(defun schedule-item-apply-schedule (graph item &key (allow-fission nil) (keep-scop t))
   (declare (type Node item))
   (assert (eql :Affine (node-type item)))
   (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
@@ -695,9 +695,11 @@
                            (null (find r (graph-outputs graph))))
                      collect r))
            (kernel
-             (caten/aasm::%simplify-ast
-              (ast-merge-expr-from-aref-subgraph
-               (ast-remove-extra-memloads (car kernels) singletons))))
+             (if keep-scop
+                 (caten/aasm::%simplify-ast
+                  (ast-merge-expr-from-aref-subgraph
+                   (ast-remove-extra-memloads (car kernels) singletons)))
+                 (car kernels)))
            (args (loop for item in (graph-nodes kernel)
                        if (eql (node-type item) :DEFINE-GLOBAL)
                          collect (car (node-writes item)))))
@@ -744,9 +746,19 @@
       (when fused
         (merge-affine parent child fused)))))
 
-(defun affine/solve-ilp-fusion (parent children block &key (mode :full))
-  (declare (type Node parent) (type list children))  
-  (dolist (c children) ;; [todo] reverseしてもpassするかcheck
+(defun id->users1 (graph id)
+  (loop for node in (tpsort-graph graph)
+        if (find id (node-reads node))
+          collect node))
+
+(defun affine/solve-ilp-fusion (unfused-ops parent children block &key (mode :full))
+  (declare (type Node parent) (type list children))
+  (when (not (= 1 (length children)))
+    (flet ((p (i)
+             (or (position (node-writes i) unfused-ops :key #'node-writes :test #'intersection) 0)))
+      ;; [TODO] is it always valid?
+      (setf children (sort children #'< :key #'p))))
+  (dolist (c children)
     (when (null (find (node-id c) block :key #'node-id))
       (let ((fused (affine/solve-ilp-fusion-pair parent c :mode mode)))
         (when (null fused) (return-from affine/solve-ilp-fusion))
@@ -757,12 +769,12 @@
   (declare (type list ops))
   (find-if #'(lambda (node) (and (eql (node-type node) :Affine) (getattr node :reduction))) ops))
 
-(defun fuse-successor (graph sp sucs block &key (mode :full))
-  (declare (type ScheduleGraph graph) (type list block sucs) (type node sp))
+(defun fuse-successor (unfused-ops graph sp sucs block &key (mode :full))
+  (declare (type ScheduleGraph graph) (type list block sucs unfused-ops) (type node sp))
   ;; Only Affine is mergeable
   (when (or (= 0 (length sucs)) (some #'(lambda (x) (eql (node-type x) :NonAffine)) sucs))
     (return-from fuse-successor sp))
-  (let ((fused (affine/solve-ilp-fusion sp sucs block :mode mode)))
+  (let ((fused (affine/solve-ilp-fusion unfused-ops sp sucs block :mode mode)))
     ;; Stop when no fusable pairs, or fusion is not beneficial.
     (when (null fused) (return-from fuse-successor sp))
     (dolist (w (node-writes fused)) (remnode graph w))
@@ -771,7 +783,7 @@
     (setf fused (schedule-item-apply-schedule graph fused :allow-fission nil)) ;; [TODO] is it slow?
     (setf block (nconc block sucs))
     (dolist (w (node-writes fused))
-      (setf fused (fuse-successor graph fused (id->users graph w) block :mode mode)))
+      (setf fused (fuse-successor unfused-ops graph fused (id->users graph w) block :mode mode)))
     fused))
 
 (defun schedule-graph-fuse (graph)
@@ -786,7 +798,7 @@
             ;; Head to successor
             (dolist (w (node-writes sp))
               ;; [todo] optimize id->users which is O(N)
-              (fuse-successor graph sp (id->users graph w) block :mode :full))
+              (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :full))
             ;; Update unfused-ops
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
@@ -796,7 +808,7 @@
           while sp for block = (list sp)
           if (eql (node-type sp) :Affine) do
             (dolist (w (node-writes sp))
-              (fuse-successor graph sp (id->users graph w) block :mode :partial))
+              (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :partial))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     (assert (null unfused-ops))

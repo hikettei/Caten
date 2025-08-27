@@ -171,7 +171,10 @@ While [Full] Solver provides wider exploration space, [Partial] restricts path f
                    (return-from
                     ILP/SolveProximity[Partial]
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
-                         nil
+                         (progn
+                           (print "FAILED")
+                           (print last-item)
+                           nil)
                          (progn
                            (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
                            last-item)))))))
