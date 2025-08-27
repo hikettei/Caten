@@ -397,10 +397,14 @@
         (:View (make-grids :id next-id :is-affine t :items (list node)))
         (otherwise
          (if (typep (node-attr node) 'JITAble)
-             (let* ((parent-grids
+             (let* ((is-reduce-p (getattr node :reduction :allow-undefined t))
+                    (parent-grids
                       (loop for r in (node-reads node)
                             for g = (gethash r id->grids)
-                            if (and g (grids-is-affine g) (node-is-singleton-p r)) collect g))
+                            for nth upfrom 0
+                            if (and g (grids-is-affine g) (node-is-singleton-p r)
+                                    (if is-reduce-p (not (= nth 0)) t)) ;; if reduction, force realize at the first argument.
+                              collect g))
                     (items (append (reduce #'append (map 'list #'grids-items parent-grids)) (list node)))
                     (new-grids
                       (make-grids :id next-id :items items)))
@@ -448,27 +452,31 @@
                            (setf (gethash r id->load) tmpid)
                            (push (cons (iterspace-depend-idx-list ri gids) (%aref r index :out tmpid)) loads)))
                  ;; Reductions/Stores
-                  (if (getattr item :reduction :allow-undefined t)
-                      (let* ((type (read-type-relay item))
-                             (w (car (node-writes item)))
-                             (wi (car (relay-write-iters type)))
-                             (index (iter->index wi (car (relay-writes type))))
-                             (r (car (node-reads item)))
-                             (waypoint (gensym "WP"))
-                             (tmp (gensym "R"))
-                             (tmp1 (gensym "TMP")))
-                        ;; Reduction is lowered as:
-                        ;; A <- Binary(B, C, reduction=T)
-                        ;; ==>
-                        ;; TMP = SETF(AREF(B, idx1), Binary(AREF(B, idx2), AREF(C, idx3)))
-                        ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
-                        (assert (= 1 (length (node-writes item))))
-                        (setf (car (node-writes item)) waypoint)
-                        (push (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
-                        (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
-                        (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
-                        ;; [TODO] Here
-                        (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp1)) stores))
+                 (if (getattr item :reduction :allow-undefined t)
+                     (let ((reduce-to (id->value *ctx* (gethash (car (node-reads item)) id->load))))
+                       (assert (eql (node-type reduce-to) :AREF) () "lower-into-blueprint: In the node Binary(X, Y, reduce=T), X should be realized!")
+                       (let* ((type (read-type-relay item))
+                              (w (car (node-writes item)))
+                              (wi (car (relay-write-iters type)))
+                              (index (iter->index wi (car (relay-writes type))))
+                              (r (car (node-reads item)))
+                              (waypoint (gensym "WP"))
+                              (tmp (gensym "R"))
+                              (tmp1 (gensym "TMP")))
+                         ;; Reduction is lowered as:
+                         ;; A <- Binary(B, C, reduction=T)
+                         ;; ==>
+                         ;; TMP = SETF(AREF(B, idx1), Binary(AREF(B, idx2), AREF(C, idx3)))
+                         ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
+                         (assert (= 1 (length (node-writes item))))
+                         (setf (car (node-writes item)) waypoint)
+                         (push (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
+                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
+                         (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
+                         ;; [TODO] Here
+                         ;; [TODO] Alternatively:
+                         ;; - [ ] Reductionの時はLoadを配置しない。
+                         (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp1)) stores)))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
                             for wi in (relay-write-iters (read-type-relay item))
@@ -614,6 +622,8 @@
            (has-reduce-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids))))
       (declare (ignore _ __))
       (setf bp (caten/aasm::%simplify-ast bp))
+      (caten/codegen/blueprint:print-blueprint bp t)
+      ;; [todo] reductionの第一引数はseparateする？
       ;; [Note]
       ;; Threefry Lowering
       ($affine grid-writes grid-reads
@@ -703,6 +713,7 @@
            (args (loop for item in (graph-nodes kernel)
                        if (eql (node-type item) :DEFINE-GLOBAL)
                          collect (car (node-writes item)))))
+      (caten/codegen/blueprint:print-blueprint kernel t)
       (setf
        (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
        (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
@@ -885,7 +896,7 @@
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
-    (schedule-graph-fuse sched)
+   ; (schedule-graph-fuse sched)
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))
