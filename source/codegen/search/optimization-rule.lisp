@@ -89,8 +89,7 @@ TODO:
         (case status
           (:valid (list (make-instance 'Fuse :at seq)))
           (:need-reorder
-           (let ((order
-                   (schedule-node-sequence-tpsort (schedule-node-sequence-splice-children seqnode))))
+           (let ((order (schedule-node-sequence-tpsort (schedule-node-sequence-splice-children seqnode) (psi-read-union-map poly) (psi-write-union-map poly))))
              (list (make-instance 'Reorder :at seq :order order))))
           (otherwise
            ;; TODO: (list (make-instance 'Fail))
@@ -107,8 +106,6 @@ TODO:
   (with-slots ((at at) (order order)) optrule
     (let* ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))
            (seq (schedule-node-sequence-splice-children seq)))
-;      (PRINT "REORDER")
-;      (print poly)
       (setf
        (psi-theta poly)
        (isl:schedule-node-get-schedule

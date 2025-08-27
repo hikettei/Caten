@@ -954,18 +954,59 @@ schedule: ... --------| // Returned
        (! new-filter-list))
       (isl::make-id-from-str (format nil "@ApplyOptimization{REORDER}~a" order))))))
 
-(declaim (ftype (function (isl::schedule-node-sequence) list) schedule-node-sequence-tpsort))
-(defun schedule-node-sequence-tpsort (components)
-  (declare (type isl::schedule-node-sequence components))
+(defun %umap-collect-range-names (umap &key (domain-name nil))
+  "Collect distinct range tuple names from UMAP.
+If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used."
+  (let* ((ml (union-map-get-map-list umap))
+         (n  (map-list-size ml))
+         (acc '()))
+    (dotimes (i n (nreverse (remove-duplicates acc :test #'string=)))
+      (let* ((m (map-list-elt ml i))
+             (dn (map-get-tuple-name m :dim-in)))
+        (when (or (null domain-name) (and dn (string= dn domain-name)))
+          (let ((rn (map-get-tuple-name m :dim-out)))
+            (when rn (push rn acc))))))))
+
+(defun read-missing-or-unwritten-p (read-umap written-bufs filter-name)
+  (declare (type isl::union-map read-umap)
+           (type list written-bufs)
+           (type string filter-name))
+  (let ((read-bufs (%umap-collect-range-names read-umap :domain-name filter-name)))
+    (if (null read-bufs)
+        t
+        (every #'(lambda (b) (not (member b written-bufs :test #'string=))) read-bufs))))
+
+(defun union-set-single-tuple-name (uset)
+  (declare (type isl::union-set uset))
+  (let* ((sl (union-set-get-set-list uset))
+         (n  (set-list-n-set sl)))
+    (unless (= n 1) (error "union-set must contain exactly one set, but got ~a" n))
+    (let* ((s (set-list-get-at sl 0))
+           (nm (set-get-tuple-name s)))
+      (or nm (error "union-set-single-tuple-name: uset has no name")))))
+
+(declaim (ftype (function (isl::schedule-node-sequence isl::union-map isl::union-map) list) schedule-node-sequence-tpsort))
+(defun schedule-node-sequence-tpsort (components read-umap write-umap)
+  (declare (type isl::schedule-node-sequence components) (type isl::union-map read-umap write-umap))
   (let* ((filters (schedule-node-sequence-get-filters components))
-         (filter-ids (loop for i upfrom 0 for f in filters collect i)))
-    ;; verify-legality is a heavy op...
-    ;; verify-legality => あんまり信用してない >< if it is fast, generate multiple candidates
-    ;; to smolify the exploration space, group sequence of filters as one.
-    
-    ;; [TODO]
-    filter-ids
-    ))
+         (filter-types (schedule-node-sequence-get-filter-types components))
+         (filter-ids (loop for i upfrom 0 for f in filters collect i))
+         (written-bufs (%umap-collect-range-names write-umap :domain-name nil))
+         (filter-is-load-list
+           (loop for f in filters
+                 for ft in filter-types
+                 if (eql ft :schedule-node-leaf)
+                   collect (read-missing-or-unwritten-p read-umap written-bufs (union-set-single-tuple-name f))
+                 else
+                   collect nil))
+         (new-orders))
+    (loop for l in filter-is-load-list
+          for id in filter-ids
+          if l do (push id new-orders))
+    (loop for l in filter-is-load-list
+          for id in filter-ids
+          if (not l) do (push id new-orders))
+    (print (nreverse new-orders))))
 
 (defun schedule-node-sequence-group-sequence (components)
   (declare (type isl::schedule-node-sequence components))

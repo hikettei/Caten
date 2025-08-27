@@ -452,6 +452,10 @@
 (defun set-dim-min-val (set pos)
   (%make-value (%isl-set-dim-min-val (set-handle (__isl_take set)) pos)))
 ;;;; UnionSet
+(define-isl-function union-set-n-set %isl-union-set-n-set
+  (:give fixnum)
+  (:keep union-set))
+
 (define-isl-function union-set-empty %isl-union-set-empty
   (:give union-set)
   (:take space))
