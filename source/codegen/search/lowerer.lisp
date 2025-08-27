@@ -736,11 +736,11 @@
              :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint))
              :reduction (or (getattr a1 :reduction) (getattr a2 :reduction)))))
 
-(defun affine/solve-ilp-fusion (parent child) ;; parent.order < child.order
+(defun affine/solve-ilp-fusion (parent child &key (mode :full)) ;; assuming parent.order < child.order
   (declare (type Node parent child))
   (assert (eql (node-type parent) :Affine)) (assert (eql (node-type child) :Affine))
   (flet ((m (x) (getattr x :polyhedron)))
-    (let ((fused (ILP/SolveProximity (psi. (m parent) (m child)))))
+    (let ((fused (ILP/SolveProximity (psi. (m parent) (m child)) :mode mode)))
       (when fused
         (merge-affine parent child fused)))))
 
@@ -748,14 +748,14 @@
   (declare (type list ops))
   (find-if #'(lambda (node) (and (eql (node-type node) :Affine) (getattr node :reduction))) ops))
 
-(defun fuse-successor (graph sp suc block)
+(defun fuse-successor (graph sp suc block &key (mode :full))
   (declare (type ScheduleGraph graph) (type list block) (type node sp suc))
   ;; Only Affine is mergeable
   (unless (eql :Affine (node-type suc)) (return-from fuse-successor sp))
   ;;(print "TRY")
   ;;(print sp)
   ;;(print suc)
-  (let ((fused (affine/solve-ilp-fusion sp suc)))
+  (let ((fused (affine/solve-ilp-fusion sp suc :mode mode)))
     ;; (when (null fuseD) (PRINT "FAILED"))
     ;; Stop when no fusable pairs, or fusion is not beneficial.
     (when (null fused) (return-from fuse-successor sp))
@@ -771,16 +771,8 @@
         (setf fused (fuse-successor graph fused usr block))))
     fused))
 
-(defun fuse-predecessor (graph sp pred block)
-  (declare (type ScheduleGraph graph) (type list block) (type node sp pred))
-  )
-;; [MEMO]
-;; val[x] = 0.0;をFuseしたいかどうかはReductionをどうFuseするかに依存している
-;; Reduction優先Fusion?
-;; Reduction起点，predecessor優先,
-;; - 並列化の阻害は常にLoadにある。
 (defun schedule-graph-fuse (graph)
-  "Solve ILP to minimize (proximity, benefit)"
+  "Solve ILP to minimize proximity while maximizing benefit."
   (declare (type ScheduleGraph graph))
   (let ((unfused-ops (tpsort-graph graph))) ;; explore from leaves to roots.
     ;; Step1. Explore top-down.
@@ -792,7 +784,7 @@
             (dolist (w (node-writes sp))
               (dolist (usr (id->users graph w)) ;; [todo] optimize id->users which is O(N)
                 ;; [todo] use heavy version of ilp solver. (unsure if this is beneficial)
-                (fuse-successor graph sp usr block)))
+                (fuse-successor graph sp usr block :mode :full)))
             ;; Update unfused-ops
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
@@ -804,7 +796,7 @@
             (dolist (w (node-writes sp))
               (dolist (usr (id->users graph w))
                 ;; [todo] use light version of ilp solver. (less space 100% beneficial)
-                (fuse-successor graph sp usr block)))
+                (fuse-successor graph sp usr block :mode :partial)))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     (assert (null unfused-ops))

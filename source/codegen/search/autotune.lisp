@@ -153,31 +153,31 @@ BEAM Search Workflow:
           )
         t))))
 
-(defun ILP/SolveProximity (polyhedral &key (cost-model))
-  "Generates a maximum fused graph"
+(defun ILP/SolveProximity[Partial] (polyhedral)
+  "Generates a maximum fused graph. (Assuming benefits is fixed to 1.0)"
   (declare (type Polyhedral-Schedule-Item polyhedral))
-  ;; Memory Orderもここで探索かな...
-  ;; ちゃんとしたCache機構があるなら，On device tuningでもいい気がしてきた
-  ;;(PRINT "INPUT")
-  ;;(print polyhedral)
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate (&aux (prev-items (sgt-items gen0)))
                ;; Search Valid Permutation, Reshape, and Fusion
                (sgt-apply-transformations
                 gen0
                 '(:Transpose :Reshape :Fuse))
-               ;;(assert (<= (length (sgt-items gen0)) 1))
-               ;; [TODO] Sort TopK
+               (when (> (length (sgt-items gen0)) 1)
+                 (warn "ILP/SolveProximity[Partial]. The exploration space generated multiple candidates. (Selecting first one)")
+                 (setf (sgt-items gen0) (list (car (sgt-items gen0)))))
                (when (null (sgt-items gen0))
                  (let ((last-item (car prev-items)))
                    (return-from
-                    ILP/SolveProximity
+                    ILP/SolveProximity[Partial]
                      (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
-                         (progn
-                          ; (PRINT "FAILED")
-                          ; (print last-item)
-                           nil)
+                         nil
                          (progn
                            (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
                            last-item)))))))
       (loop while t do (generate)))))
+
+(defun ILP/SolveProximity (polyhedral &key (mode :full))
+  (declare (type Polyhedral-Schedule-Item polyhedral) (type (member :full :partial) mode))
+  (ecase mode
+    (:full    (ILP/SolveProximity[Partial] polyhedral))
+    (:partial (ILP/SolveProximity[Partial] polyhedral))))
