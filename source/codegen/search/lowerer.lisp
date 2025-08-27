@@ -748,8 +748,8 @@
   (declare (type list ops))
   (find-if #'(lambda (node) (and (eql (node-type node) :Affine) (getattr node :reduction))) ops))
 
-(defun fuse-successor (graph sp suc)
-  (declare (type ScheduleGraph graph) (type node sp suc))
+(defun fuse-successor (graph sp suc block)
+  (declare (type ScheduleGraph graph) (type list block) (type node sp suc))
   ;; Only Affine is mergeable
   (unless (eql :Affine (node-type suc)) (return-from fuse-successor sp))
   ;;(print "TRY")
@@ -763,12 +763,17 @@
     (insert-nodes graph (list fused))
     (verify-graph graph)
     (setf fused (schedule-item-apply-schedule graph fused :allow-fission nil)) ;; [TODO] is it slow?
+    (setf block (nconc block (list suc)))
     ;; (print "FUSED")
     ;; (print fused)
     (dolist (w (node-writes suc))
       (dolist (usr (id->users graph w))
-        (setf fused (fuse-successor graph fused usr))))
+        (setf fused (fuse-successor graph fused usr block))))
     fused))
+
+(defun fuse-predecessor (graph sp pred block)
+  (declare (type ScheduleGraph graph) (type list block) (type node sp pred))
+  )
 ;; [MEMO]
 ;; val[x] = 0.0;をFuseしたいかどうかはReductionをどうFuseするかに依存している
 ;; Reduction優先Fusion?
@@ -779,19 +784,31 @@
   (declare (type ScheduleGraph graph))
   (let ((unfused-ops (tpsort-graph graph))) ;; explore from leaves to roots.
     ;; Step1. Explore top-down.
+    ;; - Maximize Reduce+Reduce Fusion (may change the memory order signifcantly)
     (loop for sp = (generate-seed unfused-ops)
           while sp for block = (list sp) do
             ;; pop first reduction from unfused-ops, and pair them w/ another reduction who lives in descendants.
             ;; Head to successor
             (dolist (w (node-writes sp))
               (dolist (usr (id->users graph w)) ;; [todo] optimize id->users which is O(N)
-                (print (fuse-successor graph sp usr))))
+                ;; [todo] use heavy version of ilp solver. (unsure if this is beneficial)
+                (fuse-successor graph sp usr block)))
             ;; Update unfused-ops
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
-    ;; Step2. Explore bottom-up.
-    (print "FINISHED")
-    ))
+    ;; Step2. Fuse predecessors.
+    ;; - Fuse remained elwise ops if not required by its children.
+    (loop for sp = (pop unfused-ops)
+          while sp for block = (list sp)
+          if (eql (node-type sp) :Affine) do
+            (dolist (w (node-writes sp))
+              (dolist (usr (id->users graph w))
+                ;; [todo] use light version of ilp solver. (less space 100% beneficial)
+                (fuse-successor graph sp usr block)))
+            (loop for b in block do
+              (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
+    (assert (null unfused-ops))
+    graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph
 ;; [TODO] Introduce LocalGensym
