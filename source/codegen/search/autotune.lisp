@@ -154,7 +154,8 @@ BEAM Search Workflow:
         t))))
 
 (defun ILP/SolveProximity[Partial] (polyhedral)
-  "Generates a maximum fused graph. (Assuming benefits is fixed to 1.0)"
+  "Search a full-fused version of polyhedral w/ assuming each fusion has 100% beneficial.
+While [Full] Solver provides wider exploration space, [Partial] restricts path for performance."
   (declare (type Polyhedral-Schedule-Item polyhedral))
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
     (labels ((generate (&aux (prev-items (sgt-items gen0)))
@@ -176,8 +177,36 @@ BEAM Search Workflow:
                            last-item)))))))
       (loop while t do (generate)))))
 
+(defun ILP/SolveProximity[Full] (polyhedral)
+  "Generates a full-fused version of polyhedral. It has wider loop transformations compared to [Partial]
+Solver one of which is not known to improve the performance. [Full] Solver explores it w/ measuring
+a performance."
+  (declare (type Polyhedral-Schedule-Item polyhedral))
+  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
+    (labels ((generate (&aux (prev-items (sgt-items gen0)))
+               ;; Search Valid Permutation, Reshape, and Fusion
+               (sgt-apply-transformations
+                gen0
+                '(:Transpose :Reshape :Fuse))
+               (when (> (length (sgt-items gen0)) 1)
+                 (warn "ILP/SolveProximity[Partial]. The exploration space generated multiple candidates. (Selecting first one)")
+                 (setf (sgt-items gen0) (list (car (sgt-items gen0)))))
+               (when (null (sgt-items gen0))
+                 (let ((last-item (car prev-items)))
+                   (return-from
+                    ILP/SolveProximity[Full]
+                     (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
+                         nil
+                         (progn
+                           (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
+                           last-item)))))))
+      ;; [TODO] FullSpaceを実装する
+      ;; - [ ] Reduction: Relocate to the outermost
+      ;; - [ ] 
+      (loop while t do (generate)))))
+
 (defun ILP/SolveProximity (polyhedral &key (mode :full))
   (declare (type Polyhedral-Schedule-Item polyhedral) (type (member :full :partial) mode))
   (ecase mode
-    (:full    (ILP/SolveProximity[Partial] polyhedral))
+    (:full    (ILP/SolveProximity[Full] polyhedral))
     (:partial (ILP/SolveProximity[Partial] polyhedral))))
