@@ -736,7 +736,7 @@
              :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint))
              :reduction (or (getattr a1 :reduction) (getattr a2 :reduction)))))
 
-(defun affine/solve-ilp-fusion (parent child &key (mode :full)) ;; assuming parent.order < child.order
+(defun affine/solve-ilp-fusion-pair (parent child &key (mode :full)) ;; assuming parent.order < child.order
   (declare (type Node parent child))
   (assert (eql (node-type parent) :Affine)) (assert (eql (node-type child) :Affine))
   (flet ((m (x) (getattr x :polyhedron)))
@@ -744,31 +744,34 @@
       (when fused
         (merge-affine parent child fused)))))
 
+(defun affine/solve-ilp-fusion (parent children block &key (mode :full))
+  (declare (type Node parent) (type list children))  
+  (dolist (c children) ;; [todo] reverseしてもpassするかcheck
+    (when (null (find (node-id c) block :key #'node-id))
+      (let ((fused (affine/solve-ilp-fusion-pair parent c :mode mode)))
+        (when (null fused) (return-from affine/solve-ilp-fusion))
+        (setf parent fused))))
+  parent)
+
 (defun generate-seed (ops)
   (declare (type list ops))
   (find-if #'(lambda (node) (and (eql (node-type node) :Affine) (getattr node :reduction))) ops))
 
-(defun fuse-successor (graph sp suc block &key (mode :full))
-  (declare (type ScheduleGraph graph) (type list block) (type node sp suc))
+(defun fuse-successor (graph sp sucs block &key (mode :full))
+  (declare (type ScheduleGraph graph) (type list block sucs) (type node sp))
   ;; Only Affine is mergeable
-  (unless (eql :Affine (node-type suc)) (return-from fuse-successor sp))
-  ;;(print "TRY")
-  ;;(print sp)
-  ;;(print suc)
-  (let ((fused (affine/solve-ilp-fusion sp suc :mode mode)))
-    ;; (when (null fuseD) (PRINT "FAILED"))
+  (when (or (= 0 (length sucs)) (some #'(lambda (x) (eql (node-type x) :NonAffine)) sucs))
+    (return-from fuse-successor sp))
+  (let ((fused (affine/solve-ilp-fusion sp sucs block :mode mode)))
     ;; Stop when no fusable pairs, or fusion is not beneficial.
     (when (null fused) (return-from fuse-successor sp))
     (dolist (w (node-writes fused)) (remnode graph w))
     (insert-nodes graph (list fused))
     (verify-graph graph)
     (setf fused (schedule-item-apply-schedule graph fused :allow-fission nil)) ;; [TODO] is it slow?
-    (setf block (nconc block (list suc)))
-    ;; (print "FUSED")
-    ;; (print fused)
-    (dolist (w (node-writes suc))
-      (dolist (usr (id->users graph w))
-        (setf fused (fuse-successor graph fused usr block))))
+    (setf block (nconc block sucs))
+    (dolist (w (node-writes fused))
+      (setf fused (fuse-successor graph fused (id->users graph w) block :mode mode)))
     fused))
 
 (defun schedule-graph-fuse (graph)
@@ -782,9 +785,8 @@
             ;; pop first reduction from unfused-ops, and pair them w/ another reduction who lives in descendants.
             ;; Head to successor
             (dolist (w (node-writes sp))
-              (dolist (usr (id->users graph w)) ;; [todo] optimize id->users which is O(N)
-                ;; [todo] use heavy version of ilp solver. (unsure if this is beneficial)
-                (fuse-successor graph sp usr block :mode :full)))
+              ;; [todo] optimize id->users which is O(N)
+              (fuse-successor graph sp (id->users graph w) block :mode :full))
             ;; Update unfused-ops
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
@@ -794,9 +796,7 @@
           while sp for block = (list sp)
           if (eql (node-type sp) :Affine) do
             (dolist (w (node-writes sp))
-              (dolist (usr (id->users graph w))
-                ;; [todo] use light version of ilp solver. (less space 100% beneficial)
-                (fuse-successor graph sp usr block :mode :partial)))
+              (fuse-successor graph sp (id->users graph w) block :mode :partial))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     (assert (null unfused-ops))
