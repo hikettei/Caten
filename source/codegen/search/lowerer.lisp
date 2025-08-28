@@ -759,21 +759,22 @@
   (declare (type Node parent child))
   (assert (eql (node-type parent) :Affine)) (assert (eql (node-type child) :Affine))
   (flet ((m (x) (getattr x :polyhedron)))
-    (let ((fused (ILP/SolveProximity (psi. (m parent) (m child)) :mode mode)))
+    ;; [TODO] childに含まれている各Domainをどこに挿入するか，という問題に変える
+    ;; もっと言えば順序付けしない
+    ;; AffineにPrintされてる情報でCacheを作成できる
+    ;; - [ ] 1. Cacheを実装する
+    ;; - [ ] 2. 少しHeavyなILPベースでFusionを実施する
+    ;; - [ ] 3. ある程度データが集まったら，検索ベースでFusionを実施するアルゴリズムを作る
+    ;; Parent/Childは同一RankのTensor操作だと仮定する
+    (let ((fused (ILP/SolveProximity (m parent) (m child) :mode mode)))
       (when fused
         (merge-affine parent child fused)))))
-
-(defun id->users1 (graph id)
-  (loop for node in (tpsort-graph graph)
-        if (find id (node-reads node))
-          collect node))
 
 (defun affine/solve-ilp-fusion (unfused-ops parent children block &key (mode :full))
   (declare (type Node parent) (type list children))
   (when (not (= 1 (length children)))
-    (flet ((p (i)
-             (or (position (node-writes i) unfused-ops :key #'node-writes :test #'intersection) 0)))
-      ;; [TODO] is it always valid?
+    (flet ((p (i) (or (position (node-writes i) unfused-ops :key #'node-writes :test #'intersection) 0)))
+      ;; [TODO] Is this sorting method valid? or needed?
       (setf children (sort children #'< :key #'p))))
   (dolist (c children)
     (when (null (find (node-id c) block :key #'node-id))
@@ -821,12 +822,6 @@
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     ;; Step2. Fuse predecessors.
     ;; - Fuse remained elwise ops if not required by its children.
-    ;; [TODO]
-    ;; - [ ] 一旦この状態でScalarEliimnationを考える
-    ;; - [ ] will it compile?
-    ;; - [ ] MOVEがReduceの後にFuseされるということは，再利用がないということ。
-    ;; - [ ] how to deal w/ args?
-    ;; - [ ] 途中のCSEに頼るのを辞めたい
     (loop for sp = (pop unfused-ops)
           while sp for block = (list sp)
           if (eql (node-type sp) :Affine) do
@@ -834,7 +829,7 @@
               (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :partial))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
-;    (assert (null unfused-ops))
+    (assert (null unfused-ops))
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph
@@ -915,8 +910,12 @@
 ;;   - [ ] ScheduleNodeBand: LV(BAND_DEPTH), AREA=512x512
 ;; - [ ] DataFlowGraphから，FusionのStrategyを生成する方法の提案をしたい
 ;; - [ ] やることを一般化し範囲を絞って言語化すると，サイズが大きいが速度が遅いN段階のメモリがある。これがブラックボックスだとして，自動でマッピングするモデルの構築
-;; - [ ] Reductionの後のMOVEを削除したほうがいいのでは？
-;;  - [ ] Matmul+Matmulしたときに，CHILDが直接Reductionになってほしい。
+;; - [ ] あと2週間あれば完成しそうな目処がたった！
+;; - [ ] Schedule作り直し+差し替え+Refactor (2 or 3 days)
+;;   - [ ] RuntimeGraph, TensorGraph, ...
+;; - [ ] caten/api作り直す, reimpl autodiff (maybe 2 or 3 days)
+;; - [ ] BEAM Search/BYOC作り直す           (2 days)
+;; - [ ] テスト作り直す                     (2 days)
 
 ;; [TODO]
 ;; - [ ] Fusionをもう少し賢く実施したい。
@@ -943,6 +942,13 @@
 ;; [DataFlowGraph]
 ;; - [ ] ScheduleNodeBand, 各Bandの深さ=メモリ階層のLVL
 ;; - [ ] ASTUserがどこに常に生成されるのか確認しないといけない。
+;; - [ ] Fusion実装できたら，codegenの必要ないコード全部消す。
+;; - [ ] caten aasm -> caten/ir
+;; - [ ] ScheduleTree ==> DataFlowGraphを作成する。
+;;   - [ ] これはTile探索のVislizeも兼ねる
+;; ↓これがFusionできないといけない。
+;; (let ((tg (tensor-lowered-graph (!sin (!t (!relu (!matmul (make-tensor `(1024 1024)) (make-tensor `(1024 1024)))))))))
+;;              (time (caten/codegen/lowerer::codegen tg)))
 (defun schedule-item-to-optrules ()
 
   )
@@ -950,7 +956,7 @@
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
-;    (schedule-graph-fuse sched)
+;    (schedule-graph-fuse sched) Minimize Proximity
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))
