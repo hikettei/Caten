@@ -617,6 +617,19 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
   (princ
    (with-output-to-string (out)
+     (princ "Blueprint(" out)
+     (let ((args (loop for arg in (graph-nodes graph)
+                       if (eql (node-type arg) :DEFINE-GLOBAL)
+                         collect (format nil "~a~(~a~)~a~a ~(~a~)"
+                                         (case (getattr arg :mode) (:read "const ") (otherwise ""))
+                                         (getattr arg :dtype)
+                                         (if (getattr arg :pointer-p) "*" "")
+                                         (if (getattr arg :pointer-p)
+                                             " restrict"
+                                             "")
+                                         (car (node-writes arg))))))
+       (format out "~{~a~^, ~}" args))
+     (princ ") " out)
      (labels ((indent () (make-string indent :initial-element #\space))
               (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
               (r (s &aux (val (id->value graph s)))
