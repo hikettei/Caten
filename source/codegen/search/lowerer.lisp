@@ -695,7 +695,9 @@
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
-        (->schedule-graph g)))))
+        (setf g (->schedule-graph g))
+        (verify-graph g)
+        g))))
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-item-apply-schedule (graph item &key (allow-fission nil) (keep-scop t))
   (declare (type Node item))
@@ -914,9 +916,14 @@
 ;; - [ ] DEFINE-GLOBALを経由した数，VRAM <-> SRAMの読み込みなどを表現, これをCost Functionにする？
 ;; - [ ] 各変数について，iPadに記したみたいなDataFlowGraphを作成する
 ;;  - [ ] Visualize!
+;; - [ ] うまくいけば途中でCSEせずにFusion続行？
+;; - [ ] Read/WriteUnionMapのアクセス ==> Sort(UnionMap)ができる性質があればOK
 ;; - [ ] ScheduleTreeとDataFlowGraphだけで判定して軽量化...はできる
 ;; - [ ] ScheduleTree/Read/WriteUMap ==> DataFlowGraph
 ;; - [ ] Simplify(DataFlowGraph)
+;;  - [ ] TILEしたらL1(DEFINE-GLOBAL) -> L2(more fater but small mem) -> L3(more ...) を明示的に作る？
+;; (***) ManySchedule vs OneFilterScheduleで，FusionはOneFilterScheduleを適切な場所でInsertする操作だと考える。
+;;   - こうすればReSCOPifyが必要なくなる！！
 (defun schedule-item-to-optrules ()
 
   )
