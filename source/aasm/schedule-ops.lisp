@@ -25,9 +25,9 @@
   (assert (null (graph-seen graph)) () "->schedule-graph: Partial graph should not be a schedule-graph! (remove graph-seen)")
   (verify-schedule-graph (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil))))
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun $affine (writes reads &key (polyhedron) (blueprint) (reduction))
-  (declare (type list writes reads))
-  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron :blueprint blueprint :reduction reduction)))
+(defun $affine (writes reads &key (polyhedron) (blueprint) (reduction) (storage-map (make-hash-table)))
+  (declare (type list writes reads) (type hash-table storage-map))
+  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron :blueprint blueprint :reduction reduction :storage-map storage-map)))
 
 (defun $nonaffine (writes reads &key (items))
   (declare (type list writes reads))
@@ -48,7 +48,7 @@
              :indent (+ indent 2))))
       (dolist (w (node-writes node))
         (indent (+ indent 2))
-        (format stream "~(~a~) = get_from_memory_pool(:~(~a~));~%" w w))
+        (format stream "~(~a~) = get_from_memory_pool(:~(~a~));~%" w (gethash w (getattr node :storage-map) w)))
       (princ sched stream)
       (indent) (format stream "}"))))
 

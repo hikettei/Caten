@@ -414,25 +414,17 @@
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
 ;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
-(defun lower-into-blueprint (gids iterspace items writes reads write-types read-types)
+;; - Symbolic Schedule Fix
+;; - Symbolic SCoP
+(defun lower-into-blueprint (storage-map id->bind gids iterspace items writes reads write-types read-types)
   (with-blueprint (:noopt t)
-    (loop for w in writes for wt in write-types do
-      (%global w (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
-    (loop for r in reads for rt in read-types do
-      (%global r (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt)))))
     (let ((binds)
           (loads)    ;; float acc_0 = 0.0f;
           (alus)     ;; for (int i=0; i<100; i++) acc_0 += ...;
           (stores)   ;; out[0] = acc_0;
           (caten/aasm/expr::*expr-no-simplify-mode* t)
           (id->load (make-hash-table))) ;; cache is created for each kernel
-      ;; [TODO]
-      ;; - [x] BIND Handling
-      ;; - [x] SETF+BIND Case Testing after Fusion
-      ;; - [ ] HERE: id->valueでArefに到達できるならArefへ書き込む。
-      ;; - Reduction (OK)
-      ;; - Symbolic Schedule Fix
-      ;; - Symbolic SCoP
+
       (labels ((sendexpr (expr)
                  (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                  (expr-out expr))
@@ -450,7 +442,7 @@
                          (let ((index (iter->index ri rt))
                                (tmpid (gensym "val_")))
                            (setf (gethash r id->load) tmpid)
-                           (push (cons (iterspace-depend-idx-list ri gids) (%aref r index :out tmpid)) loads)))
+                           (push (cons (iterspace-depend-idx-list ri gids) (%aref (gethash r id->bind r) index :out tmpid)) loads)))
                  ;; Reductions/Stores
                  (if (getattr item :reduction :allow-undefined t)
                      (let ((reduce-to (id->value *ctx* (gethash (car (node-reads item)) id->load))))
@@ -458,11 +450,11 @@
                        (let* ((type (read-type-relay item))
                               (w (car (node-writes item)))
                               (wi (car (relay-write-iters type)))
-                              (index (iter->index wi (car (relay-writes type))))
                               (r (car (node-reads item)))
                               (waypoint (gensym "WP"))
                               (tmp (gensym "R"))
-                              (tmp1 (gensym "TMP")))
+                              (tmp1 (gensym "TMP"))
+                              (tmp2 (gensym "TMP")))
                          ;; Reduction is lowered as:
                          ;; A <- Binary(B, C, reduction=T)
                          ;; ==>
@@ -473,10 +465,10 @@
                          (push (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
                          (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
                          (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
-                         ;; [TODO] Here
-                         ;; [TODO] Alternatively:
-                         ;; - [ ] Reductionの時はLoadを配置しない。
-                         (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) tmp1)) stores)))
+                         (let ((force-load (copy-item reduce-to)))
+                           (setf (node-writes force-load) (list (gensym "arf4rd")))
+                           (push (cons (iterspace-depend-idx-list wi gids) (%setf (emit force-load) tmp1 :out tmp2)) stores)
+                           (setf (gethash w id->bind) (car (node-reads item))))))
                       (loop for w in (node-writes item)
                             for wt in (relay-writes (read-type-relay item))
                             for wi in (relay-write-iters (read-type-relay item))
@@ -519,6 +511,14 @@
                            (loop for queue in stores for nth upfrom 0
                                  when (and queue (scope= queue gid))
                                    collect (progn (setf (nth nth stores) nil) (cdr queue)))))))
+          (flet ((e (id)
+                   (when (gethash id id->bind)
+                     (setf (gethash id storage-map) (gethash id id->bind)))
+                   (gethash id id->bind id)))
+            (loop for w in writes for wt in write-types do
+              (%global (e w) (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
+            (loop for r in reads for rt in read-types do
+              (%global (e r) (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt))))))
           (dolist (b binds) (emit b))
           (%progn (node->id body)))))))
 
@@ -591,7 +591,7 @@
       (setf (grids-writes grids) grid-writes*
             (grids-reads grids) grid-reads*))))
 
-(defun grids->schedule-item (graph grids val->grids)
+(defun grids->schedule-item (id->bind graph grids val->grids)
   (assert (grids-writes grids))
   (let ((grid-reads (map 'list #'car (grids-reads grids)))
         (grid-writes (map 'list #'car (grids-writes grids)))
@@ -618,18 +618,20 @@
            (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
            (group-size (permute-list order (car iterspace)))
            (__ (items-permute-all (grids-items grids) order))
-           (bp (lower-into-blueprint gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types))
+           (storage-map (make-hash-table))
+           (bp (lower-into-blueprint storage-map id->bind gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types))
            (has-reduce-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids))))
       (declare (ignore _ __))
       (setf bp (caten/aasm::%simplify-ast bp))
-      (caten/codegen/blueprint:print-blueprint bp t)
-      ;; [todo] reductionの第一引数はseparateする？
-      ;; [Note]
-      ;; Threefry Lowering
-      ($affine grid-writes grid-reads
-               :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
-               :blueprint bp
-               :reduction has-reduce-p))))
+      (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
+        ($affine grid-writes
+                 (loop for r in grid-reads
+                       if (find (gethash r storage-map r) args)
+                         collect r)
+                 :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
+                 :blueprint bp
+                 :reduction has-reduce-p
+                 :storage-map storage-map)))))
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [x] Rename: make-schedule-graph
@@ -686,9 +688,10 @@
              (setf (gethash (car w) val->grids) x)))
        (alexandria:hash-table-values id->grids))
       (let ((g
-              (loop for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
+              (loop with id->bind = (make-hash-table)
+                    for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
                     for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
-                    collect (grids->schedule-item graph grids val->grids))))
+                    collect (grids->schedule-item id->bind graph grids val->grids))))
         (assert (= n-scheduled (length (the list (graph-nodes graph)))))
         (setf g (apply #'make-graph g)
               (graph-outputs g) (copy-list (graph-outputs graph)))
@@ -713,7 +716,7 @@
            (args (loop for item in (graph-nodes kernel)
                        if (eql (node-type item) :DEFINE-GLOBAL)
                          collect (car (node-writes item)))))
-      (caten/codegen/blueprint:print-blueprint kernel t)
+      ;; (caten/codegen/blueprint:print-blueprint kernel t)
       (setf
        (node-writes item) (loop for w in (node-writes item) if (find w args) collect w)
        (node-reads item) (loop for r in (node-reads item) if (find r args) collect r)
@@ -724,13 +727,13 @@
                                   :opt-history (psi-opt-history (getattr item :polyhedron))))))
   item)
 
-(defun schedule-graph-apply-schedule (graph &key (allow-fission nil))
+(defun schedule-graph-apply-schedule (graph &key (allow-fission nil) (keep-scop t))
   "Recompute (out-of-date) blueprint w/ updated schedule."
   (declare (type ScheduleGraph graph))
   ;; [TODO] use lparallel:pdotimes, this can be parallelized.
   (dolist (item (graph-nodes graph))
     (when (eql (node-type item) :Affine)
-      (schedule-item-apply-schedule graph item :allow-fission allow-fission)))
+      (schedule-item-apply-schedule graph item :allow-fission allow-fission :keep-scop t)))
   (verify-graph graph)
   graph)
 ;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -815,6 +818,12 @@
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     ;; Step2. Fuse predecessors.
     ;; - Fuse remained elwise ops if not required by its children.
+    ;; [TODO]
+    ;; - [ ] 一旦この状態でScalarEliimnationを考える
+    ;; - [ ] will it compile?
+    ;; - [ ] MOVEがReduceの後にFuseされるということは，再利用がないということ。
+    ;; - [ ] how to deal w/ args?
+    ;; - [ ] 途中のCSEに頼るのを辞めたい
     (loop for sp = (pop unfused-ops)
           while sp for block = (list sp)
           if (eql (node-type sp) :Affine) do
@@ -822,7 +831,7 @@
               (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :partial))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
-    (assert (null unfused-ops))
+;    (assert (null unfused-ops))
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph
@@ -896,8 +905,7 @@
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
-   ; (schedule-graph-fuse sched)
+;    (schedule-graph-fuse sched)
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))
-
