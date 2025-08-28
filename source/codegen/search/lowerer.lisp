@@ -266,6 +266,7 @@
                     :views new-view
                     :procedure procedure)))))
       (dolist (n items)
+        (assert (= 1 (length (node-writes n))))
         (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
@@ -904,9 +905,19 @@
       (print (isl:schedule-get-root (psi-theta (getattr item :polyhedron))))
       (print (psi-read-union-map  (getattr item :polyhedron)))
       (print (psi-write-union-map  (getattr item :polyhedron)))
-      
-      ;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
+      ;;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
       )))
+;; Memo:
+;; - [ ] ISL = Schedule and Memory Access Separation
+;; - [ ] DataFlowGraph = MemoryAccessRelation+Schedule
+;; - [ ] ScheduleGraph <==> DataFlowGraph Constructionを実装する
+;;   - [ ] いや，BANDもしかしてBandがDEFINE-GLOBALなどに対応するのでは？
+;;   - [ ] ScheduleNodeBand: LV(BAND_DEPTH), AREA=512x512
+;; - [ ] DataFlowGraphから，FusionのStrategyを生成する方法の提案をしたい
+;; - [ ] やることを一般化し範囲を絞って言語化すると，サイズが大きいが速度が遅いN段階のメモリがある。これがブラックボックスだとして，自動でマッピングするモデルの構築
+;; - [ ] Reductionの後のMOVEを削除したほうがいいのでは？
+;;  - [ ] Matmul+Matmulしたときに，CHILDが直接Reductionになってほしい。
+
 ;; [TODO]
 ;; - [ ] Fusionをもう少し賢く実施したい。
 ;; - [ ] Memory Access Map => 依存違反で使うのではなく，最初からこれベースでもっと賢く実施
@@ -923,7 +934,15 @@
 ;; - [ ] Simplify(DataFlowGraph)
 ;;  - [ ] TILEしたらL1(DEFINE-GLOBAL) -> L2(more fater but small mem) -> L3(more ...) を明示的に作る？
 ;; (***) ManySchedule vs OneFilterScheduleで，FusionはOneFilterScheduleを適切な場所でInsertする操作だと考える。
+;;  - [ ] i.e.: SCC同士でFusionをする。Oneの方のPlaceableな地点のリストを列挙, あるいはManyの方に何らかの操作をして
 ;;   - こうすればReSCOPifyが必要なくなる！！
+;;  - [ ] TILEすると，AREF(GLOBAL_MEM_VAL, idx)が，AREF(GLOBAL_MEM_VAL, 0 <= idx <= TILE_SIZE)になる。
+;;   - 0 <= idx-parent_loop_idx <= 0+TILE_SIZE
+;;  - [ ] DataFlowGraphを実装する。これはSchedule, AST, どっちに対して実装するといい？
+;;    - [ ] => 多分ScheduleTree, ただしScheduleTreeをもう少し理解しないといけない。。。
+;; [DataFlowGraph]
+;; - [ ] ScheduleNodeBand, 各Bandの深さ=メモリ階層のLVL
+;; - [ ] ASTUserがどこに常に生成されるのか確認しないといけない。
 (defun schedule-item-to-optrules ()
 
   )
