@@ -19,6 +19,7 @@
    (:file "search/directive")
    (:file "search/schedule")
    (:file "search/polyhedral")
+   (:file "search/database")
    (:file "search/perf")
    (:file "search/optimization-rule")
    (:file "search/ast")
