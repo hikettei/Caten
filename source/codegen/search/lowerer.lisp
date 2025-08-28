@@ -898,8 +898,8 @@
   (dolist (item (tpsort-graph graph))
     (when (eql (node-type item) :Affine)
       (print (isl:schedule-get-root (psi-theta (getattr item :polyhedron))))
-      (print (psi-read-union-map  (getattr item :polyhedron)))
-      (print (psi-write-union-map  (getattr item :polyhedron)))
+      ;(print (psi-read-union-map  (getattr item :polyhedron)))
+      ;(print (psi-write-union-map  (getattr item :polyhedron)))
       ;;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
       )))
 ;; Memo:

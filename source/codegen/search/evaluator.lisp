@@ -45,7 +45,7 @@ MeasurerWorkflow
     ;; - [ ] 入力データについてどうしよう。ZeroDivisionが起こるかもしれない
     ;; - [ ] Where, 条件分岐を含む実装についてはもっと難しい。PayneHanekなど
     (loop for kernel in kernels
-          for kernel-id = (caten/codegen/renderer:make-kernel-description kernel :version (slot-value evaluator 'version) :getraw nil)
+          for kernel-id = (caten/codegen/diskcache:make-kernel-description kernel :version (slot-value evaluator 'version) :getraw nil)
           for cache = (gethash kernel-id (dm-cache evaluator))
           if cache sum cache
             ;; [TODO] True Evaluation!, version --> n_evaluation, etc

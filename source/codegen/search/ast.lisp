@@ -589,9 +589,9 @@ Return (value (list kernels) tmp-buffer-allocations)
           (setf str (subseq str 0 (- (length str) 2))) ;; remove newline
           (setf str (format nil "~a{ ~{~a~^, ~} = ~a(~{~a~^, ~}) };"
                             (subseq str (length name))
-                            (caten/codegen/search/schedule::umap-get-set-list-on-id write-umap name)
+                            (caten/codegen/search/schedule:umap-get-set-list-on-id write-umap name)
                             name
-                            (caten/codegen/search/schedule::umap-get-set-list-on-id read-umap name)))
+                            (caten/codegen/search/schedule:umap-get-set-list-on-id read-umap name)))
           (isl::%isl-ast-node-set-annotation ast-node (isl::identifier-handle (isl::make-id-from-str str))))
         ast-node)))
 

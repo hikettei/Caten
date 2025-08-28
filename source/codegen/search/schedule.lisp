@@ -41,7 +41,8 @@
    #:schedule-node-sequence-reorder
    #:schedule-node-sequence-tpsort
    #:schedule-node-sequence-group-sequence
-   #:schedule-compute-parallel))
+   #:schedule-compute-parallel
+   #:umap-get-set-list-on-id))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -1061,9 +1062,24 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
     (let ((dom-name (isl::set-get-tuple-name (isl::map-domain map))))
       (when (string= dom-name id)
         (let* ((expr (isl::%isl-map-to-str (isl::map-handle map)))
-               (pos  (position (aref ">" 0) expr)))
-          (push (if pos (string-downcase (subseq expr (+ 2 pos) (- (length expr) 2))) "?(Unprintable)") *stmt-pair-result*)))))
+               (pos  (position (aref ">" 0) expr))
+               (pos1 (when pos (position (aref "[" 0) expr :start pos)))
+               (pos2 (when pos (position (aref "]" 0) expr :start pos)))
+               (var   (when (and pos pos1) (subseq expr (+ 2 pos) pos1)))
+               (index (when (and pos1 pos2) (subseq expr (1+ pos1) pos2))))
+          (assert (and var index) () "umap-get-set-list-on-id: Couldn't extract this map: ~a" map)
+          (push (cons var index) *stmt-pair-result*)))))
   0)
+(defun umap-get-set-list-on-id (umap filter &key (wrapper-dom #'string-downcase) (wrapper-ran #'(lambda (x) (format nil "[~a]" x))))
+  (declare (type string filter) (type isl::union-map umap))
+  (let ((*stmt-pair-result*))
+    (cffi:with-foreign-object (str* :string)
+      (setf (cffi:mem-ref str* :string) filter)
+      (isl::%isl-union-map-foreach-map
+       (isl::union-map-handle umap)
+       (cffi:callback push-map-on-id)
+       str*))
+    (map 'list #'(lambda (x) (format nil "~a~a" (funcall wrapper-dom (car x)) (funcall wrapper-ran (cdr x)))) *stmt-pair-result*)))
 ;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (progn ;; foreach-map

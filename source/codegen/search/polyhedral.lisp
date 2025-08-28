@@ -15,6 +15,7 @@
    #:psi-clone-for-next-generation
    #:psi-verify-legality
    #:psi.
+   #:extract-accesses
    ))
 (in-package :caten/codegen/search/polyhedral)
 
@@ -175,15 +176,17 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (setf (gethash visible-name (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
       access)))
 
-(defun render-access-for-node (ctx node loops buffers index blueprint &key (scal->array t))
+(defun render-access-for-node (ctx node loops buffers index blueprint &key (scal->array t) (getlisp))
   "Render access relation for a single node"
   (multiple-value-bind (visible-id graph-id) (values (car buffers) (cdr buffers))
     (declare (ignore visible-id))
     (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
-      (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id
-              (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops) :scal->array scal->array))))))
+      (if getlisp
+          (list (node-id node) graph-id (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops) :scal->array scal->array)))
+          (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id
+                  (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops) :scal->array scal->array)))))))
 
-(defun extract-accesses (ctx blueprint &key (scal->array t) &aux (reads) (writes))
+(defun extract-accesses (ctx blueprint &key (scal->array t) (getlisp) &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) ctx
     (loop for expr in (reverse exprs) ;; found earlier -> later
@@ -199,22 +202,24 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                  (assert (= 1 (length write-region)))
                  (dolist (w write-region)
                    (let ((macc (cons (caar w) (caar w)))) ;; visible as (caar w) but internally expr.writes[0]
-                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint :scal->array scal->array) writes)))
+                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint :scal->array scal->array :getlisp getlisp) writes)))
                  (dolist (r read-region)
-                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array) reads))))
+                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array :getlisp getlisp) reads))))
                (otherwise ;; // EXPR
                 (let ((read-region (extract-buffer-access-info (car (node-reads expr)) blueprint)))
                   (push
                    (render-access-for-node
                     ctx expr expr-domain
                     (cons (car (node-writes expr)) (car (node-writes expr))) nil blueprint
-                    :scal->array scal->array)
+                    :scal->array scal->array :getlisp getlisp)
                    writes)
                   (dolist (r read-region)
-                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array) reads))))))
-    (cons
-     (format nil "{ ~{~a~^; ~} }" (reverse reads))
-     (format nil "{ ~{~a~^; ~} }" (reverse writes)))))
+                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array :getlisp getlisp) reads))))))
+    (if getlisp
+        (cons reads writes)
+        (cons
+         (format nil "{ ~{~a~^; ~} }" (reverse reads))
+         (format nil "{ ~{~a~^; ~} }" (reverse writes))))))
 
 (defun render-band-node-in-domain (range-node related-nodes loop-info &aux (idx (getattr range-node :idx)))
   (declare (type node range-node) (type list related-nodes) (type hash-table loop-info))

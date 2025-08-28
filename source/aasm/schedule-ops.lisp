@@ -25,9 +25,10 @@
   (assert (null (graph-seen graph)) () "->schedule-graph: Partial graph should not be a schedule-graph! (remove graph-seen)")
   (verify-schedule-graph (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil))))
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun $affine (writes reads &key (polyhedron) (blueprint) (reduction) (storage-map (make-hash-table)))
+(defun $affine (writes reads &key (polyhedron) (blueprint) (reduction) (storage-map (make-hash-table))
+                               (dbkey (uiop:symbol-call :caten/codegen/diskcache :make-diskcache-entry blueprint)))
   (declare (type list writes reads) (type hash-table storage-map))
-  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron :blueprint blueprint :reduction reduction :storage-map storage-map)))
+  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron :blueprint blueprint :reduction reduction :storage-map storage-map :dbkey dbkey)))
 
 (defun $nonaffine (writes reads &key (items))
   (declare (type list writes reads))
@@ -47,6 +48,7 @@
                :psi-theta (getattr node :polyhedron)))
              :polyhedron (getattr node :polyhedron)
              :indent (+ indent 2))))
+      (when (getattr node :dbkey) (indent (+ indent 2)) (format stream "[identity:~a]~%" (getattr node :dbkey)))
       (dolist (w (node-writes node))
         (indent (+ indent 2))
         (format stream "~(~a~) = get_from_memory_pool(:~(~a~));~%" w (gethash w (getattr node :storage-map) w)))
