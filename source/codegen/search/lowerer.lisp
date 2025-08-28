@@ -916,6 +916,7 @@
 ;;  - [ ] Visualize!
 ;; - [ ] ScheduleTreeとDataFlowGraphだけで判定して軽量化...はできる
 ;; - [ ] ScheduleTree/Read/WriteUMap ==> DataFlowGraph
+;; - [ ] Simplify(DataFlowGraph)
 (defun schedule-item-to-optrules ()
 
   )

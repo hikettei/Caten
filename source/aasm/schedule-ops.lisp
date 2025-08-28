@@ -51,6 +51,8 @@
         (indent (+ indent 2))
         (format stream "~(~a~) = get_from_memory_pool(:~(~a~));~%" w (gethash w (getattr node :storage-map) w)))
       (princ sched stream)
+      (indent (+ indent 2)) (format stream "return ~(~a~);" (render-list (node-writes node)))
+      (format stream "~%")
       (indent) (format stream "}"))))
 
 (defmethod print-schedule ((node Node) (id (eql :NonAffine)) stream indent)

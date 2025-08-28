@@ -587,7 +587,7 @@ Return (value (list kernels) tmp-buffer-allocations)
 	       (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
           (assert name)
           (setf str (subseq str 0 (- (length str) 2))) ;; remove newline
-          (setf str (format nil "{~a -> ~{~a~^, ~} <- ~a(~{~a~^, ~})};"
+          (setf str (format nil "~a{ ~{~a~^, ~} = ~a(~{~a~^, ~}) };"
                             (subseq str (length name))
                             (caten/codegen/search/schedule::umap-get-set-list-on-id write-umap name)
                             name
