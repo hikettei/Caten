@@ -899,9 +899,27 @@
   (declare (type ScheduleGraph graph))
   (dolist (item (tpsort-graph graph))
     (when (eql (node-type item) :Affine)
-      (caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t))))
-;; 1. これ実装したらcodegen置き換える
-;; 2. API作り直し(BEAM Cache)
+      (print (isl:schedule-get-root (psi-theta (getattr item :polyhedron))))
+      (print (psi-read-union-map  (getattr item :polyhedron)))
+      (print (psi-write-union-map  (getattr item :polyhedron)))
+      
+      ;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
+      )))
+;; [TODO]
+;; - [ ] Fusionをもう少し賢く実施したい。
+;; - [ ] Memory Access Map => 依存違反で使うのではなく，最初からこれベースでもっと賢く実施
+;; - [ ] ReSCoP, CSEを最初と最後の一回のみにしたい。
+;; - [ ] UnionMapとScheduleからどこに融合するかって一発で作れそうなもんに見える
+;; - [ ] DataFlowGraphを作成
+;; - [ ] DEFINE-GLOBALを経由した数，VRAM <-> SRAMの読み込みなどを表現, これをCost Functionにする？
+;; - [ ] 各変数について，iPadに記したみたいなDataFlowGraphを作成する
+;;  - [ ] Visualize!
+;; - [ ] ScheduleTreeとDataFlowGraphだけで判定して軽量化...はできる
+;; - [ ] ScheduleTree/Read/WriteUMap ==> DataFlowGraph
+(defun schedule-item-to-optrules ()
+
+  )
+;; Visualizeが大事？
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))

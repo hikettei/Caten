@@ -1051,11 +1051,20 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
     (isl::schedule-handle (isl::__isl_take schedule))
     (cffi:callback schedule/compute-parallel)
     (isl::union-map-handle (isl::__isl_take deps)))))
+
+;; ~~ umap-get-set-list-on-id ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *stmt-pair-result* nil)
+(cffi:defcallback push-map-on-id :int
+    ((map :pointer) (id :pointer))
+  (let ((map (isl::%make-map map))
+        (id  (cffi:mem-ref id :string)))
+    (let ((dom-name (isl::set-get-tuple-name (isl::map-domain map))))
+      (when (string= dom-name id)
+        (let* ((expr (isl::%isl-map-to-str (isl::map-handle map)))
+               (pos  (position (aref ">" 0) expr)))
+          (push (if pos (string-downcase (subseq expr (+ 2 pos) (- (length expr) 2))) "?(Unprintable)") *stmt-pair-result*)))))
+  0)
 ;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
-
-
-
-
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (progn ;; foreach-map
   (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil

@@ -45,6 +45,7 @@
               (uiop:symbol-call
                :caten/codegen/search/polyhedral
                :psi-theta (getattr node :polyhedron)))
+             :polyhedron (getattr node :polyhedron)
              :indent (+ indent 2))))
       (dolist (w (node-writes node))
         (indent (+ indent 2))
