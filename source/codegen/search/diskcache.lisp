@@ -1,11 +1,11 @@
 (defpackage :caten/codegen/diskcache
   (:use :cl :caten/air :caten/codegen/renderer :caten/codegen/search/polyhedral :caten/codegen/search/schedule)
   (:export
-
+   #:make-kernel-description
    ))
 
 (in-package :caten/codegen/diskcache)
-
+;; ~~ CreateIdentity ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sha256-hex (string)
   (ironclad:byte-array-to-hex-string
    (ironclad:digest-sequence :sha256 (babel:string-to-octets string :encoding :utf-8))))
@@ -97,7 +97,7 @@
          (format out ",\"body\":")
          (f (id->value graph (car (graph-outputs graph))))
          (format out "}"))))))
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [Workload]
 ;; - [ ] 1. $Affine ==> FusionKeyのMappingを実装
 ;; - [ ] 2. ILP Basedで計算量が大きいFusionを実施するか，Valueを (Item Relocate Basedで実装)
@@ -111,17 +111,24 @@
 ;; - ScheduleNode YAML
 ;; - UnionMap YAML
 ;; -
+;; ShapeTrackerCache: UNION(PREV_CACHE, POST_CACHE) = RESULT
+(defparameter *db-connection* nil)
+
 
 (defclass DBEntry ()
-  ((device :initarg :device :accessor dbentry-device)
-   (sched-id :initarg :sha256/sched :type string :accessor dbentry-sched-id)
-   (graph-id :initarg :sha256/graph :type string :accessor dbentry-graph-id)))
+  ((device :initarg :device :accessor dbentry-device :col-type (:varchar 32))
+   (st :initarg :sha256/sched :col-type (:varchar 64) :accessor dbentry-st-id)
+   (graph-id :initarg :sha256/graph :col-type (:varchar 64) :accessor dbentry-graph-id))
+  (:metaclass mito:dao-table-class))
 
 (defmethod print-object ((db DBEntry) stream)
   (flet ((cutoff (obj) (format nil "~a..." (subseq obj 0 (min (length obj) 7)))))
-    (format stream "device=~a/poly=~a/bp=~a" (dbentry-device db) (cutoff (dbentry-sched-id db)) (cutoff (dbentry-graph-id db)))))
+    (format stream "device=~a/st=~a/bp=~a" (dbentry-device db) (cutoff (dbentry-st-id db)) (cutoff (dbentry-graph-id db)))))
 
-(defun db-connection ())
+(defun db-connection (&key (path (ctx:getenv :DB_PATH)))
+  (when (null *db-connection*)
+    (setf *db-connection* (dbi:connect :sqlite3 :database-name (pathname path))))
+  *db-connection*)
 (defun diskcache-get ())
 (defun diskcache-set ())
 (defun diskcache-clean())
@@ -130,6 +137,6 @@
   (declare (type FastGraph blueprint))
   (make-instance
    'DBEntry
-   :device (ctx:getenv :BACKEND)
+   :device (princ-to-string (ctx:getenv :BACKEND))
    :sha256/sched (make-kernel-description blueprint :getraw nil :cache-polyhedral t)
    :sha256/graph (make-kernel-description blueprint :getraw nil)))

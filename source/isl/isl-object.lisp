@@ -70,7 +70,7 @@ of type OBJECT-NAME."
     (setf (isl-object-%copy name) %copy)
     (setf (isl-object-%make name) %make)
     (setf (isl-object-%free name) %free)
-    `(progn
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
        (defstruct (,name (:include ,superclass)
                          (:predicate ,predicate)
                          (:copier nil)

@@ -187,6 +187,10 @@ Usage:
     (:NO_MEMORY_PLANNER
      0 :int #.(oneof "NO_MEMORY_PLANNER" 0 `(0 1))
      "Set 1 to disable the memory planner by the codegen.")
+    ;; CACHE
+    (:DB_PATH
+     "/tmp/caten.db" :string identity
+     "A path to create schedule cache. set :memory: to save to RAM")
     ;; ~~ BEAM Search ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     (:BEAM
      1 :int identity

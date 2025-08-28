@@ -22,7 +22,7 @@
   (check-type name symbol)
   (check-type primitive symbol)
   (let ((args (parse-isl-args args)))
-    `(progn
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
        (export ',name)
        (declaim
         (ftype
