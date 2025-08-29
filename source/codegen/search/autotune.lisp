@@ -242,6 +242,7 @@ a performance."
                          (progn
                            (print "FAILED")
                            (print last-item)
+                           (caten/codegen/dataflow::make-dataflow-graph (psi-theta last-item) (psi-read-union-map last-item) (psi-write-union-map last-item))
                            nil)
                          (progn
                            (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
