@@ -647,6 +647,10 @@
   (:give union-map)
   (:take union-map))
 
+(define-isl-function union-map-gist-range %isl-union-map-gist-range
+  (:give union-map)
+  (:take union-map)
+  (:take union-set))
 ;; (map, map) -> map
 (macrolet ((def (name impl)
              `(define-isl-function ,name ,impl

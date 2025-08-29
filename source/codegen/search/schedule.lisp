@@ -44,7 +44,9 @@
    #:schedule-compute-parallel
    #:umap-get-set-list-on-id
    #:%foreach-map
-   #:%foreach-set))
+   #:%foreach-set
+   #:align-params/umap
+   #:align-params/uset))
 
 (in-package :caten/codegen/search/schedule)
 
