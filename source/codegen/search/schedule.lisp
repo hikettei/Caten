@@ -42,7 +42,9 @@
    #:schedule-node-sequence-tpsort
    #:schedule-node-sequence-group-sequence
    #:schedule-compute-parallel
-   #:umap-get-set-list-on-id))
+   #:umap-get-set-list-on-id
+   #:%foreach-map
+   #:%foreach-set))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -1080,8 +1082,7 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
        (cffi:callback push-map-on-id)
        str*))
     (map 'list #'(lambda (x) (format nil "~a~a" (funcall wrapper-dom (car x)) (funcall wrapper-ran (cdr x)))) *stmt-pair-result*)))
-;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
-;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 (progn ;; foreach-map
   (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil
   (cffi:defcallback %each-map-cb :int ((mp :pointer) (user :pointer))
@@ -1096,6 +1097,24 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
        (isl::union-map-handle umap)
        (cffi:callback %each-map-cb)
        (cffi:null-pointer)))))
+
+(progn ;; foreach-set
+  (defparameter *%foreach-set-fn* nil)  ; dynamic: (map) -> nil
+  (cffi:defcallback %each-set-cb :int ((mp :pointer) (user :pointer))
+    (declare (ignore user))
+    ;; Call user-supplied Lisp function on a wrapped isl_map
+    (when *%foreach-set-fn* (funcall *%foreach-set-fn* (isl::%make-set mp)))
+    0)
+  (defun %foreach-set (uset fn)
+    "Iterate with ISL's foreach_map. Requires top-level defcallback."
+    (let ((*%foreach-set-fn* fn))
+      (isl::%isl-union-set-foreach-set
+       (isl::union-set-handle uset)
+       (cffi:callback %each-set-cb)
+       (cffi:null-pointer)))))
+;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
+;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ;;; 便利ラッパ（必要なら）
 (defun print-global-dim-dependency-graph (schedule reads writes)
   (dolist (e (build-global-dim-dependency-graph schedule reads writes))

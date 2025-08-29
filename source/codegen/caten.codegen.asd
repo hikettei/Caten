@@ -24,6 +24,7 @@
    (:file "search/optimization-rule")
    (:file "search/ast")
    (:file "search/evaluator")
+   (:file "search/dataflow")
    (:file "search/autotune")
    (:file "search/lowerer")
    

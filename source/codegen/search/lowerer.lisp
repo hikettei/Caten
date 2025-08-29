@@ -762,11 +762,11 @@
     ;; [TODO] childに含まれている各Domainをどこに挿入するか，という問題に変える
     ;; もっと言えば順序付けしない
     ;; AffineにPrintされてる情報でCacheを作成できる
-    ;; - [ ] 1. Cacheを実装する
+    ;; - [x] 1. Cacheを実装する
     ;; - [ ] 2. 少しHeavyなILPベースでFusionを実施する
     ;; - [ ] 3. ある程度データが集まったら，検索ベースでFusionを実施するアルゴリズムを作る
     ;; Parent/Childは同一RankのTensor操作だと仮定する
-    (let ((fused (ILP/SolveProximity (m parent) (m child) :mode mode)))
+    (let ((fused (ILP/SolveProximity (m parent) (m child))))
       (when fused
         (merge-affine parent child fused)))))
 
@@ -798,7 +798,6 @@
     (dolist (w (node-writes fused)) (remnode graph w))
     (insert-nodes graph (list fused))
     (verify-graph graph)
-    (setf fused (schedule-item-apply-schedule graph fused :allow-fission nil)) ;; [TODO] is it slow?
     (setf block (nconc block sucs))
     (dolist (w (node-writes fused))
       (setf fused (fuse-successor unfused-ops graph fused (id->users graph w) block :mode mode)))
@@ -830,6 +829,7 @@
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     (assert (null unfused-ops))
+    (schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow?
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph
@@ -897,7 +897,10 @@
   (declare (type ScheduleGraph graph))
   (dolist (item (tpsort-graph graph))
     (when (eql (node-type item) :Affine)
-      (print (isl:schedule-get-root (psi-theta (getattr item :polyhedron))))
+;;      (print (isl:schedule-get-root (psi-theta (getattr item :polyhedron))))
+      (print (caten/codegen/dataflow::make-dataflow-graph (psi-theta (getattr item :polyhedron))
+                                                          (psi-read-union-map (getattr item :polyhedron))
+                                                          (psi-write-union-map (getattr item :polyhedron))))
       ;(print (psi-read-union-map  (getattr item :polyhedron)))
       ;(print (psi-write-union-map  (getattr item :polyhedron)))
       ;;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
@@ -956,7 +959,7 @@
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
-;    (schedule-graph-fuse sched) Minimize Proximity
+    (schedule-graph-fuse sched) Minimize Proximity
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))

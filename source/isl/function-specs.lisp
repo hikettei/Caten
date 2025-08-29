@@ -370,7 +370,11 @@
 
 (export 'set-dim-max)
 (defun set-dim-max (set dim)
-  (%make-set (%isl-set-dim-max (set-handle (__isl_take set)) dim)))
+  (%make-pw-aff (%isl-set-dim-max (set-handle (__isl_take set)) dim)))
+
+(export 'set-dim-min)
+(defun set-dim-min (set dim)
+  (%make-pw-aff (%isl-set-dim-min (set-handle (__isl_take set)) dim)))
 
 (export 'set-dim)
 (defun set-dim (set type)
@@ -1169,6 +1173,10 @@
   (:give ast-expr)
   (:take value))
 
+(define-isl-function ast-expr-from-id %isl-ast-expr-from-id
+  (:give ast-expr)
+  (:take identifier))
+
 (define-isl-function create-ast-expr-from-add %isl-ast-expr-add
   (:give ast-expr)
   (:take ast-expr)
@@ -1233,6 +1241,16 @@
   (:give ast-build)
   (:parm context *context*))
 
+(define-isl-function ast-build-expr-from-set %isl-ast-build-expr-from-set
+  (:give ast-expr)
+  (:keep ast-build)
+  (:take set))
+
+(define-isl-function ast-build-expr-from-pw-aff %isl-ast-build-expr-from-pw-aff
+  (:give ast-expr)
+  (:keep ast-build)
+  (:take pw-aff))
+
 (define-isl-function ast-build-from-context %isl-ast-build-from-context
   (:give ast-build)
   (:take set))
@@ -1267,6 +1285,10 @@
 (define-isl-function schedule-get-root %isl-schedule-get-root
   (:give schedule-node)
   (:keep schedule))
+
+(define-isl-function schedule-node-domain-get-domain %isl-schedule-node-domain-get-domain
+  (:give union-set)
+  (:keep schedule-node))
 
 (define-isl-function schedule-node-graft-after %isl-schedule-node-graft-after
   (:give schedule-node)

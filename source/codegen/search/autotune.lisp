@@ -208,7 +208,7 @@ a performance."
       ;; - [ ] 
       (loop while t do (generate)))))
 
-(defun ILP/SolveProximity (polyhedral &key (mode :full))
+(defun ILP/SolveProximityOld (polyhedral &key (mode :full))
   (declare (type Polyhedral-Schedule-Item polyhedral) (type (member :full :partial) mode))
   (ecase mode
     (:full
@@ -216,3 +216,34 @@ a performance."
       (ILP/SolveProximity[Partial] polyhedral)
       (ILP/SolveProximity[Full] polyhedral)))
     (:partial (ILP/SolveProximity[Partial] polyhedral))))
+
+(defun ILP/SolveProximity (dst src)
+  ;; 0. CostModelを作成する
+  ;; - ついでに可視化できるように，ScheduleTree => MovementGraph
+  ;; 1. DSTのみにTransformationをする
+  ;; 2. [TODO] Shapeを隠した上でCacheする？
+  ;; 3. Transposeを複数回生成する
+  ;; 4. DBの脆弱性に注意
+  ;; (format t "[INFO] Solving ILP ...~%")
+  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (psi. dst src)))))
+    (labels ((generate (&aux (prev-items (sgt-items gen0)))
+               ;; Search Valid Permutation, Reshape, and Fusion
+               (sgt-apply-transformations
+                gen0
+                '(:Transpose :Reshape :Fuse))
+               (when (> (length (sgt-items gen0)) 1)
+                 (warn "ILP/SolveProximity[Partial]. The exploration space generated multiple candidates. (Selecting first one)")
+                 (setf (sgt-items gen0) (list (car (sgt-items gen0)))))
+               (when (null (sgt-items gen0))
+                 (let ((last-item (car prev-items)))
+                   (return-from
+                    ILP/SolveProximity
+                     (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
+                         (progn
+                           (print "FAILED")
+                           (print last-item)
+                           nil)
+                         (progn
+                           (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
+                           last-item)))))))
+      (loop while t do (generate)))))

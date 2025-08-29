@@ -1,7 +1,11 @@
 (defpackage :caten/codegen/diskcache
   (:use :cl :caten/air :caten/codegen/renderer :caten/codegen/search/polyhedral :caten/codegen/search/schedule)
   (:export
+   #:DBEntry
+   #:*db-connection*
+   #:db-connection
    #:make-kernel-description
+   #:make-diskcache-entry
    ))
 
 (in-package :caten/codegen/diskcache)
@@ -114,12 +118,16 @@
 ;; ShapeTrackerCache: UNION(PREV_CACHE, POST_CACHE) = RESULT
 (defparameter *db-connection* nil)
 
-
 (defclass DBEntry ()
   ((device :initarg :device :accessor dbentry-device :col-type (:varchar 32))
    (st :initarg :sha256/sched :col-type (:varchar 64) :accessor dbentry-st-id)
    (graph-id :initarg :sha256/graph :col-type (:varchar 64) :accessor dbentry-graph-id))
   (:metaclass mito:dao-table-class))
+
+(mito:deftable ShapeTraker ()
+  ((parent :col-type (:varchar 64))
+   (child  :col-type (:varchar 64))
+   (result :col-type :text)))
 
 (defmethod print-object ((db DBEntry) stream)
   (flet ((cutoff (obj) (format nil "~a..." (subseq obj 0 (min (length obj) 7)))))
@@ -129,14 +137,22 @@
   (when (null *db-connection*)
     (setf *db-connection* (dbi:connect :sqlite3 :database-name (pathname path))))
   *db-connection*)
-(defun diskcache-get ())
-(defun diskcache-set ())
-(defun diskcache-clean())
+
+(defun diskcache-clean ())
+
+(defun diskcache-get (entry &key (keys '(:device :st :graph-id)))
+  (declare (type DBEntry entry))
+  
+  )
+
+(defun diskcache-set ()
+
+  )
 
 (defun make-diskcache-entry (blueprint)
   (declare (type FastGraph blueprint))
   (make-instance
    'DBEntry
    :device (princ-to-string (ctx:getenv :BACKEND))
-   :sha256/sched (make-kernel-description blueprint :getraw nil :cache-polyhedral t)
-   :sha256/graph (make-kernel-description blueprint :getraw nil)))
+   :sha256/sched (make-kernel-description blueprint :getraw nil :cache-polyhedral t) ;; Cache ShapeTracker
+   :sha256/graph (make-kernel-description blueprint :getraw nil))) ;; Cache Kernel (Same ID = Same Computation)
