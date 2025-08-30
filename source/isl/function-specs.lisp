@@ -1186,9 +1186,9 @@
   (:take ast-expr)
   (:take ast-expr))
 ;;;; ASTNode
-(define-isl-function node-get-type %isl-ast-node-get-type
-  (:give ast-expr-type)
-  (:keep ast-node))
+(export 'ast-node-get-type)
+(defun ast-node-get-type (ast-node)
+  (%isl-ast-node-get-type (ast-node-handle ast-node)))
 
 (macrolet ((def (name impl)
              `(define-isl-function ,name ,impl
