@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/dataflow
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/isl :caten/air :caten/aasm :caten/codegen/search/schedule)
+  (:use :cl :caten/isl :caten/air :caten/aasm :caten/codegen/search/schedule :caten/codegen/search/ast)
   (:export))
 (in-package :caten/codegen/dataflow)
 
@@ -122,12 +122,13 @@
                            (A1  (align-params/umap A0 model))
                            (A1  (union-map-intersect-domain A1 Dom1))
                            (F   (union-map-apply-range (union-map-reverse S) A1))
-                           (Ainv (union-map-reverse A1))             
+                           (Ainv (union-map-reverse A1))        
                            (F-iter (union-map-apply-range F Ainv))   
                            (F-iter (union-map-intersect-range F-iter Dom1))
                            (F-iter (union-map-coalesce F-iter))
                            (F-iter (union-map-detect-equalities F-iter))
                            (F-iter (union-map-gist-range F-iter Dom1)))
+                      ;; 各変数のメモリアクセス一次元だった！
                       (format t "~&[Band] T->D F_iter=~a~%" F-iter))
                     (explore (schedule-node-first-child node)
                              (make-scope :domain (scope-domain scope) :schedule theta))))
@@ -143,7 +144,8 @@
            (schedule-node-band-tile
             band
             (tiling-size band 4)))))
-  (%make-dataflow-graph schedule read write))
+  (print (time (caten/codegen/search/ast::compute-ast-from-schedule schedule)))
+  (time (%make-dataflow-graph schedule read write)))
 ;; DataFlowGraph Specs
 ;; - BAND
 ;; - LoopIn
