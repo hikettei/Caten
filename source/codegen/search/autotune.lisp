@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/search/autotune
   (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc :caten/codegen/search/evaluator
-        :caten/codegen/search/optimization-rule)
+        :caten/codegen/search/optimization-rule :caten/codegen/search/schedule)
   (:export
    #:ILP/Search
    #:ILP/SolveProximity
@@ -153,98 +153,41 @@ BEAM Search Workflow:
           )
         t))))
 
-(defun ILP/SolveProximity[Partial] (polyhedral)
-  "Search a full-fused version of polyhedral w/ assuming each fusion has 100% beneficial.
-While [Full] Solver provides wider exploration space, [Partial] restricts path for performance."
-  (declare (type Polyhedral-Schedule-Item polyhedral))
-  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
-    (labels ((generate (&aux (prev-items (sgt-items gen0)))
-               ;; Search Valid Permutation, Reshape, and Fusion
+;; MCFusion w/ DB Like Approach
+;; Reduction ==> MemoryIntensive
+
+;; [TODO] Make it general beam search function
+;; S1(i, j)    => S(j, i)
+;; S2(i, j, k) => S(j, i, k)
+;; Restrict Search Space by doing:
+;; Many vs One Fusion only
+;; Ref: https://arxiv.org/pdf/2505.07829
+;;(let ((tg (tensor-lowered-graph (!matmul (make-tensor `(256 512)) (!matmul (make-tensor `(512 1024)) (make-tensor `(1024 2048)))))))
+;;              (time (caten/codegen/lowerer::codegen tg)))
+
+(defun ILP/SolveProximity (parent child &key (fuse-into :parent))
+  (declare (type Polyhedral-Schedule-Item parent child))
+  (let* ((root (psi. parent child))
+         (perm* (caten/codegen/search/schedule::schedule-compute-dim-equalities-graph (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent))))
+    (print "fusion")
+    (print root)
+    (print perm*))
+  nil)
+
+(defun a ()
+  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (psi. parent child)))))
+    ;; BEAM Search+CostModelで実施
+    ;;
+    ;; Childは常にSingle STMT
+    ;; Exploration Space:
+    ;; - Interchange
+    ;; - FUSE
+    ;; - COMPUTE_AT
+    (print "Search for Cacheable Fusion Pattern!")
+    (print (psi. parent child))
+    (labels ((beam (&aux (prev-items (sgt-items gen0)))
                (sgt-apply-transformations
                 gen0
-                '(:Transpose :Reshape :Fuse))
-               (when (> (length (sgt-items gen0)) 1)
-                 (warn "ILP/SolveProximity[Partial]. The exploration space generated multiple candidates. (Selecting first one)")
-                 (setf (sgt-items gen0) (list (car (sgt-items gen0)))))
-               (when (null (sgt-items gen0))
-                 (let ((last-item (car prev-items)))
-                   (return-from
-                    ILP/SolveProximity[Partial]
-                     (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
-                         (progn
-                           (print "FAILED")
-                           (print last-item)
-                           nil)
-                         (progn
-                           (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
-                           last-item)))))))
-      (loop while t do (generate)))))
+                nil)))
 
-(defun ILP/SolveProximity[Full] (polyhedral)
-  "Generates a full-fused version of polyhedral. It has wider loop transformations compared to [Partial]
-Solver one of which is not known to improve the performance. [Full] Solver explores it w/ measuring
-a performance."
-  (declare (type Polyhedral-Schedule-Item polyhedral))
-  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
-    (labels ((generate (&aux (prev-items (sgt-items gen0)))
-               ;; Search Valid Permutation, Reshape, and Fusion
-               (sgt-apply-transformations
-                gen0
-                '(:Transpose :Reshape :Fuse))
-               (when (> (length (sgt-items gen0)) 1)
-                 (warn "ILP/SolveProximity[Partial]. The exploration space generated multiple candidates. (Selecting first one)")
-                 (setf (sgt-items gen0) (list (car (sgt-items gen0)))))
-               (when (null (sgt-items gen0))
-                 (let ((last-item (car prev-items)))
-                   (return-from
-                    ILP/SolveProximity[Full]
-                     (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
-                         nil
-                         (progn
-                           (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
-                           last-item)))))))
-      ;; [TODO] FullSpaceを実装する
-      ;; - [ ] Reduction: Relocate to the outermost
-      ;; - [ ] 
-      (loop while t do (generate)))))
-
-(defun ILP/SolveProximityOld (polyhedral &key (mode :full))
-  (declare (type Polyhedral-Schedule-Item polyhedral) (type (member :full :partial) mode))
-  (ecase mode
-    (:full
-     (or
-      (ILP/SolveProximity[Partial] polyhedral)
-      (ILP/SolveProximity[Full] polyhedral)))
-    (:partial (ILP/SolveProximity[Partial] polyhedral))))
-
-(defun ILP/SolveProximity (dst src)
-  ;; 0. CostModelを作成する
-  ;; - ついでに可視化できるように，ScheduleTree => MovementGraph
-  ;; 1. DSTのみにTransformationをする
-  ;; 2. [TODO] Shapeを隠した上でCacheする？
-  ;; 3. Transposeを複数回生成する
-  ;; 4. DBの脆弱性に注意
-  ;; (format t "[INFO] Solving ILP ...~%")
-  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (psi. dst src)))))
-    (labels ((generate (&aux (prev-items (sgt-items gen0)))
-               ;; Search Valid Permutation, Reshape, and Fusion
-               (sgt-apply-transformations
-                gen0
-                '(:Transpose :Reshape :Fuse))
-               (when (> (length (sgt-items gen0)) 1)
-                 (warn "ILP/SolveProximity[Partial]. The exploration space generated multiple candidates. (Selecting first one)")
-                 (setf (sgt-items gen0) (list (car (sgt-items gen0)))))
-               (when (null (sgt-items gen0))
-                 (let ((last-item (car prev-items)))
-                   (return-from
-                    ILP/SolveProximity
-                     (if (psi-get-first-unoptimized-sequence last-item) ;; is everything fused?
-                         (progn
-                           (print "FAILED")
-                           (print last-item)
-                           ;(caten/codegen/dataflow::make-dataflow-graph (psi-theta last-item) (psi-read-union-map last-item) (psi-write-union-map last-item))
-                           nil)
-                         (progn
-                           (setf (psi-theta last-item) (caten/codegen/search/schedule:schedule-remove-all-marks (psi-theta last-item)))
-                           last-item)))))))
-      (loop while t do (generate)))))
+      )))

@@ -821,6 +821,7 @@
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     ;; Step2. Fuse predecessors.
     ;; - Fuse remained elwise ops if not required by its children.
+    (when nil ;; [TODO] Ascending Orderで探索する(many vs oneじゃないといけない)
     (loop for sp = (pop unfused-ops)
           while sp for block = (list sp)
           if (eql (node-type sp) :Affine) do
@@ -828,8 +829,9 @@
               (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :partial))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
-    (assert (null unfused-ops))
-    (schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow?
+    (assert (null unfused-ops)))
+    ;; [todo] this will break graph
+;;    (schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow? 
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph
@@ -898,12 +900,12 @@
   (dolist (item (tpsort-graph graph))
     (when (eql (node-type item) :Affine)
 ;;      (print (isl:schedule-get-root (psi-theta (getattr item :polyhedron))))
-      (print (caten/codegen/dataflow::make-dataflow-graph (psi-theta (getattr item :polyhedron))
-                                                          (psi-read-union-map (getattr item :polyhedron))
-                                                          (psi-write-union-map (getattr item :polyhedron))))
+;      (print (caten/codegen/dataflow::make-dataflow-graph (psi-theta (getattr item :polyhedron))
+;                                                          (psi-read-union-map (getattr item :polyhedron))
+;                                                          (psi-write-union-map (getattr item :polyhedron))))
       ;(print (psi-read-union-map  (getattr item :polyhedron)))
       ;(print (psi-write-union-map  (getattr item :polyhedron)))
-      ;;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
+      (caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
       )))
 ;; Memo:
 ;; - [ ] ISL = Schedule and Memory Access Separation

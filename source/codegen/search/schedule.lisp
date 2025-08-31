@@ -76,7 +76,7 @@ that y precedes x under S and their memory accesses form flow/output/antidepende
            (flow   (union-access-info-compute-flow (! access)))
            (WaW    (union-flow-get-must-dependence flow))
            (WaR    (union-flow-get-may-dependence (! flow)))
-           (dependencies (union-map-union (! (union-map-union (! WaR) (! RaW))) (! WaW))))
+           (dependencies (union-map-union (! (union-map-union WaR RaW)) WaW)))
       (values dependencies RaW WaW WaR)))
 
 (defun compute-schedule-constraints (domain dependencies)
@@ -529,7 +529,7 @@ Inputs:
 Returns:
   isl::union-map F' = F ∩ (U × Range(F)) = intersect_domain(F, U).
 If U ∩ Dom(F) = ∅, the result is the empty union map."
-  (caten/isl::union-map-intersect-domain (caten/isl::copy umap) (caten/isl::copy uset)))
+  (caten/isl::union-map-intersect-domain umap uset))
 
 (defun union-map-same-address-relation (acc)
   "Build the same-address (alias) relation over iteration points.
@@ -1114,6 +1114,46 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
        (isl::union-set-handle uset)
        (cffi:callback %each-set-cb)
        (cffi:null-pointer)))))
+
+(defun schedule-compute-dim-equalities-graph (merged-schedule child-read-umap parent-write-umap &aux (results))
+  ;; Returns a list of valid permutations for K2
+  (declare (type isl::schedule merged-schedule) (type isl::union-map child-read-umap parent-write-umap))
+  (multiple-value-bind (deps raw waw war) (compute-dependence-relation child-read-umap parent-write-umap merged-schedule)
+    (declare (ignore deps waw war))
+    (%foreach-map
+     raw
+     #'(lambda (map &aux (ni (map-dim map :dim-in)) (no (map-dim map :dim-out)) (pairs))
+         (dotimes (i ni)
+           (dotimes (j no)
+             (let ((meq (map-equate map :dim-in i :dim-out j)))
+               (when (map-is-equal map meq)
+                 (push (cons i j) pairs)))))
+         (push (cons pairs (permutations-from-equalities-graph pairs ni no)) results)))
+    (if (= 1 (length results))
+        (let ((final (car results)))
+          (values (cdr final) (car final))) ;; (values equalities-graph permutation)
+        (progn
+          (warn "schedule-compute-dim-equalities: case for multiple maps is not implemented yet.")
+          ;; [TODO] Single Write, Multiple Readsの時，Fusionできるケースがあるはず。
+          nil))))
+
+(defun permutations-from-equalities-graph (pairs n-in-k1 n-out-k2)
+  (let* ((order (make-array n-out-k2 :initial-element nil))
+         (taken (make-hash-table)))
+    ;; place paired K2 dims in the order of K1 dims
+    (dotimes (i n-in-k1)
+      (let* ((j (cdr (find i pairs :key #'car))))
+        (when j
+          (setf (aref order i) j)
+          (setf (gethash j taken) t))))
+    ;; append remaining K2 dims (unpaired) after the paired block
+    (let ((k n-in-k1))
+      (dotimes (j n-out-k2)
+        (unless (gethash j taken)
+          (setf (aref order k) j)
+          (incf k))))
+    order))
+         
 ;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

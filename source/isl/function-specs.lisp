@@ -215,6 +215,10 @@
 (defun space-find-dim-by-id (space type id)
   (%isl-space-find-dim-by-id (space-handle space) type (identifier-handle id)))
 
+(export 'space-is-params)
+(defun space-is-params (space)
+  (eql :bool-true (%isl-space-is-params (space-handle space))))
+
 (define-isl-function create-space-params %isl-space-params-alloc
   (:give space)
   (:parm context *context*)
@@ -232,6 +236,10 @@
   (:keep integer nparam)
   (:keep integer n_in)
   (:keep integer n_out))
+
+(define-isl-function space-set-from-params %isl-space-set-from-params
+  (:give space)
+  (:take space))
 
 (export 'space-dim)
 (defun space-dim (space dim-type)
@@ -368,6 +376,10 @@
   (:give set)
   (:take multi-aff))
 
+(define-isl-function set-simple-hull %isl-set-simple-hull
+  (:give basic-set)
+  (:take set))
+
 (export 'set-dim-max)
 (defun set-dim-max (set dim)
   (%make-pw-aff (%isl-set-dim-max (set-handle (__isl_take set)) dim)))
@@ -383,6 +395,15 @@
 (export 'set-project-out)
 (defun set-project-out (set type first n)
   (%make-set (%isl-set-project-out (set-handle (__isl_take set)) type first n)))
+
+(export 'set-is-params)
+(defun set-is-params (set)
+  (eql :bool-true (%isl-set-is-params (set-handle set))))
+
+(define-isl-function set-intersect-params %isl-set-intersect-params
+  (:give set)
+  (:take set)
+  (:take set))
 
 (define-isl-function set-subtract %isl-set-subtract
   (:give set)
@@ -596,6 +617,21 @@
 (define-isl-function map-range %isl-map-range
   (:give set)
   (:take map))
+(define-isl-function map-flat-product %isl-map-flat-product
+  (:give map)
+  (:take map)
+  (:take map))
+(define-isl-function map-product %isl-map-product
+  (:give map)
+  (:take map)
+  (:take map))
+(define-isl-function map-uncurry %isl-map-uncurry
+  (:give map)
+  (:take map))
+(export 'map-equate)
+(defun map-equate (map type1 pos1 type2 pos2)
+  (%make-map (%isl-map-equate (map-handle (__isl_take map)) type1 pos1 type2 pos2)))
+
 (export 'map-move-dims)
 (defun map-move-dims (map dst-type dst-pos src-type src-pos n)
   (%make-map (%isl-map-move-dims (map-handle (__isl_take map)) dst-type dst-pos src-type src-pos n)))
@@ -611,7 +647,9 @@
 (export 'map-project-out)
 (defun map-project-out (map type from to)
   (%make-map (%isl-map-project-out (map-handle (__isl_take map)) type from to)))
-
+(export 'map-is-equal)
+(defun map-is-equal (m1 m2)
+  (eql :bool-true (%isl-map-is-equal (map-handle m1) (map-handle m2))))
 (define-isl-function map-wrap %isl-map-wrap
   (:give set)
   (:take map))
@@ -623,6 +661,9 @@
 (export 'map-set-tuple-id)
 (defun map-set-tuple-id (map type id)
   (%make-map (%isl-map-set-tuple-id (map-handle (__isl_take map)) type (identifier-handle (__isl_take id)))))
+(export 'map-get-tuple-id)
+(defun map-get-tuple-id (map type)
+  (%make-identifier (%isl-map-get-tuple-id (map-handle (__isl_take map)) type)))
 (export 'map-get-tuple-name)
 (defun map-get-tuple-name (map type)
   (%isl-map-get-tuple-name (map-handle map) type))
@@ -630,11 +671,15 @@
 (define-isl-function union-map-empty %isl-union-map-empty
   (:give union-map)
   (:take space))
-
+(define-isl-function union-map-wrap %isl-union-map-wrap
+  (:give union-set)
+  (:take union-map))
 (define-isl-function union-map-universe %isl-union-map-universe
   (:give union-map)
   (:take space))
-
+(define-isl-function union-map-uncurry %isl-union-map-uncurry
+  (:give union-map)
+  (:take union-map))
 (define-isl-function basic-map-union-map %isl-union-map-from-basic-map
   (:give union-map)
   (:take basic-map))
@@ -881,6 +926,11 @@
   (:give multi-union-pw-aff)
   (:take multi-union-pw-aff)
   (:take union-set))
+
+(define-isl-function multi-union-pw-aff-align-params %isl-multi-union-pw-aff-align-params
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take space))
 
 (define-isl-function multi-union-pw-aff-scale-down-val %isl-multi-union-pw-aff-scale-down-val
   (:give multi-union-pw-aff)
@@ -1453,9 +1503,12 @@
   (:give union-map)
   (:keep schedule-node))
 
-
 (define-isl-function schedule-node-get-prefix-schedule-union-map %isl-schedule-node-get-prefix-schedule-union-map
   (:give union-map)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-get-prefix-schedule-multi-union-pw-aff %isl-schedule-node-get-prefix-schedule-multi-union-pw-aff
+  (:give multi-union-pw-aff)
   (:keep schedule-node))
 
 (define-isl-function schedule-node-get-subtree-expansion %isl-schedule-node-get-subtree-expansion

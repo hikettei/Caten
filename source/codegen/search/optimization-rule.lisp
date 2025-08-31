@@ -171,6 +171,14 @@ schedule: ... <-------|
 ```
 "))
 
+
+(defmethod optrule-generate-search-space (poly (id (eql :Transpose0)))
+  (let* ((seq (isl:schedule-node-first-child (isl:schedule-get-root (psi-theta poly)))))
+    (assert (eql :schedule-node-sequence (isl:schedule-node-get-type seq)))
+    ;; [TODO]
+    ;; - [ ] Transpose, Tileなど，とりあえずScheduleLangから実装
+    ))
+
 (defmethod optrule-generate-search-space (poly (id (eql :Transpose)))
   (let* ((pos (psi-get-first-unoptimized-sequence poly))
          (status

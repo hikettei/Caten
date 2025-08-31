@@ -36,12 +36,12 @@ Returns:
          (rank
            (caten/codegen/search/schedule:schedule-node-count-bands
             (schedule-get-root schedule)))
-	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
+	 (ast-build (ast-build-from-context (set-from-str "{:}")))
          (ast-build
            (isl:ast-build-set-iterators
             ast-build
-            (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-         (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
+            (apply #'make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
+         (ast-build-node (ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Variable/Context Counter
