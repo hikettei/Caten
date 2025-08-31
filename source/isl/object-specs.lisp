@@ -58,7 +58,8 @@
 ;;;; MultiAff
 (define-isl-object multi-aff
   :free %isl-multi-aff-free
-  :copy %isl-multi-aff-copy)
+  :copy %isl-multi-aff-copy
+  :from-str t)
 ;;;; LocalSpace
 (define-isl-object local-space
   :free %isl-local-space-free
@@ -76,11 +77,19 @@
   :copy %isl-constraint-copy
   :list-type constraint-list)
 
+(export 'constraint-list-get)
+(defun constraint-list-get (constraint-list n)
+  (let ((constraint (%isl-constraint-list-get-at (constraint-list-handle constraint-list) n)))
+    (if (eql :bool-true (%isl-constraint-is-equality constraint))
+        (%make-equality-constraint constraint)
+        (%make-inequality-constraint constraint))))
+
 (defmethod print-object ((constraint constraint) stream)
   (print-unreadable-object (constraint stream :type t)
     (let ((aff (%isl-constraint-get-aff (constraint-handle constraint))))
-      (unwind-protect (write-string (%isl-aff-to-str aff) stream)
-        (%isl-aff-free aff)))))
+      (unless (cffi:null-pointer-p aff)
+        (unwind-protect (write-string (%isl-aff-to-str aff) stream)
+          (%isl-aff-free aff))))))
 
 (define-isl-object equality-constraint
   :superclass constraint)

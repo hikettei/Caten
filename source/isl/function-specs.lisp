@@ -54,7 +54,7 @@
 ;;;; Value
 (define-isl-function value-context %isl-val-get-ctx
     (:give context)
-    (:keep value))
+  (:keep value))
 
 (macrolet ((def (name impl)
              `(define-isl-function ,name ,impl
@@ -281,6 +281,22 @@
   (:take equality-constraint)
   (:take value))
 
+(define-isl-function constraint-get-space %isl-constraint-get-space
+  (:give space)
+  (:keep constraint))
+
+(define-isl-function constraint-get-local-space %isl-constraint-get-local-space
+  (:give local-space)
+  (:keep constraint))
+
+(export 'constraint-get-dim-name)
+(defun constraint-get-dim-name (constraint type pos)
+  (%isl-constraint-get-dim-name (constraint-handle constraint) type pos))
+
+(define-isl-function constraint-get-aff %isl-constraint-get-aff
+  (:give aff)
+  (:keep constraint))
+
 (define-isl-function equality-constraint-set-coefficient %isl-constraint-set-coefficient-val
   (:give equality-constraint)
   (:take equality-constraint)
@@ -328,6 +344,15 @@
      (equality-constraint #'%make-equality-constraint)
      (inequality-constraint #'%make-inequality-constraint))
    (%isl-constraint-set-coefficient-si (constraint-handle (__isl_take constraint)) type pos v)))
+(export 'get-coefficient-val)
+(defun get-coefficient-val (constraint type pos)
+  (%make-value
+   (%isl-constraint-get-coefficient-val (constraint-handle constraint) type pos)))
+(export 'get-constant-val)
+(defun get-constant-val (constraint)
+  (%make-value
+   (%isl-constraint-get-constant-val (constraint-handle constraint))))
+
 ;;;; BasicSet
 (define-isl-function basic-set-empty %isl-basic-set-empty
   (:give basic-set)
@@ -346,6 +371,14 @@
   (:give basic-set)
   (:take basic-set)
   (:take constraint))
+
+(export 'basic-set-get-dim-name)
+(defun basic-set-get-dim-name (bset type pos)
+  (%isl-basic-set-get-dim-name (basic-set-handle bset) type pos))
+
+(export 'basic-map-get-dim-name)
+(defun basic-map-get-dim-name (bmap type pos)
+  (%isl-basic-map-get-dim-name (basic-map-handle bmap) type pos))
 
 (export 'basic-set-drop-constraints-involving-dims)
 (defun basic-set-drop-constraints-involving-dims (basic-set type first n)
@@ -565,6 +598,10 @@
   (:give union-set)
   (:take union-set))
 ;;;; BasicMap
+(export 'basic-map-dim)
+(defun basic-map-dim (bmap type)
+  (%isl-basic-map-dim (basic-map-handle bmap) type))
+  
 (define-isl-function basic-map-empty %isl-basic-map-empty
    (:give basic-map)
    (:take space))
@@ -594,14 +631,35 @@
   (:keep integer position)
   (:keep integer n))
 
+(define-isl-function basic-map-get-constraint-list %isl-basic-map-get-constraint-list
+  (:give constraint-list)
+  (:keep basic-map))
+
+(define-isl-function basic-set-get-constraint-list %isl-basic-set-get-constraint-list
+  (:give constraint-list)
+  (:keep basic-set))
+
 (define-isl-function basic-set-apply %isl-basic-set-apply
   (:give basic-set)
   (:take basic-set)
+  (:take basic-map))
+
+(define-isl-function basic-map-wrap %isl-basic-map-wrap
+  (:give basic-set)
   (:take basic-map))
 ;;;; Map
 (define-isl-function map-empty %isl-map-empty
   (:give map)
   (:take space))
+
+(define-isl-function map-affine-hull %isl-map-affine-hull
+  (:give basic-map)
+  (:take map))
+
+(define-isl-function map-preimage-range-multi-aff %isl-map-preimage-range-multi-aff
+  (:give map)
+  (:take map)
+  (:take multi-aff))
 (define-isl-function map-universe %isl-map-universe
   (:give map)
   (:take space))
@@ -628,6 +686,15 @@
 (define-isl-function map-uncurry %isl-map-uncurry
   (:give map)
   (:take map))
+(define-isl-function map-get-basic-map-list %isl-map-get-basic-map-list
+  (:give basic-map-list)
+  (:keep map))
+(define-isl-function map-compute-divs %isl-map-compute-divs
+  (:give map)
+  (:take map))
+(define-isl-function map-get-space %isl-map-get-space
+  (:give space)
+  (:keep map))
 (export 'map-equate)
 (defun map-equate (map type1 pos1 type2 pos2)
   (%make-map (%isl-map-equate (map-handle (__isl_take map)) type1 pos1 type2 pos2)))
@@ -965,6 +1032,10 @@
   (:take union-pw-aff-list)
   (:take union-pw-aff))
 
+(define-isl-function pw-aff-from-aff %isl-pw-aff-from-aff
+  (:give pw-aff)
+  (:take aff))
+
 (export 'multi-union-pw-aff-get-union-pw-aff)
 (defun multi-union-pw-aff-get-union-pw-aff (mupa int)
   (%make-union-pw-aff (%isl-multi-union-pw-aff-get-union-pw-aff (multi-union-pw-aff-handle (__isl_take mupa)) int)))
@@ -1012,6 +1083,18 @@
   (:give space)
   (:keep union-pw-aff))
 
+(export 'aff-dim)
+(defun aff-dim (aff type)
+  (%isl-aff-dim (aff-handle aff) type))
+
+(export 'aff-get-coefficient-val)
+(defun aff-get-coefficient-val (aff type pos)
+  (%make-value (%isl-aff-get-coefficient-val (aff-handle aff) type pos)))
+
+(define-isl-function aff-get-constant-val %isl-aff-get-constant-val
+  (:give value)
+  (:keep aff))
+  
 (export 'pw-aff-var-on-domain)
 (defun pw-aff-var-on-domain (local-space dim pos)
   (%make-pw-aff (%isl-pw-aff-var-on-domain (local-space-handle local-space) dim pos)))
@@ -1065,6 +1148,14 @@
   (:give pw-aff)
   (:take pw-aff))
 
+(define-isl-function aff-get-space %isl-aff-get-space
+  (:give space)
+  (:keep aff))
+
+(define-isl-function aff-get-local-space %isl-aff-get-local-space
+  (:give local-space)
+  (:keep aff))
+
 (export 'multi-union-pw-aff-reset-tuple-id)
 (defun multi-union-pw-aff-reset-tuple-id (mupa type)
   (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (__isl_take mupa)) type)))
@@ -1092,6 +1183,10 @@
 (export 'pw-aff-dim)
 (defun pw-aff-dim (pa type)
   (%isl-pw-aff-dim (pw-aff-handle pa) type))
+
+(export 'aff-get-dim-name)
+(defun aff-get-dim-name (aff type pos)
+  (%isl-aff-get-dim-name (aff-handle aff) type pos))
 
 (define-isl-function multi-union-pw-aff-union-add %isl-multi-union-pw-aff-union-add
   (:give multi-union-pw-aff)
@@ -1280,7 +1375,7 @@
 (export '%make-ast-node)
 (defun %make-ast-node (handle)
   (ecase (%isl-ast-node-get-type handle)
-    (:ast-expr-error (isl-error))
+    ((:ast-node-error :ast-expr-error) (isl-error))
     (:ast-node-for (%make-for-node handle))
     (:ast-node-if (%make-if-node handle))
     (:ast-node-block (%make-block-node handle))
