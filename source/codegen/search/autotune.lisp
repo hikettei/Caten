@@ -167,12 +167,33 @@ BEAM Search Workflow:
 
 (defun ILP/SolveProximity (parent child &key (fuse-into :parent))
   (declare (type Polyhedral-Schedule-Item parent child))
-  (let* ((root (psi. parent child))
-         (perm* (caten/codegen/search/schedule::schedule-compute-dim-equalities-graph (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent))))
-    (print "fusion")
+  (let ((root (psi. parent child)))
     (print root)
-    (print perm*))
-  nil)
+    ;; Pre-transformations 1: Detect Coalesce
+    (setf
+     (psi-theta root)
+     (caten/codegen/search/schedule::schedule-detect-coalesce
+      (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent)))
+    (print root)
+    (error "STOP")
+    ;; Pre-transformations 2: Interchange to fuse them
+    ;; [TODO]
+    ;; - まずはConstraintから2_gid0 + _gid1みたいなのが消えるまでTileする。
+    (print "Running fusion")
+    (print perm*)
+    (setf (psi-theta root) (caten/codegen/search/schedule::schedule-permute (psi-theta root) 1 perm*))
+    (labels ((beam (&aux (prev-items (sgt-items gen0)))
+               (sgt-apply-transformations
+                gen0
+                :Fuse)
+               (when (null (sgt-items gen0))
+                 (let ((seq (psi-get-first-unoptimized-sequence (car prev-items))))
+                   (if seq
+                       (return-from ILP/SolveProximity nil)
+                       (progn
+                         (setf (psi-theta (car prev-items)) (schedule-remove-all-marks (psi-theta (car prev-items))))
+                         (return-from ILP/SolveProximity (car prev-items))))))))
+      (loop while t do (beam)))))
 
 (defun a ()
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (psi. parent child)))))

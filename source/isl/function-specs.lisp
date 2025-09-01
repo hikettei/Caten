@@ -211,6 +211,10 @@
 (defun space-get-dim-id (space type pos)
   (%make-identifier (%isl-space-get-dim-id (space-handle space) type pos)))
 
+(export 'space-get-tuple-name)
+(defun space-get-tuple-name (space type)
+  (%isl-space-get-tuple-name (space-handle space) type))
+
 (export 'space-find-dim-by-id)
 (defun space-find-dim-by-id (space type id)
   (%isl-space-find-dim-by-id (space-handle space) type (identifier-handle id)))
@@ -380,11 +384,25 @@
 (defun basic-map-get-dim-name (bmap type pos)
   (%isl-basic-map-get-dim-name (basic-map-handle bmap) type pos))
 
+(export 'map-get-dim-name)
+(defun map-get-dim-name (map type pos)
+  (%isl-map-get-dim-name (map-handle map) type pos))
+
 (export 'basic-set-drop-constraints-involving-dims)
 (defun basic-set-drop-constraints-involving-dims (basic-set type first n)
   (%make-basic-set
    (%isl-basic-set-drop-constraints-involving-dims (basic-set-handle (__isl_take basic-set)) type first n)))
 ;;;; Set
+(define-isl-function set-set-tuple-name %isl-set-set-tuple-name
+  (:give set)
+  (:take set)
+  (:take string))
+
+(define-isl-function set-intersect %isl-set-intersect
+  (:give set)
+  (:take set)
+  (:take set))
+
 (define-isl-function set-empty %isl-set-empty
   (:give set)
   (:take space))
@@ -530,7 +548,7 @@
   (:give union-set)
   (:take set))
 
-(define-isl-function set-union-set %isl-set-from-basic-set
+(define-isl-function set-union-set %isl-union-set-from-set
   (:give union-set)
   (:take set))
 
@@ -655,11 +673,37 @@
 (define-isl-function map-affine-hull %isl-map-affine-hull
   (:give basic-map)
   (:take map))
+;; Preimage
+(define-isl-function union-map-preimage-range-multi-aff %isl-union-map-preimage-range-multi-aff
+  (:give union-map)
+  (:take union-map)
+  (:take multi-aff))
+
+(define-isl-function union-map-preimage-domain-multi-aff %isl-union-map-preimage-domain-multi-aff
+  (:give union-map)
+  (:take union-map)
+  (:take multi-aff))
+
+(define-isl-function union-set-preimage-multi-aff %isl-union-set-preimage-multi-aff
+  (:give union-set)
+  (:take union-set)
+  (:take multi-aff))
 
 (define-isl-function map-preimage-range-multi-aff %isl-map-preimage-range-multi-aff
   (:give map)
   (:take map)
   (:take multi-aff))
+
+(define-isl-function map-preimage-domain-multi-aff %isl-map-preimage-domain-multi-aff
+  (:give map)
+  (:take map)
+  (:take multi-aff))
+
+(define-isl-function set-preimage-multi-aff %isl-set-preimage-multi-aff
+  (:give set)
+  (:take set)
+  (:take multi-aff))
+
 (define-isl-function map-universe %isl-map-universe
   (:give map)
   (:take space))
@@ -879,6 +923,10 @@
   (:give union-map)
   (:take union-map))
 
+(define-isl-function union-set-detect-equalities %isl-union-set-detect-equalities
+  (:give union-set)
+  (:take union-set))
+
 (define-isl-function union-map-get-space %isl-union-map-get-space
   (:give space)
   (:keep union-map))
@@ -937,6 +985,16 @@
   (:give schedule)
   (:take union-set))
 
+(define-isl-function schedule-pullback-union-pw-multi-aff %isl-schedule-pullback-union-pw-multi-aff
+  (:give schedule)
+  (:take schedule)
+  (:take union-pw-multi-aff))
+
+(define-isl-function schedule-intersect-domain %isl-schedule-intersect-domain
+  (:give schedule)
+  (:take schedule)
+  (:take union-set))
+
 (export 'schedule-read-from-str)
 (defun schedule-read-from-str (str)
   (%make-schedule
@@ -985,6 +1043,24 @@
   (:take union-access-info)
   (:take schedule))
 ;;;; MUPA
+(define-isl-function multi-aff-get-aff %isl-multi-aff-get-aff
+  (:give aff)
+  (:take multi-aff)
+  (:take fixnum))
+
+(define-isl-function union-pw-multi-aff-empty %isl-union-pw-multi-aff-empty
+  (:give union-pw-multi-aff)
+  (:take space))
+
+(define-isl-function union-pw-multi-aff-from-pw-multi-aff %isl-union-pw-multi-aff-from-pw-multi-aff
+  (:give union-pw-multi-aff)
+  (:take pw-multi-aff))
+
+(define-isl-function union-pw-multi-aff-union-add %isl-union-pw-multi-aff-union-add
+  (:give union-pw-multi-aff)
+  (:take union-pw-multi-aff)
+  (:take union-pw-multi-aff))
+
 (define-isl-function mupa-from-union-map %isl-multi-union-pw-aff-from-union-map
   (:give multi-union-pw-aff)
   (:take union-map))
@@ -1094,6 +1170,23 @@
 (define-isl-function aff-get-constant-val %isl-aff-get-constant-val
   (:give value)
   (:keep aff))
+
+(define-isl-function aff-set-coefficient-si %isl-aff-set-coefficient-si
+  (:give aff)
+  (:take aff)
+  (:take keyword)
+  (:take fixnum)
+  (:take fixnum))
+
+(defcfun ("isl_union_pw_aff_from_aff" %isl-union-pw-aff-from-aff) :pointer (x :pointer))
+(define-isl-function union-pw-aff-from-aff %isl-union-pw-aff-from-aff
+  (:give union-pw-aff)
+  (:take aff))
+
+(define-isl-function multi-union-pw-aff-from-union-pw-aff-list %isl-multi-union-pw-aff-from-union-pw-aff-list
+  (:give multi-union-pw-aff)
+  (:take space)
+  (:take union-pw-aff-list))
   
 (export 'pw-aff-var-on-domain)
 (defun pw-aff-var-on-domain (local-space dim pos)

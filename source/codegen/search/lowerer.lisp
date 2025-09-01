@@ -201,11 +201,15 @@
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
       
       ;; [todo] remove loop collapse at tensor lvl for symbolic fusion
-      (mapc #'explore items)
-      (setf candidates (alexandria:hash-table-keys pid2space))
-      ;;(mapc #'(lambda (x) (explore x :noopt nil)) items)
-      ;;(setf candidates (alexandria:hash-table-keys pid2space))
-      ;;(mapc #'explore items)
+      ;; [todo] loop collapseはこの段階では実行しないことにする。
+      (if nil
+          (progn ;; experiment: no coalesce
+            (mapc #'explore items)
+            (setf candidates (alexandria:hash-table-keys pid2space)))
+          (progn ;; experiment; coalesce
+            (mapc #'(lambda (x) (explore x :noopt nil)) items)
+            (setf candidates (alexandria:hash-table-keys pid2space))
+            (mapc #'explore items)))
       (let ((new-procedure))
         (dolist (c (sort (copy-list candidates) #'< :key #'length))
           (when (every #'(lambda (x) (null (find x (alexandria:flatten new-procedure)))) c)
@@ -831,7 +835,7 @@
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     (assert (null unfused-ops)))
     ;; [todo] this will break graph
-;;    (schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow? 
+    (schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow? 
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph

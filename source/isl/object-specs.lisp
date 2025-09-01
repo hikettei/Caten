@@ -193,6 +193,12 @@
   :copy %isl-union-pw-aff-copy
   :list-type union-pw-aff-list)
 
+(define-isl-object union-pw-multi-aff
+  :free %isl-union-pw-multi-aff-free
+  :copy %isl-union-pw-multi-aff-copy
+  :list-type union-pw-multi-aff-list
+  :from-str t)
+
 (define-isl-object multi-val
   :free %isl-multi-val-free
   :copy %isl-multi-val-copy)
@@ -206,6 +212,11 @@
   :free %isl-aff-free
   :copy %isl-aff-copy
   :list-type affine-list
+  :from-str t)
+
+(define-isl-object pw-multi-aff
+  :free %isl-pw-multi-aff-free
+  :copy %isl-pw-multi-aff-copy
   :from-str t)
 
 (defmethod print-object ((value multi-union-pw-aff) stream)
@@ -227,6 +238,10 @@
 (defmethod print-object ((value aff) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-aff-to-str (aff-handle value)) stream)))
+
+(defmethod print-object ((value union-pw-multi-aff) stream)
+  (print-unreadable-object (value stream :type t)
+    (write-string (%isl-union-pw-multi-aff-to-str (union-pw-multi-aff-handle value)) stream)))
 ;;;; astexpr
 (define-isl-object ast-expr
   :free %isl-ast-expr-free
