@@ -169,19 +169,26 @@ BEAM Search Workflow:
   (declare (type Polyhedral-Schedule-Item parent child))
   (let ((root (psi. parent child)))
     ;; Pre-transformations 1: Detect Coalesce/Create tile to maximize fusion chance
-    (multiple-value-bind (new-sched new-child-rmap) (schedule-detect-coalesce (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent))
+    (multiple-value-bind (new-sched new-child-rmap new-child-wmap) (schedule-detect-coalesce (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent) (psi-write-union-map child))
       ;; Pre-transformations 2: Compute valid permutations in advance.
-      (let* ((perm* (schedule-compute-dim-equalities-graph new-sched new-child-rmap (psi-write-union-map parent)))
-             (new-sched (schedule-permute new-sched 1 perm*))
+      (let* (;(perm* (schedule-compute-dim-equalities-graph new-sched new-child-rmap (psi-write-union-map parent)))
+             ;(new-sched (schedule-permute new-sched 1 perm*))
              (new-read (isl:union-map-union (psi-read-union-map parent) new-child-rmap))
-             (new-deps (compute-dependence-relation new-read (psi-write-union-map parent) new-sched)))
+             (new-write (isl:union-map-union (psi-write-union-map parent) new-child-wmap))
+             (new-deps (compute-dependence-relation new-read new-write new-sched)))
         ;; [TODO] Union of domains?
-        (setf (psi-theta root) new-sched (psi-read-union-map root) new-read (psi-dependency-graph root) new-deps)
+        (setf (psi-theta root) new-sched
+              (psi-read-union-map root) new-read
+              (psi-write-union-map root) new-write
+              (psi-dependency-graph root) new-deps)
         root))))
 
 (defun ILP/SolveProximity (parent child &key (fuse-into :parent))
+  (print "Searching ...")
+  (print parent)
+  (print child)
   (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (ILP/Preprocess parent child)))))
-    (print "Searching ...")
+    (print "Fusion ...")
     (print (sgt-items gen0))
     (labels ((beam (&aux (prev-items (sgt-items gen0)))
                (sgt-apply-transformations
@@ -194,6 +201,5 @@ BEAM Search Workflow:
                        (progn
                          (print "FusionCompleted")
                          (setf (psi-theta (car prev-items)) (schedule-remove-all-marks (psi-theta (car prev-items))))
-                         (print (car prev-items))
                          (return-from ILP/SolveProximity (car prev-items))))))))
       (loop while t do (beam)))))

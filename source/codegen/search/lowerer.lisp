@@ -202,7 +202,7 @@
       
       ;; [todo] remove loop collapse at tensor lvl for symbolic fusion
       ;; [todo] loop collapseはこの段階では実行しないことにする。
-      (if nil
+      (if t
           (progn ;; experiment: no coalesce
             (mapc #'explore items)
             (setf candidates (alexandria:hash-table-keys pid2space)))
