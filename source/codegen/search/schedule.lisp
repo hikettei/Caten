@@ -46,7 +46,10 @@
    #:%foreach-map
    #:%foreach-set
    #:align-params/umap
-   #:align-params/uset))
+   #:align-params/uset
+   #:schedule-detect-coalesce
+   #:schedule-compute-dim-equalities-graph
+   #:schedule-permute))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -1250,9 +1253,9 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
                     upma (union-pw-multi-aff-from-pw-multi-aff pma)))))
     (schedule-pullback-union-pw-multi-aff schedule upma)))
 
-(defun schedule-detect-coalesce (merged-schedule child-read-umap parent-write-umap &key (seen) &aux (changed-p nil))
+(defun schedule-detect-coalesce (merged-schedule child-read-umap parent-write-umap)
   (multiple-value-bind (deps raw waw war) (compute-dependence-relation child-read-umap parent-write-umap merged-schedule)
-    (declare (ignore waw war))
+    (declare (ignore deps waw war))
     (%foreach-map
      raw
      #'(lambda (map &aux
@@ -1272,8 +1275,7 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
            ;; - [x] MUPAを次元数で分割, no coeff, _gid0, _gid1, _gid2
            ;; - [ ] Matmul/Reduction対応
            (setf merged-schedule sch4
-                 child-read-umap child-read-umap-fixed)
-           (print (schedule-is-legal-p merged-schedule deps))))))
+                 child-read-umap child-read-umap-fixed)))))
   (values merged-schedule child-read-umap))
 
 (defun schedule-compute-dim-equalities-graph (merged-schedule child-read-umap parent-write-umap &aux (results))
@@ -1285,15 +1287,11 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
      raw
      #'(lambda (map
                 &aux
-                  (map (map-detect-coalesce map child-read-umap))
                   (ni (map-dim map :dim-in))
                   (no (map-dim map :dim-out))
                   (pairs))
-         (print "MAP")
+         ;; [TODO] Coalesceが解消できなかった時どうする？
          (print map)
-         ;; [TODO] Detect coalesce
-         ;; TODO:
-         ;; Poolingの時は，CoeffをTileParameterにして再挑戦させる
          (dotimes (i ni)
            (dotimes (j no)
              (let ((meq (map-equate map :dim-in i :dim-out j)))
@@ -1382,8 +1380,8 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
       (setf bands (permute-list perms (nreverse bands))
             root (schedule-node-delete (schedule-node-first-child root))
             root (schedule-node-cut root))
-      (print "ROOT")
-      (print root)
+      ;(print "ROOT")
+      ;(print root)
       (dolist (band bands)
         (setf root (schedule-node-first-child (schedule-node-insert-partial-schedule root band))))
       (when sequence
@@ -1391,7 +1389,7 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
                (filters (schedule-node-sequence-get-filters sequence)))
           (dolist (f filters) (setf uset-list (union-set-list-add uset-list f)))
           (setf root (schedule-node-insert-sequence root uset-list))))
-      (print root)
+      ;(print root)
       (schedule-node-get-schedule root))))
 ;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
 ;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -165,23 +165,24 @@ BEAM Search Workflow:
 ;;(let ((tg (tensor-lowered-graph (!matmul (make-tensor `(256 512)) (!matmul (make-tensor `(512 1024)) (make-tensor `(1024 2048)))))))
 ;;              (time (caten/codegen/lowerer::codegen tg)))
 
-(defun ILP/SolveProximity (parent child &key (fuse-into :parent))
+(defun ILP/Preprocess (parent child &key (fuse-into :parent))
   (declare (type Polyhedral-Schedule-Item parent child))
   (let ((root (psi. parent child)))
-    (print root)
-    ;; Pre-transformations 1: Detect Coalesce
-    (setf
-     (psi-theta root)
-     (caten/codegen/search/schedule::schedule-detect-coalesce
-      (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent)))
-    (print root)
-    (error "STOP")
-    ;; Pre-transformations 2: Interchange to fuse them
-    ;; [TODO]
-    ;; - まずはConstraintから2_gid0 + _gid1みたいなのが消えるまでTileする。
-    (print "Running fusion")
-    (print perm*)
-    (setf (psi-theta root) (caten/codegen/search/schedule::schedule-permute (psi-theta root) 1 perm*))
+    ;; Pre-transformations 1: Detect Coalesce/Create tile to maximize fusion chance
+    (multiple-value-bind (new-sched new-child-rmap) (schedule-detect-coalesce (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent))
+      ;; Pre-transformations 2: Compute valid permutations in advance.
+      (let* ((perm* (schedule-compute-dim-equalities-graph new-sched new-child-rmap (psi-write-union-map parent)))
+             (new-sched (schedule-permute new-sched 1 perm*))
+             (new-read (isl:union-map-union (psi-read-union-map parent) new-child-rmap))
+             (new-deps (compute-dependence-relation new-read (psi-write-union-map parent) new-sched)))
+        ;; [TODO] Union of domains?
+        (setf (psi-theta root) new-sched (psi-read-union-map root) new-read (psi-dependency-graph root) new-deps)
+        root))))
+
+(defun ILP/SolveProximity (parent child &key (fuse-into :parent))
+  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (ILP/Preprocess parent child)))))
+    (print "Searching ...")
+    (print (sgt-items gen0))
     (labels ((beam (&aux (prev-items (sgt-items gen0)))
                (sgt-apply-transformations
                 gen0
@@ -191,24 +192,8 @@ BEAM Search Workflow:
                    (if seq
                        (return-from ILP/SolveProximity nil)
                        (progn
+                         (print "FusionCompleted")
                          (setf (psi-theta (car prev-items)) (schedule-remove-all-marks (psi-theta (car prev-items))))
+                         (print (car prev-items))
                          (return-from ILP/SolveProximity (car prev-items))))))))
       (loop while t do (beam)))))
-
-(defun a ()
-  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (psi. parent child)))))
-    ;; BEAM Search+CostModelで実施
-    ;;
-    ;; Childは常にSingle STMT
-    ;; Exploration Space:
-    ;; - Interchange
-    ;; - FUSE
-    ;; - COMPUTE_AT
-    (print "Search for Cacheable Fusion Pattern!")
-    (print (psi. parent child))
-    (labels ((beam (&aux (prev-items (sgt-items gen0)))
-               (sgt-apply-transformations
-                gen0
-                nil)))
-
-      )))
