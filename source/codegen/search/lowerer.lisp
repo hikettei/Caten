@@ -107,6 +107,15 @@ Throughout the entire scheduling process, it must be ensured that when items in 
       (setf (grids-writes grids) grid-writes*
             (grids-reads grids) grid-reads*))))
 
+(defun extract-access (sp list dom-str constraints bp)
+  (let ((accesses))
+    (loop for item in (graph-nodes bp)
+          if (and (eql (node-type item) :PolyAref) (find (car (node-writes item)) list :key (alexandria:compose #'car #'node-writes)))
+            do (let ((dg (id->value bp (car (node-reads item)))))
+                 (assert (eql (node-type dg) :DEFINE-GLOBAL))
+                 (push (format nil "~a -> ~(~a~)[~a]" dom-str (getattr dg :name) (polyaref-on-global-lex-order sp item bp)) accesses)))
+    (isl::union-map-from-str (format nil "~a -> { ~{~a~^; ~} }" constraints accesses))))
+
 (declaim (ftype (function (Graph) (values ScheduleGraph)) make-schedule-graph))
 (defun make-schedule-graph (graph)
   "
@@ -161,45 +170,48 @@ Creates a ScheduleGraph from the given grpah.
            (dolist (w (grids-writes x))
              (setf (gethash (car w) val->grids) x)))
        (alexandria:hash-table-values id->grids))
-      (let ((schedule-space (create-lexicographical-ctx (alexandria:hash-table-values all-grids))))
+      (let* ((g
+               (loop with id->bind = (make-hash-table)
+                     for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
+                     for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
+                     collect (grids->schedule-item id->bind graph grids val->grids)))
+             (schedule-space (create-lexicographical-ctx g))
+             (g
+               (loop for item in g
+                     if (listp item)
+                       collect ($affine (getf item :grid-writes) (getf item :grid-reads)
+                                        :polyhedron (%make-polyhedral-schedule-item
+                                                     (getf item :domain) (getf item :schedule)
+                                                     (extract-access schedule-space (getf item :read-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
+                                                     (extract-access schedule-space (getf item :write-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint)))
+                                        :blueprint (getf item :blueprint)
+                                        :reduction (getf item :reduction)
+                                        :storage-map (getf item :storage-map))
+                     else
+                       collect item)))
         (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 1)
           (let ((dims (the list (alexandria:hash-table-keys (global-lex-order-dict schedule-space)))))
             (caten/common.logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
-        (let ((g
-                (loop with id->bind = (make-hash-table)
-                      for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
-                      for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
-                      collect (grids->schedule-item schedule-space id->bind graph grids val->grids))))
-          (assert (= n-scheduled (length (the list (graph-nodes graph)))))
-          (setf g (apply #'make-graph g)
-                (graph-outputs g) (copy-list (graph-outputs graph)))
-          (setf g (->schedule-graph g))
-          (verify-graph g)
-          g)))))
+        (assert (= n-scheduled (length (the list (graph-nodes graph)))))
+        (setf g (apply #'make-graph g)
+              (graph-outputs g) (copy-list (graph-outputs graph)))
+        (setf g (->schedule-graph g))
+        (verify-graph g)
+        g))))
 ;; ~~ Lowering ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun create-lexicographical-ctx (grids-list &key (warn-threshold 30))
+(defun create-lexicographical-ctx (items &key (warn-threshold 30))
   "Collect all the strides used within the compilation session and construct a hash table.
 Attention: this assumes that CSE has already detected all redundant stride computations.
 Otherwise, an excessive dictionary will be created, leading to a significant increase in compilation time!"
-  (declare (type list grids-list))
+  (declare (type list items))
   (let* ((lex (make-global-lex-order :session-id (gensym "SESSION")))
          (dict (global-lex-order-dict lex)))
-    (loop for grids in grids-list
-          for reads = (map 'list #'car (grids-reads grids))
-          for writes = (map 'list #'car (grids-writes grids))
-          if (grids-is-affine grids) do
-            ;; [TODO] Gather only rendered arefs to minimize the scheduling dimension.
-            (flet ((has-user-p (id)
-                     (loop for item in (grids-items grids)
-                           for reads = (if (eql (node-type item) :MOVE) (cdr (node-reads item)) (node-reads item))
-                           if (find id reads) collect item)))
-              (dolist (item (grids-items grids))
-                (loop for rt in (relay-reads (read-type-relay item))
-                      for r in (node-reads item)
-                      if (and rt (has-user-p r)) do (dolist (s (tensor-relay-stride rt)) (setf (gethash s dict) t)))
-                (loop for wt in (relay-writes (read-type-relay item))
-                      for w in (node-writes item)
-                      if (and wt (has-user-p w)) do (dolist (s (tensor-relay-stride wt)) (setf (gethash s dict) t))))))
+    (loop for item in items
+          if (listp item) do
+            (dolist (item (graph-nodes (getf item :blueprint)))
+              (when (eql :PolyAref (node-type item))
+                (loop for i upfrom 0 below (getattr item :nrank)
+                      do (setf (gethash (nth (1+ i) (node-reads item)) dict) t)))))
     (loop for key being the hash-key of (global-lex-order-dict lex)
           for nth upfrom 0 do
             (setf (gethash key (global-lex-order-dict lex)) nth))
@@ -213,8 +225,8 @@ This may cause a significant increase in compilation time. Please check the foll
 ;; TODO
 ;; - [ ] !view from INDEX-COMPONENTS? (e.g.: mask is applied?)
 ;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
-(defun lower-into-blueprint (schedule-space storage-map id->bind iterspace gids grid-id items base-graph writes reads write-types read-types
-                             &aux (domain-out) (schedule-out) (read-union-map-out) (write-union-map-out))
+(defun lower-into-blueprint (storage-map id->bind iterspace gids grid-id items base-graph writes reads write-types read-types
+                             &aux (domain-out) (schedule-out) (constants-out) (domain-str) (read-arefs) (write-arefs))
   "Creates blueprint from storage-map:
 - storage-map
 - id->bind
@@ -235,7 +247,7 @@ This may cause a significant increase in compilation time. Please check the foll
   ;; - [ ] define-global ==> rename
   (values
    (with-blueprint (:noopt t)
-     (let ((read-arefs) (write-arefs) (binds) (root) (const-loads) (expr-write-to (intern (format nil "E_~a" grid-id))))
+     (let ((binds) (root) (const-loads) (expr-write-to (intern (format nil "E_~a" grid-id))))
        (labels ((guard-scalar (v &key (allow-raw))
                   (etypecase v
                     (number (if allow-raw v (%load (%salloc :dtype :int64) v)))
@@ -349,41 +361,16 @@ This may cause a significant increase in compilation time. Please check the foll
              (loop for gid in gids
                    for mupa = (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" (node-id stmt) gids gid))
                    do (setf theta (isl:schedule-node-insert-partial-schedule (isl:schedule-node-first-child theta) mupa)))
-             (labels
-                 ((r (aref)
-                    (let ((defglobal (id->value *ctx* (car (node-reads aref)))))
-                      (assert (eql (node-type defglobal) :DEFINE-GLOBAL))
-                      (format nil "~a[~{~(~a~)~^, ~}] -> ~(~a~)[~a]" (node-id stmt) gids (getattr defglobal :name) (polyaref-on-global-lex-order schedule-space aref *ctx*))))
-                  (is-used-p (aref &aux (id (car (node-writes aref))))
-                    (and
-                     (let ((val (id->value *ctx* (car (node-reads aref)))))
-                       (and val (eql :DEFINE-GLOBAL (node-type val))))
-                     (loop for item in (graph-nodes *ctx*)
-                           for reads = (if (eql (node-type item) :MOVE) (cdr (node-reads item)) (node-reads item))
-                           if (find id reads) collect item)))
-                  (make-umap (aref-list)
-                    (format nil "[~{~(~a~)~^, ~}] -> { ~{~a~^, ~} }" (map 'list #'car const-loads) (map 'list #'r aref-list))))
-               (print "+++++++++")
-               (print (make-umap write-arefs))
-               (print (make-umap read-arefs))
-               
-               (setf domain-out domain
-                     schedule-out (isl:schedule-node-get-schedule theta)
-                     ;; [TODO] Read/Write UnionMap Construction
-                     ;; - [ ] DiskCache Creationの最適化
-                     ;;   - [ ] polyhedral.lisp
-                     ;;   - [ ] and here
-                     ;; - [ ] 共通辞書を作成
-                     ;;  - [ ] Same dim = union
-                     ;;  - [ ] segv?
-                     ;; - [ ] Read/WriteMapをどう作成するか考える，update polyhedral.lisp
-                     read-union-map-out (isl:union-map-from-str "{}")
-                     write-union-map-out (isl:union-map-from-str "{}"))))
-           (%progn body)))))
+             (setf domain-out domain
+                   schedule-out (isl:schedule-node-get-schedule theta)
+                   constants-out (format nil "[~{~a~^, ~}]" (map 'list #'car const-loads))
+                   domain-str (format nil "~a[~{~(~a~)~^, ~}]" (node-id stmt) gids))
+             (%progn body))))))
    domain-out
    schedule-out
-   read-union-map-out
-   write-union-map-out))
+   constants-out
+   domain-str
+   read-arefs write-arefs))
 
 (defun copy-item (item &aux (item (copy-node item)))
   (setf (node-id item) (gensym "NID"))
@@ -436,7 +423,7 @@ This may cause a significant increase in compilation time. Please check the foll
           collect
           (or (gethash rank rank2space) (error "get-grouped-dims: The size for rank ~a is not determined." rank)))))
 
-(defun grids->schedule-item (schedule-space id->bind graph grids val->grids)
+(defun grids->schedule-item (id->bind graph grids val->grids)
   "Converts Grids ==> $Affine"
   (assert (grids-writes grids))
   (let ((grid-reads (map 'list #'car (grids-reads grids)))
@@ -461,17 +448,15 @@ This may cause a significant increase in compilation time. Please check the foll
              (gids      (map 'list #'gid (range 0 (length (the list iterspace))))) ;; gid0 gid1 ...
              (is-memory-intensive-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids)))
              (storage-map (make-hash-table)))
-        (multiple-value-bind (bp domain schedule read-union-map write-union-map)
-            (lower-into-blueprint schedule-space storage-map id->bind iterspace gids (grids-id grids) (grids-items grids) graph grid-writes grid-reads grid-write-types grid-read-types)
+        (multiple-value-bind (bp domain schedule constraints domain-str rarefs warefs)
+            (lower-into-blueprint  storage-map id->bind iterspace gids (grids-id grids) (grids-items grids) graph grid-writes grid-reads grid-write-types grid-read-types)
           ;;        (caten/codegen/blueprint:print-blueprint bp t)
           (setf bp (caten/aasm::%simplify-ast bp))
-          (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
-            (caten/codegen/blueprint:print-blueprint bp t)
-            ($affine grid-writes (loop for a in args if (null (find a grid-writes)) collect a)
-                     :polyhedron (%make-polyhedral-schedule-item domain schedule read-union-map write-union-map)
-                     :blueprint bp
-                     :storage-map storage-map
-                     :reduction is-memory-intensive-p)))))))
+          (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))            (caten/codegen/blueprint:print-blueprint bp t)
+            (list :grid-writes grid-writes :grid-reads (loop for a in args if (null (find a grid-writes)) collect a)
+                  :domain domain :schedule schedule :constraints constraints :domain-str domain-str
+                  :storage-map storage-map :reduction is-memory-intensive-p
+                  :blueprint bp :read-arefs rarefs :write-arefs warefs)))))))
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [x] Rename: make-schedule-graph
