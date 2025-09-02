@@ -1,6 +1,12 @@
 (defpackage :caten/codegen/search/polyhedral
   (:use :cl :caten/air :caten/codegen/renderer :caten/codegen/search/schedule)
   (:export
+   #:Global-Lex-Order
+   #:Global-Lex-Order-Dict
+   #:Make-Global-Lex-Order
+   #:Global-Lex-Order-Session-Id
+   #:global-lex-order-dim
+   #:polyaref-on-global-lex-order
    #:*+inf*
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
@@ -20,6 +26,55 @@
    ))
 (in-package :caten/codegen/search/polyhedral)
 
+(defstruct Global-Lex-Order
+  "Global-Lex-Order stores a session-scoped dictionary for lexicographic
+orderings of multi-dimensional indices and their corresponding linear (1-D)
+indices.
+- Provide a canonical, session-wide mapping from a lexicographic coordinate
+  S(i0, i1, ..., ik) to its linearized index `idx`.
+- Serve as a common reference when lowering schedules, validating affine
+  constraints, and generating code.
+- We denote a lexicographic point as:
+    S(_gid1, 0, 0)
+  where each component (e.g., `_gid1`, `0`, `0`) is an index expression.
+- Row-major linearization with stride vector:
+    DIM | s0 | s1 | ... | sk |
+    --------------------------
+    IDX | i0 | i1 | ... | ik |
+  The linear index is:
+    idx = s0*i0 + s1*i1 + ... + sk*ik
+  For the concrete 3-D illustration below:
+    DIM | N*M | M | 1 |
+    ------------------- 
+    IDX | _gid1 | 0 | 0 |
+  Hence:
+    idx = (N*M)*_gid1 + N*0 + 1*0
+- Each index component (e.g., `_gid1`, `0`, `0`) MUST be an affine expression
+  over loop iterators and symbolic parameters. Non-affine terms are not allowed.
+- Each dim components MUST be an constant term."
+  (session-id nil :type symbol)
+  (dict (make-hash-table) :type hash-table))
+
+(defun global-lex-order-dim (glo)
+  (declare (type Global-Lex-Order glo))
+  (length (alexandria:hash-table-keys (global-lex-order-dict glo))))
+
+(defun polyaref-on-global-lex-order (global-lex-order polyaref graph)
+  (declare (type Global-Lex-Order global-lex-order) (type node polyaref))
+  (assert (eql (node-type polyaref) :PolyAref))
+  (let ((rank (getattr polyaref :nrank))
+        (renderer (make-instance 'Default-Renderer :graph graph :render-expr->expr t))
+        (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0))))
+    (loop for i upfrom 0 below rank
+          for dim = (nth (1+ i) (node-reads polyaref))
+          for idx = (nth (+ 1 rank i) (node-reads polyaref))
+          for plc = (gethash dim (global-lex-order-dict global-lex-order)) do
+            (assert plc () "polyaref-on-lex-order: The dimension ~a is not exist in scheduling space: ~a" dim (alexandria:hash-table-keys (global-lex-order-dict global-lex-order)))
+            (push idx (nth plc schedule-dims)))
+    (flet ((r (items)
+             (format nil "~{~a~^+~}" (map 'list #'(lambda (x) (render-node renderer x)) items))))
+      (format nil "~{~a~^, ~}" (map 'list #'r schedule-dims)))))
+
 (defparameter *+inf* (coerce (expt 2 32) 'double-float))
 (defclass Polyhedral-Schedule-Item ()
   ((theta :accessor psi-theta :initarg :initial-theta)
@@ -35,7 +90,6 @@
    ;; ctx?
    ;; during transformation blueprint should not be used
    )
-   
   (:documentation "
 Class `Polyhedral-Schedule-Item` is a wrapper around a Blueprint.
 

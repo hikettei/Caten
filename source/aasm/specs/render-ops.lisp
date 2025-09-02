@@ -189,7 +189,7 @@ X <- Aref(Array, idx=Stride1*Aff1+Stride2+Aff2+...)
          :slots ((nrank :type fixnum))
          :type-relay #'(lambda (id->type node)
                          (let ((arg (gethash (car (node-reads node)) id->type)))
-                           (assert arg () "First argument for :PolyAref should be a Tensor.")
+                           (assert arg () "First argument for :PolyAref should be a Tensor. (ID=~a)" (car (node-reads node)))
                            (cond
                              ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-GLOBAL))
                               (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil)))

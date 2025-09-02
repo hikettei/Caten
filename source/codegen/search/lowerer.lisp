@@ -161,22 +161,59 @@ Creates a ScheduleGraph from the given grpah.
            (dolist (w (grids-writes x))
              (setf (gethash (car w) val->grids) x)))
        (alexandria:hash-table-values id->grids))
-      (let ((g
-              (loop with id->bind = (make-hash-table)
-                    for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
-                    for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
-                    collect (grids->schedule-item id->bind graph grids val->grids))))
-        (assert (= n-scheduled (length (the list (graph-nodes graph)))))
-        (setf g (apply #'make-graph g)
-              (graph-outputs g) (copy-list (graph-outputs graph)))
-        (setf g (->schedule-graph g))
-        (verify-graph g)
-        g))))
+      (let ((schedule-space (create-lexicographical-ctx (alexandria:hash-table-values all-grids))))
+        (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 1)
+          (let ((dims (the list (alexandria:hash-table-keys (global-lex-order-dict schedule-space)))))
+            (caten/common.logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
+        (let ((g
+                (loop with id->bind = (make-hash-table)
+                      for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
+                      for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
+                      collect (grids->schedule-item schedule-space id->bind graph grids val->grids))))
+          (assert (= n-scheduled (length (the list (graph-nodes graph)))))
+          (setf g (apply #'make-graph g)
+                (graph-outputs g) (copy-list (graph-outputs graph)))
+          (setf g (->schedule-graph g))
+          (verify-graph g)
+          g)))))
 ;; ~~ Lowering ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun create-lexicographical-ctx (grids-list &key (warn-threshold 30))
+  "Collect all the strides used within the compilation session and construct a hash table.
+Attention: this assumes that CSE has already detected all redundant stride computations.
+Otherwise, an excessive dictionary will be created, leading to a significant increase in compilation time!"
+  (declare (type list grids-list))
+  (let* ((lex (make-global-lex-order :session-id (gensym "SESSION")))
+         (dict (global-lex-order-dict lex)))
+    (loop for grids in grids-list
+          for reads = (map 'list #'car (grids-reads grids))
+          for writes = (map 'list #'car (grids-writes grids))
+          if (grids-is-affine grids) do
+            ;; [TODO] Gather only rendered arefs to minimize the scheduling dimension.
+            (flet ((has-user-p (id)
+                     (loop for item in (grids-items grids)
+                           for reads = (if (eql (node-type item) :MOVE) (cdr (node-reads item)) (node-reads item))
+                           if (find id reads) collect item)))
+              (dolist (item (grids-items grids))
+                (loop for rt in (relay-reads (read-type-relay item))
+                      for r in (node-reads item)
+                      if (and rt (has-user-p r)) do (dolist (s (tensor-relay-stride rt)) (setf (gethash s dict) t)))
+                (loop for wt in (relay-writes (read-type-relay item))
+                      for w in (node-writes item)
+                      if (and wt (has-user-p w)) do (dolist (s (tensor-relay-stride wt)) (setf (gethash s dict) t))))))
+    (loop for key being the hash-key of (global-lex-order-dict lex)
+          for nth upfrom 0 do
+            (setf (gethash key (global-lex-order-dict lex)) nth))
+    (when (> (length (alexandria:hash-table-keys (global-lex-order-dict lex))) warn-threshold)
+      (warn "create-lexicographical-ctx: Detected an excessive lexicographical space creation (n_keys > ~a)
+This may cause a significant increase in compilation time. Please check the following:
+- There is a possibility that the TensorGraph Simplifier failed to detect Common Subexpression Elimination (CSE) for complex stride computations.
+- If you believe this behavior is correct, please partition the TensorGraph partially and compile it to improve compilation speed." warn-threshold))
+    lex))
+
 ;; TODO
 ;; - [ ] !view from INDEX-COMPONENTS? (e.g.: mask is applied?)
 ;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
-(defun lower-into-blueprint (storage-map id->bind iterspace gids grid-id items base-graph writes reads write-types read-types
+(defun lower-into-blueprint (schedule-space storage-map id->bind iterspace gids grid-id items base-graph writes reads write-types read-types
                              &aux (domain-out) (schedule-out) (read-union-map-out) (write-union-map-out))
   "Creates blueprint from storage-map:
 - storage-map
@@ -198,7 +235,7 @@ Creates a ScheduleGraph from the given grpah.
   ;; - [ ] define-global ==> rename
   (values
    (with-blueprint (:noopt t)
-     (let ((binds) (root) (const-loads) (expr-write-to (intern (format nil "E_~a" grid-id))))
+     (let ((read-arefs) (write-arefs) (binds) (root) (const-loads) (expr-write-to (intern (format nil "E_~a" grid-id))))
        (labels ((guard-scalar (v &key (allow-raw))
                   (etypecase v
                     (number (if allow-raw v (%load (%salloc :dtype :int64) v)))
@@ -206,7 +243,8 @@ Creates a ScheduleGraph from the given grpah.
                      (let ((definition (id->value base-graph v)))
                        (assert definition () "lower-into-blueprint: Cannot introduce symbolic shape ~a because it is not in the given tensor-graph. Is the type-relay up-to-date?" v)
                        (let ((type (car (relay-writes (read-type-relay definition)))))
-                         (push (cons v (tensor-relay-dtype type)) const-loads)
+                         (when (null (find v const-loads :key #'car))
+                           (push (cons v (tensor-relay-dtype type)) const-loads))
                          v)))))
                 (ensure-expr (id)
                   (etypecase id
@@ -218,7 +256,7 @@ Creates a ScheduleGraph from the given grpah.
                   ;; - [ ] (fconst 'a) どのようにLowerされる？
                   (%PolyAref
                    name
-                   (map 'list #'guard-scalar (tensor-relay-stride relay))
+                   (map 'list #'(lambda (x) (guard-scalar x :allow-raw t)) (tensor-relay-stride relay))
                    (loop for nth upfrom 0 below (tensor-relay-nrank relay)
                          for v = (nth nth (tensor-relay-views relay))
                          for gid = (nth nth gids) ;; (upfrom below by broadcast)
@@ -243,6 +281,9 @@ Creates a ScheduleGraph from the given grpah.
                                               (make-node :JIT :BIND (list (car (node-writes item))) (list expr-write-to) :value (car (node-reads item))))
                                         (relay->aref (car (node-reads item)) (car (relay-reads (read-type-relay item)))))
                                       (relay->aref w wt))))
+                            (when (getattr item :reduction :allow-undefined t)
+                              (push write-to read-arefs))
+                            (push write-to write-arefs)
                             (assert (null root) () "lower-into-blueprint: Single grids should provide single root (given items are invalid)")
                             (setf (nth nth (node-writes item)) waypoint)
                             (setf root (%setf write-to waypoint))))
@@ -251,7 +292,9 @@ Creates a ScheduleGraph from the given grpah.
                         for rt in (relay-reads (read-type-relay item))
                         for nth upfrom 0
                         if (find r reads)
-                          do (setf (nth nth (node-reads item)) (car (node-writes (relay->aref r rt)))))
+                          do (let ((raref (relay->aref r rt)))
+                               (push raref read-arefs)
+                               (setf (nth nth (node-reads item)) (car (node-writes raref)))))
                   (assert (= 1 (length (node-writes item))) () "lower-into-blueprint: JITAble nodes must have a single output.")
                   (emit item))
                 (lower-item (item)
@@ -306,14 +349,37 @@ Creates a ScheduleGraph from the given grpah.
              (loop for gid in gids
                    for mupa = (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" (node-id stmt) gids gid))
                    do (setf theta (isl:schedule-node-insert-partial-schedule (isl:schedule-node-first-child theta) mupa)))
-             (setf domain-out domain
-                   schedule-out (isl:schedule-node-get-schedule theta)
-                   ;; [TODO] Read/Write UnionMap Construction
-                   ;; - [ ] DiskCache Creationの最適化
-                   ;; - [ ] Read/WriteMapをどう作成するか考える，update polyhedral.lisp
-                   read-union-map-out (isl:union-map-from-str "{}")
-                   write-union-map-out (isl:union-map-from-str "{}")))
-           (%progn (node->id body))))))
+             (labels
+                 ((r (aref)
+                    (let ((defglobal (id->value *ctx* (car (node-reads aref)))))
+                      (assert (eql (node-type defglobal) :DEFINE-GLOBAL))
+                      (format nil "~a[~{~(~a~)~^, ~}] -> ~(~a~)[~a]" (node-id stmt) gids (getattr defglobal :name) (polyaref-on-global-lex-order schedule-space aref *ctx*))))
+                  (is-used-p (aref &aux (id (car (node-writes aref))))
+                    (and
+                     (let ((val (id->value *ctx* (car (node-reads aref)))))
+                       (and val (eql :DEFINE-GLOBAL (node-type val))))
+                     (loop for item in (graph-nodes *ctx*)
+                           for reads = (if (eql (node-type item) :MOVE) (cdr (node-reads item)) (node-reads item))
+                           if (find id reads) collect item)))
+                  (make-umap (aref-list)
+                    (format nil "[~{~(~a~)~^, ~}] -> { ~{~a~^, ~} }" (map 'list #'car const-loads) (map 'list #'r aref-list))))
+               (print "+++++++++")
+               (print (make-umap write-arefs))
+               (print (make-umap read-arefs))
+               
+               (setf domain-out domain
+                     schedule-out (isl:schedule-node-get-schedule theta)
+                     ;; [TODO] Read/Write UnionMap Construction
+                     ;; - [ ] DiskCache Creationの最適化
+                     ;;   - [ ] polyhedral.lisp
+                     ;;   - [ ] and here
+                     ;; - [ ] 共通辞書を作成
+                     ;;  - [ ] Same dim = union
+                     ;;  - [ ] segv?
+                     ;; - [ ] Read/WriteMapをどう作成するか考える，update polyhedral.lisp
+                     read-union-map-out (isl:union-map-from-str "{}")
+                     write-union-map-out (isl:union-map-from-str "{}"))))
+           (%progn body)))))
    domain-out
    schedule-out
    read-union-map-out
@@ -366,10 +432,11 @@ Creates a ScheduleGraph from the given grpah.
                (mapc #'check (relay-reads (read-type-relay node)))
                (mapc #'check (relay-writes (read-type-relay node)))))
       (mapc #'explore items))
-    (loop for rank upfrom 0 below kernel-rank collect
+    (loop for rank upfrom 0 below kernel-rank
+          collect
           (or (gethash rank rank2space) (error "get-grouped-dims: The size for rank ~a is not determined." rank)))))
-                               
-(defun grids->schedule-item (id->bind graph grids val->grids)
+
+(defun grids->schedule-item (schedule-space id->bind graph grids val->grids)
   "Converts Grids ==> $Affine"
   (assert (grids-writes grids))
   (let ((grid-reads (map 'list #'car (grids-reads grids)))
@@ -378,7 +445,6 @@ Creates a ScheduleGraph from the given grpah.
         (grid-write-types (map 'list #'cdr (grids-writes grids))))
     (when (null (grids-is-affine grids))
       (return-from grids->schedule-item ($nonaffine grid-writes grid-reads :items (grids-items grids))))
-    ;; If grids is affine => prepare for scheduling ...
     (let ((extra-items
             (loop for r in grid-reads for nth upfrom 0
                   for g = (gethash r val->grids)
@@ -387,23 +453,25 @@ Creates a ScheduleGraph from the given grpah.
                              (nth nth grid-read-types) (map 'list #'cdr (grids-reads g)))
                     and append (grids-items g))))
       (setf grid-reads (alexandria:flatten grid-reads)
-            grid-read-types (alexandria:flatten grid-read-types))
-      (setf (grids-items grids)
-            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (append extra-items (grids-items grids))) grid-reads grid-writes)))
-    (let* ((iterspace (get-grouped-dims (grids-items grids)))
-           (gids      (map 'list #'gid (range 0 (length (the list iterspace))))) ;; gid0 gid1 ...
-           (is-memory-intensive-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids)))
-           (storage-map (make-hash-table)))
-      (multiple-value-bind (bp domain schedule read-union-map write-union-map)
-          (lower-into-blueprint storage-map id->bind iterspace gids (grids-id grids) (grids-items grids) graph grid-writes grid-reads grid-write-types grid-read-types)
-        (setf bp (caten/aasm::%simplify-ast bp))
-        (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
-          (caten/codegen/blueprint:print-blueprint bp t)
-          ($affine grid-writes (loop for a in args if (null (find a grid-writes)) collect a)
-                   :polyhedron (%make-polyhedral-schedule-item domain schedule read-union-map write-union-map)
-                   :blueprint bp
-                   :storage-map storage-map
-                   :reduction is-memory-intensive-p))))))
+            grid-read-types (alexandria:flatten grid-read-types)
+            (grids-items grids)
+            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (append extra-items (grids-items grids))) grid-reads grid-writes))
+      ;; Grids are affine
+      (let* ((iterspace (get-grouped-dims (grids-items grids)))
+             (gids      (map 'list #'gid (range 0 (length (the list iterspace))))) ;; gid0 gid1 ...
+             (is-memory-intensive-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids)))
+             (storage-map (make-hash-table)))
+        (multiple-value-bind (bp domain schedule read-union-map write-union-map)
+            (lower-into-blueprint schedule-space storage-map id->bind iterspace gids (grids-id grids) (grids-items grids) graph grid-writes grid-reads grid-write-types grid-read-types)
+          ;;        (caten/codegen/blueprint:print-blueprint bp t)
+          (setf bp (caten/aasm::%simplify-ast bp))
+          (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
+            (caten/codegen/blueprint:print-blueprint bp t)
+            ($affine grid-writes (loop for a in args if (null (find a grid-writes)) collect a)
+                     :polyhedron (%make-polyhedral-schedule-item domain schedule read-union-map write-union-map)
+                     :blueprint bp
+                     :storage-map storage-map
+                     :reduction is-memory-intensive-p)))))))
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [x] Rename: make-schedule-graph

@@ -468,5 +468,5 @@
   (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
     (flet ((r (id) (render-node renderer id)))
       (if (and p (eql (node-type p) :BIND))
-          (format nil "<PAref:~(~a~)[~{~a^, ~}]>" (%render-const renderer (getattr p :value)) (map 'list #'r (cdr (node-reads node))))
-          (format nil "<PAref~(~a~)[~{~a^, ~}]>" (render-node renderer (car (node-reads node))) (map 'list #'r (cdr (node-reads node))))))))
+          (format nil "<PAref:~(~a~)[~{~a~^, ~}]>" (%render-const renderer (getattr p :value)) (map 'list #'r (cdr (node-reads node))))
+          (format nil "<PAref~(~a~)[~{~a~^, ~}]>" (render-node renderer (car (node-reads node))) (map 'list #'r (cdr (node-reads node))))))))
