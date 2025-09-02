@@ -49,9 +49,9 @@ Constraints:
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
-(defun %global (name dtype pointer-p &key (mode :io))
-  (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name))
-  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil :dtype dtype :pointer-p pointer-p :mode mode)))
+(defun %global (write-to name dtype pointer-p &key (mode :io))
+  (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name write-to))
+  (emit (make-node :Render :DEFINE-GLOBAL (list write-to) nil :name name :dtype dtype :pointer-p pointer-p :mode mode)))
 
 (defun %local (name size dtype)
   (declare (type dtype-t dtype) (type list size) (type symbol name))
@@ -81,6 +81,11 @@ Constraints:
 (defun %aref (name idx &key (out (gensym "AREF")))
   (declare (type (or symbol node) name idx))
   (emit (make-node :JIT :Aref (list out) (map 'list #'node->id1 (list name idx)))))
+
+(defun %polyaref (name strides affs &key (out (gensym "PAREF")))
+  (declare (type (or symbol node) name) (type list strides affs))
+  (assert (= (length strides) (length affs)))
+  (emit (make-node :JIT :PolyAref (list out) (map 'list #'node->id1 (append (list name) strides affs)) :nrank (length strides))))
 
 (defun %setf (tgt value &key (out (gensym "SETF")))
   (declare (type (or symbol node) tgt value))

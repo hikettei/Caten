@@ -1199,10 +1199,14 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
          (return-from uset-find set)))))
 
 (defun map-build-preimage-mt (map filter-name)
+  (print "MAP")
+  (print map)
   (let* ((bmap (map-affine-hull map))
          (bset (basic-map-wrap bmap))
          (cs (basic-set-get-constraint-list bset))
          (dim2aff (make-hash-table :test 'equal)))
+    (PRINT "ACCESS_MAP")
+    (print bmap)
     (loop for i upfrom 0 below (constraint-list-size cs)
           for c = (constraint-list-get cs i)
           for tgt-dim = nil
@@ -1215,34 +1219,23 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
                        (assert (null tgt-dim))
                        (setf tgt-dim name)) ;; child側のtile
                       ((= 1 (value-sign coeff))
-                       (print coeff) ;; parent側のtile
-                       (warn "tile support?")
-                       ;;(error "? No support for tile ...")
-                       )
+                       (push (list :TILE coeff name) affs))
                       ((= -1 (value-sign coeff))
-                       (push (cons j (value-mul coeff (value -1))) affs))))
+                       (push (cons name (value-mul coeff (value -1))) affs))))
             (setf (gethash tgt-dim dim2aff) (reverse affs)))
     (let ((from) (to) (offset 0) (dims))
       ;; should not permute things
-      (flet ((r (ls) (format nil "_gid~a*~a" offset (val->int (cdr ls)))))
-        (loop for dim upfrom 0 below (map-dim map :dim-out)
-              for name = (map-get-dim-name map :dim-out dim) do
-                (let ((fcands (if (gethash name dim2aff)
-                                  (map 'list #'car (gethash name dim2aff))
-                                  (list dim)))
-                      (tcands (if (gethash name dim2aff)
-                                  (gethash name dim2aff)
-                                  (list (cons dim (value 1))))))
-                  (let ((aff-for-dim))
-                    (loop for fn in fcands for tn in tcands for nth upfrom 0 do
-                      (setf dims (append dims (list fn))
-                            from (append from (list offset))
-                            aff-for-dim (append aff-for-dim (list (r tn))))
-                      (incf offset))
-                    (setf to (append to (list (format nil "~{~a~^+~}" aff-for-dim)))))))
-        (let ((from (map 'list #'(lambda (x) (format nil "_gid~a" x)) from)))
-          (format nil "{ ~a[~{~a~^, ~}] -> ~a[~{~a~^, ~}] }" filter-name from filter-name to))))))
-
+      ;; A = Bを見て行って:
+      ;; - Constraintがない => NoFuse
+      ;; - _gid3=_gid3 => Fuse
+      ;; - _gid3=_gid2 => Interchange+Fuse
+      ;; - _gid3=_gid2-2_gid3 => Tile+Fuse
+      ;; - ScheduleTreeのExploreとして実装する
+      (loop for dim upfrom 0 below (map-dim map :dim-out)
+            for name = (map-get-dim-name map :dim-out dim) do
+              (format t "Fusion For ~a:~%" name)
+              (print (Gethash name dim2aff))))))
+                    
 (defun schedule-pullback-identity (schedule &key (substitute-id) (substitute))
   (let* ((udom (schedule-node-domain-get-domain (schedule-get-root schedule)))
          (sets (union-set-get-set-list udom))
@@ -1272,6 +1265,9 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
 (defun schedule-detect-coalesce (merged-schedule child-read-umap parent-write-umap child-write-umap)
   (multiple-value-bind (deps raw waw war) (compute-dependence-relation child-read-umap parent-write-umap merged-schedule)
     (declare (ignore deps waw war))
+    (print parent-write-umap)
+    (print child-read-umap)
+    
     (%foreach-map
      raw
      #'(lambda (map
@@ -1281,30 +1277,9 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
                   (preimage (map-build-preimage-mt map tgt-name))) ;; CHILD -> PARENT
          (print map)
          (print preimage)
-         (let* ((sch2 (schedule-get-root (schedule-pullback-identity merged-schedule :substitute-id (map-get-tuple-name map :dim-out) :substitute preimage)))
-                (child-read-umap-fixed (union-map-preimage-domain-multi-aff child-read-umap (multi-aff-from-str preimage)))
-                (child-write-umap-fixed (union-map-preimage-domain-multi-aff child-write-umap (multi-aff-from-str preimage)))
-                (dom1 (schedule-node-domain-get-domain sch2))
-                (cur4 (uset-find dom1 tgt-name))
-                (others (union-set-subtract dom1 (union-set-from-set cur4)))
-                (pdom (set-set-tuple-name (map-domain map) tgt-name))
-                (validdom (union-set-union others (set-union-set pdom)))
-                (sch3 (schedule-intersect-domain (schedule-node-get-schedule sch2) validdom))
-                (sch4 (schedule-collapse-all-band sch3)))
-           (PRINT "FINAL")
-           (print (schedule-get-root sch4))
-           ;; Workload
-           ;; - [x] ScheduleDomainのBoundを正しく指定する
-           ;; - [x] MUPAを次元数で分割, no coeff, _gid0, _gid1, _gid2
-           ;; - [ ] relu, transpose, dim incorrect
-           ;;   - [ ] Coalesce後のDomainSize計算？？
-           ;; - [ ] Matmul/Reduction対応
-           ;; - [ ] fuse-into = parent or child
-           ;; - [ ] coalesce ni 時間つかいすぎない。
-           (setf merged-schedule sch4
-                 child-read-umap child-read-umap-fixed
-                 child-write-umap child-write-umap-fixed)))))
-  (values merged-schedule child-read-umap child-write-umap))
+        ; (error "STOP")
+         ))
+    merged-schedule))
 ;; [todo] した全部削除
 (defun schedule-compute-dim-equalities-graph (merged-schedule child-read-umap parent-write-umap &aux (results))
   ;; Returns a list of valid permutations for K2

@@ -100,6 +100,9 @@ Reads and binds attributes from module.
 (defun normalize-axes (x axes)
   (if (listp axes) (map 'list #'(lambda (n) (normalize-axis x n)) axes) (list (normalize-axis x axes))))
 
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))
+
 (defun parse-reduce-axes (x lst)
   (declare (type tensor x))
   (ematch lst
@@ -120,9 +123,6 @@ Reads and binds attributes from module.
 	 (setf (nth axis shape-after) 1
 	       (nth axis view-after) `(:~ ,(nth axis (shape x)))))
        (values shape-after view-after axes)))))
-
-(defmacro range (from below &optional (by 1))
-  `(loop for i from ,from below ,below by ,by collect i))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun collect-initargs-names (args)

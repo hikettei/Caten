@@ -627,7 +627,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                                          (if (getattr arg :pointer-p)
                                              " restrict"
                                              "")
-                                         (car (node-writes arg))))))
+                                         (getattr arg :name)))))
        (format out "~{~a~^, ~}" args))
      (princ ") " out)
      (labels ((indent () (make-string indent :initial-element #\space))
@@ -652,7 +652,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                   (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
                   (:DEFINE-LOCAL (fmt "~(~a~)x~{~a~^x~} ~(~a~);"
                                       (getattr node :dtype) (node-reads node) (car (node-writes node))))
-                  (:RANGE)
                   (:FOR
                    (multiple-value-bind (range body) (apply #'values (node-reads node))
                      (setf range (id->value graph range))
@@ -678,12 +677,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                      (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
                      (r body)
                      (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
-                  (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
-                  (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
-                  (:Aref
-                   (multiple-value-bind (name idx) (apply #'values (node-reads node))
-                     (r name) (r idx)
-                     (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
                   (:IF
                    (multiple-value-bind (cond body) (apply #'values (node-reads node))
                      (setf cond (id->value graph cond))

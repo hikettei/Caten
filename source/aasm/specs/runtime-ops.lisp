@@ -7,6 +7,7 @@
 ;;                                                             | 26 Ops
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
+  ;; [todo] remove
 (defclass KernelTime (AType) nil)
 (defun kernel-time-p (x) (typep x 'KernelTime))
 (defclass RuntimeOps () nil)

@@ -8,6 +8,7 @@
    #:psi-read-union-map #:psi-write-union-map
    #:opt-history #:psi-opt-history
    #:psi-evaluation
+   #:%make-polyhedral-schedule-item
    #:make-polyhedral-schedule-item
    #:ctx #:ctx-node-to-loops #:ctx-all-loops #:ctx-exprs #:ctx-scal->access
    #:node-to-loops #:all-loops #:exprs #:scal->access
@@ -147,7 +148,9 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                (push (cons (cons (car (node-writes node)) (car (node-writes node))) nil) found)
                (return-from explore))
              (setf (gethash (node-id node) visited) t)
-             (when (eql (node-type node) :AREF)
+             (when (eql (node-type node) :Aref)
+               (error "extract-buffer-access-info: Cannot extract polyhedral model from given blueprint. Replace all :AREF with :PolyAref first."))
+             (when (eql (node-type node) :PolyAref)
                (let* ((p (id->value blueprint (car (node-reads node))))
                       (v (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node))))
                       (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
@@ -275,6 +278,13 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (assert (= 1 (length (graph-outputs blueprint))))
       (rewrite-node (car (graph-outputs blueprint))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun %make-polyhedral-schedule-item (domain schedule reads writes &key (strategy))
+  (declare (type isl::union-set domain) (type isl::union-map reads writes) (type isl::schedule schedule))
+  (make-instance 'Polyhedral-Schedule-Item
+                 :dependency-graph (compute-dependence-relation reads writes schedule)
+                 :initial-theta schedule :read reads :write writes
+                 :domain domain :strategy strategy :opt-history nil))
+
 (defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy) (opt-history))
   "
 - scal->array[bool]

@@ -27,8 +27,8 @@
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun $affine (writes reads &key (polyhedron) (blueprint) (reduction) (storage-map (make-hash-table))
                                (dbkey (uiop:symbol-call :caten/codegen/diskcache :make-diskcache-entry blueprint)))
-  (declare (type list writes reads) (type hash-table storage-map))
-  (emit (make-node :Schedule :Affine writes reads :polyhedron polyhedron :blueprint blueprint :reduction reduction :storage-map storage-map :dbkey dbkey)))
+  (declare (type list writes reads))
+  (emit (make-node :Schedule :Affine writes reads :storage-map storage-map :polyhedron polyhedron :blueprint blueprint :reduction reduction :dbkey dbkey)))
 
 (defun $nonaffine (writes reads &key (items))
   (declare (type list writes reads))

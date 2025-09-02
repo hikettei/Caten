@@ -104,7 +104,7 @@
          (iteration-space-views is)
          (iteration-space-strides is)
          iterations))))))
-
+;; [todo] delete
 (defun expr-index-components (renderer node index-space)
   (assert (eql (node-type node) :INDEX-COMPONENTS))
   (labels ((from-expr (shapes components)
@@ -193,11 +193,28 @@
   (def :!= "!=")
   (def :< "<"))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (getattr node :name)))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
   (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
     (if (and p (eql (node-type p) :BIND))
         (format nil "~(~a~)[~(~a~)]" (getattr p :value) (render-node renderer (second (node-reads node))))
-        (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))))
+        (format nil "~(~a~)[~(~a~)]" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :PolyAref)) node)
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node))))
+        (nrank (getattr node :nrank))
+        (accesses))
+    (flet ((r (id) (render-node renderer id)))
+      (loop with offset = (/ (1- (length (node-reads node))) 2)
+            for i upfrom 0 below nrank
+            for stride = (nth (1+ i) (node-reads node))
+            for gid = (nth (+ offset i 1) (node-reads node))
+            do (push (format nil "<~a|~a>" (r stride) (r gid)) accesses))
+      (if (and p (eql (node-type p) :BIND))
+          (format nil "<PolyAref(BIND):<~(~a~)->~(~a~)>[~{~a~^, ~}]>" (render-node renderer (car (node-reads node))) (getattr p :value) (reverse accesses))
+          (format nil "<PolyAref:~(~a~)[~{~a~^, ~}]>" (render-node renderer (car (node-reads node))) (reverse accesses))))))
 
 (defmethod %render-node ((renderer default-renderer) (id (eql :Swizzle)) node)
   (with-output-to-string (out)
@@ -345,7 +362,7 @@
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
-  (%render-const renderer (car (node-writes node))))
+  (%render-const renderer (getattr node :name)))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RANGE)) node)
   (%render-const renderer (getattr node :idx)))
@@ -359,7 +376,7 @@
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-GLOBAL)) node)
-  (%render-const renderer (car (node-writes node))))
+  (%render-const renderer (getattr node :name)))
 
 (defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-LOCAL)) node)
   (%render-const renderer (car (node-writes node))))
@@ -443,3 +460,13 @@
 
 (defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :BIND)) node)
   (%render-const renderer (getattr node :value)))
+
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (getattr node :name)))
+
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :PolyAref)) node)
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
+    (flet ((r (id) (render-node renderer id)))
+      (if (and p (eql (node-type p) :BIND))
+          (format nil "<PAref:~(~a~)[~{~a^, ~}]>" (%render-const renderer (getattr p :value)) (map 'list #'r (cdr (node-reads node))))
+          (format nil "<PAref~(~a~)[~{~a^, ~}]>" (render-node renderer (car (node-reads node))) (map 'list #'r (cdr (node-reads node))))))))

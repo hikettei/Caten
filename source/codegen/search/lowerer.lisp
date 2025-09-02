@@ -8,390 +8,29 @@
    #:schedule-graph-fuse))
 
 (in-package :caten/codegen/lowerer)
-;; ~~ Grids ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Grids
-  (is-affine t :type boolean)
-  (is-zero-cost nil :Type boolean)
-  (id 0 :type fixnum)
-  ;; iterator
-  (items nil :type list)
-  (writes nil :type list)
-  (reads nil :type list))
+  "A `Grids` is the minimum scheduling unit. It corresponds to zero or one `VIEW`, and the list of nodes contained in items must satisfy the following conditions:
+- All nodes can be executed within the same for loop
+- The entire subgraph produces a single output"
+  (is-affine t :type boolean)      ;; Optimize graph as polyhedral model?
+  (is-zero-cost nil :Type boolean) ;; Allowed to clone Grids for simplicity?
+  (id 0 :type fixnum)              ;; Unique ID
+  (items nil :type list)           ;; A list of nodes grouped to this grids
+  (writes nil :type list)          ;; grid writes (list (cons name relay) ...)
+  (reads nil :type list))          ;; grid reads  (list (cons name relay) ...)
 
-;; ~~ Early Coalesce ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct Iteration-Space
-  (shape nil :type list)
-  (strides nil :type list)
-  (views nil :type list)
-  (procedure nil :type list))
-
-(defun relay-write-iters (relay)
-  (declare (type Relay relay))
-  (map 'list #'(lambda (x) (when x (tensor-relay-iterspace x))) (relay-writes relay)))
-
-(defun (setf relay-write-iters) (value relay)
-  (declare (type Relay relay) (type list value))
-  (assert (= (length value) (length (relay-writes relay))))
-  (loop for w in (relay-writes relay)
-        for v in value
-        do (when w (setf (tensor-relay-iterspace w) v))))
-
-(defun relay-read-iters (relay)
-  (declare (type Relay relay))
-  (map 'list #'(lambda (x) (when x (tensor-relay-iterspace x))) (relay-reads relay)))
-
-(defun (setf relay-read-iters) (value relay)
-  (declare (type Relay relay) (type list value))
-  (assert (= (length value) (length (relay-reads relay))))
-  (loop for w in (relay-reads relay)
-        for v in value
-        do (when w (setf (tensor-relay-iterspace w) v))))
-;; ~~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun reveal-buffer (object)
-  (if (typep object 'TensorRelay)
-      (if (null (tensor-relay-shape object))
-          (or (tensor-relay-value object) object)
-          object)
-      object))
-
-(defun gather-only-scalars (nodes)
-  (loop for n in nodes
-        if (and (= 0 (tensor-relay-nrank (car (relay-writes (read-type-relay n))))))
-          collect n))
-
-(defun %expr-const (graph value dtype)
-  (let* ((val (reveal-buffer value)))
-    (if (or (numberp val) (null (id->value graph val)))
-        (expr-const val dtype)
-        ;; Merge only scalar path!
-        (expr-from-graph val (apply #'caten/air:make-graph (gather-only-scalars (graph-nodes graph)))))))
-;; ~~ Loop Coalesce (Tensor Level) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
-  "Mergeable axis = view is not created."
-  (when (null view) (return-from mergeable-view-p t))
-  (when (expr-equal-to shape 1) (return-from mergeable-view-p (fourth view))) ;; Always collapse one as long as they are broadcasted.
-  (trivia:ematch view
-    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) _) t)
-    ;; considering the case: X = |val_15|, shape=a*b (a little heavy, so separated)
-    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (%expr-const g x :int64) shape)) (eql 1) _) t)
-    (_ nil)))
-
-(defmethod iteration-space-sync-broadcast ((is Iteration-Space))
-  (setf (iteration-space-views is)
-        (loop for stride in (iteration-space-strides is)
-              for view in (iteration-space-views is)
-              for size in (iteration-space-shape is)
-              if (eql stride 0)
-                collect (or view (list 0 size 1 t))
-              else
-                collect view))
-  is)
-
-(defun merge-dims (g shape strides views &key (no-collapse nil))
-  (declare (type list shape strides views))
-  (when (null shape) (return-from merge-dims))
-  (when (every #'null views) (setf views (loop repeat (length shape) collect nil)))
-  (assert (= (length shape) (length strides) (length views)))
-  ;; ret = (list new-shapes new-strides new-views)
-  (let ((ret (list
-              (list
-               (%expr-const g (nth 0 shape) :int64)
-               (%expr-const g (nth 0 strides) :int64)
-               (nth 0 views)
-               (list 0)))))
-    (loop for nth upfrom 1 below (length shape)
-          for size = (nth nth shape)
-          for stride = (nth nth strides)
-          for view = (nth nth views) do
-            (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
-              (if (and
-                   (null no-collapse)
-                   (mergeable-view-p g last-view last-size)
-                   (mergeable-view-p g view size)
-                   (or
-                    (when (expr-equal-to last-stride 0) (eql stride 0))
-                    (expr-scalar-equivalent-p
-                     last-stride
-                     (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64)))))
-                  (setf (nth (1- (length ret)) ret)
-                        (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil (append last-pd (list nth))))
-                  (setf ret
-                        (append
-                         ret
-                         (list (list (%expr-const g size :int64) (%expr-const g stride :int64) (if (mergeable-view-p g view size) nil view) (list nth))))))))
-    (iteration-space-sync-broadcast
-     (make-iteration-space
-      :shape
-      (loop for s in ret collect (first s))
-      :strides
-      (loop for s in ret collect (second s))
-      :views
-      (loop for s in ret collect (third s))
-      :procedure
-      (loop for s in ret collect (fourth s))))))
-
-(defmethod tensor-relay-merge-dims ((graph Graph) (buffer TensorRelay))
-  (let ((viewed-shape (tensor-relay-shape buffer))
-        (strides (tensor-relay-stride buffer))
-        (views (tensor-relay-views buffer)))
-    (merge-dims
-     graph
-     ;; base-shape is set to nil if views are not created.
-     viewed-shape
-     (loop for stride in strides
-           for nth upfrom 0
-           for view = (nth nth views)
-           if (and (listp view) (fourth view))
-             collect 0 ;; Broadcasted -> stride is zero
-           else
-             collect stride)
-     (or
-      (when (some #'identity views) views)
-      (loop repeat (tensor-relay-nrank buffer) collect nil)))))
-
-(defmethod tensor-relay-iteration-space ((graph Graph) (buffer TensorRelay))
-  (let ((viewed-shape (tensor-relay-shape buffer))
-        (strides      (tensor-relay-stride buffer))
-        (views        (tensor-relay-views buffer)))
-    (merge-dims
-     graph
-     ;; base-shape is set to nil if views are not created.
-     viewed-shape
-     (loop for stride in strides
-           for nth upfrom 0
-           for view = (nth nth views)
-           if (and (listp view) (fourth view))
-             collect 0 ;; Broadcasted -> stride is zero
-           else
-             collect stride)
-     (or
-      (when (some #'identity views) views)
-      (loop repeat (tensor-relay-nrank buffer) collect nil))
-     :no-collapse t)))
-
-(defmethod get-grouped-dims (items (base-graph Graph))
-  "Infers the loop boundaries of the graph by finding the common iteration space."
-  (let* ((kernel-rank
-           (loop for node in items
-                 for type = (read-type-relay node)
-                 maximize
-                 (loop for r in (append (relay-reads type) (relay-writes type))
-                       when r maximize (length (tensor-relay-shape r)))))
-         (pid2space (make-hash-table :test #'equal))
-         (candidates nil))
-    ;; Assuming all buffers in the graph have reshaped to `kernel-rank` by the scheduler.
-    (labels ((is-one (expr) (expr-equal-to expr 1))
-             (check (buffer &key (noopt t))
-               (when buffer
-                 (let ((space
-                         (if noopt
-                             (tensor-relay-iteration-space base-graph buffer)
-                             (tensor-relay-merge-dims base-graph buffer))))
-                   (when space
-                     (loop for s in (iteration-space-shape space)
-                           for p in (iteration-space-procedure space)
-                           do (setf (gethash p pid2space)
-                                    (if (null (gethash p pid2space))
-                                        s
-                                        (if (is-one (gethash p pid2space))
-                                            s
-                                            (gethash p pid2space)))))))))
-             (explore (node &key (noopt t))
-               (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
-               (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
-      
-      ;; [todo] remove loop collapse at tensor lvl for symbolic fusion
-      ;; [todo] loop collapseはこの段階では実行しないことにする。
-      (if t
-          (progn ;; experiment: no coalesce
-            (mapc #'explore items)
-            (setf candidates (alexandria:hash-table-keys pid2space)))
-          (progn ;; experiment; coalesce
-            (mapc #'(lambda (x) (explore x :noopt nil)) items)
-            (setf candidates (alexandria:hash-table-keys pid2space))
-            (mapc #'explore items)))
-      (let ((new-procedure))
-        (dolist (c (sort (copy-list candidates) #'< :key #'length))
-          (when (every #'(lambda (x) (null (find x (alexandria:flatten new-procedure)))) c)
-            (push c new-procedure)))
-        (loop for i upfrom 0 below kernel-rank
-              if (null (find i (alexandria:flatten new-procedure)))
-                do (push (list i) new-procedure))
-        (setf new-procedure (sort new-procedure #'< :key #'car))
-        (assert (equal (alexandria:flatten new-procedure) (caten/codegen/helpers:range 0 kernel-rank)))
-        (cons
-         (map
-          'list
-          #'(lambda (x)
-              (assert (gethash x pid2space) () "the axis ~a is not found from ~a" x (alexandria:hash-table-keys pid2space))
-              (gethash x pid2space))
-          new-procedure)
-         new-procedure)))))
-
-(defmethod fixup-items-iteration-space ((items list) found-pair g &aux (kernel-rank (reduce #'max (alexandria:flatten (cdr found-pair)) :initial-value 0)))
-  "Rewrite the all node buffers to have the common iteration space found by the `get-grouped-dims`. All nodes must have the same ranked buffer in advance. (rewritten by scheduler.lisp)"
-  (multiple-value-bind (found-space procedure) (values (car found-pair) (cdr found-pair))
-    (labels ((merge-list (proc list)
-               (loop for p in proc
-                     collect
-                     (apply #'expr-mul (map 'list #'(lambda (x) (%expr-const g (nth x list) :int64)) p))))
-             (merge-stride (proc list)
-               (loop for p in proc
-                     collect
-                     (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
-                       (%expr-const g (if (find 0 strides :test #'eql) 0 (car (last strides))) :int64))))
-             (new-stride (stride view)
-               (loop for s in stride
-                     for nth upfrom 0
-                     for v = (nth nth view)
-                     if (and (listp v) (fourth v))
-                       collect 0
-                     else
-                       collect s))
-             (merge-view (proc view)
-               (loop for p in proc
-                     collect
-                     (if (= (length p) 1)
-                         (nth (car p) view)
-                         nil)))
-             (fixup-dims (id original-buffer)
-               (when (and original-buffer (> (length (tensor-relay-shape original-buffer)) 0))
-                 ;; Caten cannot inference where to insert one here.
-                 (assert (= (length (tensor-relay-shape original-buffer)) (1+ kernel-rank))
-                         ()
-                         "(id=~a) Cannot uprank ~a into the space ~a. A original buffer should be upranked by the scheduler in advance.~%~a" id original-buffer found-space items)
-                 (multiple-value-bind (new-shape new-stride new-view)
-                     (values (merge-list procedure (tensor-relay-shape original-buffer))
-                             (merge-stride procedure (new-stride (tensor-relay-stride original-buffer) (tensor-relay-views original-buffer)))
-                             (merge-view procedure (tensor-relay-views original-buffer)))
-                   (make-iteration-space
-                    :shape new-shape
-                    :strides new-stride
-                    :views new-view
-                    :procedure procedure)))))
-      (dolist (n items)
-        (assert (= 1 (length (node-writes n))))
-        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
-              (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
-
-(defun make-index-components (node gids)
-  (assert (eql (node-type node) :INDEX-COMPONENTS))
-  (flet ((maybe-expr-const (x) (if (numberp x) (expr-const x :int64) x)))
-    (labels ((from-expr (shapes components)
-               (reduce
-                #'expr-add
-                (map
-                 'list
-                 #'(lambda (size stride gid)
-                     (if (expr-equal-to size 1)
-                         (expr-const 0 :int64)
-                         (expr-mul (maybe-expr-const stride) (maybe-expr-const gid))))
-                 shapes
-                 components
-                 gids)))
-             (merge-stride (proc list)
-               (loop for p in proc
-                     collect
-                     (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
-                       (if (find 0 strides :test #'eql) (expr-const 0 :int64) (maybe-expr-const (car (last strides))))))))
-      (let* ((is (car (relay-write-iters (read-type-relay node))))
-             (proc (iteration-space-procedure is))
-             (components (merge-stride proc (cdr (node-reads node)))))
-        (let ((e (from-expr (iteration-space-shape is) components)))
-          (setf (node-writes (expr-out e)) (node-writes node)
-                (graph-outputs (expr-graph e)) (node-writes node))
-          e)))))
-
-(defmethod iteration-space-expr-aref ((is Iteration-Space) (type TensorRelay) gids)
-  "Returns a list of EXPR which (reduce #'+ ...) represents for the index."
-  (assert (not (= (tensor-relay-nrank type) -1)) () "buffer-nrank = -1 means the array was mutated to scalar!")
-  (let ((size (iteration-space-shape is))
-        (stride (iteration-space-strides is))
-        (view (iteration-space-views is)))
-    (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
-    (loop for s in stride
-          for nth upfrom 0
-          for i in gids
-          for v = (nth nth view)
-          if v
-            collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
-          else
-            collect (expr-mul (if (numberp i) (expr-const i :int64) i) s))))
-;; ~~ Permute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun node-reduced-axes (node)
-  (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (when is
-      (loop for s in (iteration-space-strides is)
-            if (expr-equal-to s 0)
-              collect t
-            else
-              collect nil))))
-
-(defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
-  (when (null axes) (setf axes (make-list (length gids))))
-  (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
-  (when (getattr node :reduction :allow-undefined t)
-    (loop for nth upfrom 0
-          for r in axes
-          if r collect (nth nth gids))))
-
-(defun items-reduced-axes (items rank-size)
-  (let ((reduced-axes (make-list rank-size)))
-    (dolist (node items)
-      ;; Broadcasting information are always stored by the highest rank tensor.
-      (when (and
-             (getattr node :reduction :allow-undefined t)
-             (car (relay-write-iters (read-type-relay node))))
-        (when (= rank-size (length (iteration-space-shape (car (relay-write-iters (read-type-relay node))))))
-          (loop for nth upfrom 0
-                for r in (node-reduced-axes node)
-                if r do (setf (nth nth reduced-axes) t)))))
-    reduced-axes))
-
-(defun initial-loop-permutation (items rank)
-  (let ((reduced (items-reduced-axes items rank))
-        (stashed))
-    ;; reduced axes should be the last
-    `(,@(loop for p in (range 0 rank)
-              for r in reduced
-              if r ;; (reduced)
-                do (push p stashed)
-              else
-                collect p)
-      ,@(nreverse stashed))))
-
-(defun items-permute-all (items order)
-  (flet ((swizzle (id space)
-           (when space
-             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
-             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
-                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
-                   (iteration-space-views space) (permute-list order (iteration-space-views space))
-                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
-    (dolist (n items)
-      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
-      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
-
-(defun iterspace-depend-idx-list (iterspace gids &aux
-                                                   (shapes (make-list (length gids)))
-                                                   (strides (make-list (length gids))))
-  (flet ((no-dep-p (size stride) (or (expr-equal-to size 1) (expr-equal-to stride 0))))
-    (loop for axis upfrom 0
-          for shape in (iteration-space-shape iterspace)
-          for stride in (iteration-space-strides iterspace)
-          do (push shape (nth axis shapes)) (push stride (nth axis strides)))
-    (loop for g in gids
-          for size in shapes
-          for stride in strides
-          if (not (every #'no-dep-p size stride))
-            collect g)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-grids-from-node (graph node id->grids id->users)
-  (declare (type node node))
+  "The function `make-grids-from`node` creates the next generation node of Grids. However if the following
+conditions are satisfied, it will be fused into the predecessor Grids:
+- When the predecessor and the node are connected one-to-one and both are affine.
+- If reduction=T, then it cannot participate in any predecssor Grids.
+Throughout the entire scheduling process, it must be ensured that when items in the Grids are converted into the Polyhedral-Schedule-Item, its theta should not containt any sequence (i.e.: only a single STMT exists in every Grids.)"
+  (declare (type node node) (type hash-table id->grids id->users))
   (flet ((node-is-singleton-p (id &aux (node (id->value graph id)))
            (and
             node
-            (null (getattr node :reduction :allow-undefined t)) ;; Note: Solve Reduction+Activation in Polyhedral Model
+            (null (getattr node :reduction :allow-undefined t))
             (= 1 (length (gethash (car (node-writes node)) id->users))))))
     (let ((next-id (hash-table-count id->grids)))
       (case (node-type node)
@@ -418,143 +57,14 @@
                    (setf (gethash w id->grids) new-grids)))
                new-grids)
              (make-grids :id next-id :is-affine nil :id 0 :items (list node))))))))
-;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
-;; - Symbolic Schedule Fix
-;; - Symbolic SCoP
-(defun lower-into-blueprint (storage-map id->bind gids iterspace items writes reads write-types read-types)
-  (with-blueprint (:noopt t)
-    (let ((binds)
-          (loads)    ;; float acc_0 = 0.0f;
-          (alus)     ;; for (int i=0; i<100; i++) acc_0 += ...;
-          (stores)   ;; out[0] = acc_0;
-          (caten/aasm/expr::*expr-no-simplify-mode* t)
-          (id->load (make-hash-table))) ;; cache is created for each kernel
-
-      (labels ((sendexpr (expr)
-                 (dolist (n (graph-nodes (expr-graph expr))) (emit n))
-                 (expr-out expr))
-               (iter->index (iter typ)
-                 (sendexpr (reduce #'expr-add (iteration-space-expr-aref iter typ gids))))
-               (scope= (queue current-dim)
-                 (find current-dim (car queue)))
-               (%insert-aref (item)
-                 ;; Memory Loads
-                 (loop for r in (node-reads item)
-                       for rt in (relay-reads (read-type-relay item))
-                       for ri in (relay-read-iters (read-type-relay item))
-                       if (and (find r reads) (null (gethash r id->load)))
-                         collect
-                         (let ((index (iter->index ri rt))
-                               (tmpid (gensym "val_")))
-                           (setf (gethash r id->load) tmpid)
-                           (push (cons (iterspace-depend-idx-list ri gids) (%aref (gethash r id->bind r) index :out tmpid)) loads)))
-                 ;; Reductions/Stores
-                 (if (getattr item :reduction :allow-undefined t)
-                     (let ((reduce-to (id->value *ctx* (gethash (car (node-reads item)) id->load))))
-                       (assert (eql (node-type reduce-to) :AREF) () "lower-into-blueprint: In the node Binary(X, Y, reduce=T), X should be realized!")
-                       (let* ((type (read-type-relay item))
-                              (w (car (node-writes item)))
-                              (wi (car (relay-write-iters type)))
-                              (r (car (node-reads item)))
-                              (waypoint (gensym "WP"))
-                              (tmp (gensym "R"))
-                              (tmp1 (gensym "TMP"))
-                              (tmp2 (gensym "TMP")))
-                         ;; Reduction is lowered as:
-                         ;; A <- Binary(B, C, reduction=T)
-                         ;; ==>
-                         ;; TMP = SETF(AREF(B, idx1), Binary(AREF(B, idx2), AREF(C, idx3)))
-                         ;; A   = BIND(TMP, B) // Schedule after TMP, but memory is stored as B
-                         (assert (= 1 (length (node-writes item))))
-                         (setf (car (node-writes item)) waypoint)
-                         (push (make-node :JIT :BIND (list tmp1) (list tmp) :value (gethash r id->load r)) binds)
-                         (assert (find w writes) () "Reduction+Activation should not fused in advance ...")
-                         (push (%setf (gethash r id->load r) waypoint :out tmp) alus)
-                         (let ((force-load (copy-item reduce-to)))
-                           (setf (node-writes force-load) (list (gensym "arf4rd")))
-                           (push (cons (iterspace-depend-idx-list wi gids) (%setf (emit force-load) tmp1 :out tmp2)) stores)
-                           (setf (gethash w id->bind) (car (node-reads item))))))
-                      (loop for w in (node-writes item)
-                            for wt in (relay-writes (read-type-relay item))
-                            for wi in (relay-write-iters (read-type-relay item))
-                            for nth upfrom 0
-                            if (find w writes)
-                              collect
-                              (let ((waypoint (gensym "WP"))
-                                    (new-w (gensym "T"))
-                                    (tmpid (gensym "T"))
-                                    (index (iter->index wi wt)))
-                                (setf (nth nth (node-writes item)) waypoint)
-                                ;; [note] no waypoint user in this items right?
-                                (push (make-node :JIT :BIND (list new-w) (list tmpid) :value w) binds) ;; schedule all item users after %setf
-                                (push (cons (iterspace-depend-idx-list wi gids) (%setf (%aref w index) waypoint :out tmpid)) stores))))
-                 (progn
-                   (setf (node-reads item) (map 'list #'(lambda (x) (gethash x id->load x)) (node-reads item)))
-                   (case (node-type item)
-                     (:VIEW (error "view should be purged from items first."))
-                     (:Allocate (push item binds) nil)
-                     (otherwise (push (emit item) alus)))))
-               (lower-item (item)
-                 (case (node-type item)
-                   (:INDEX-COMPONENTS (push (sendexpr (make-index-components item gids)) alus))
-                   (otherwise (%insert-aref item)))))
-        (mapc #'lower-item items)
-        (let ((body (apply #'%progn alus)))
-          (loop for gid in (reverse gids) for space in (reverse iterspace)
-                do (setf body
-                         (%range
-                          gid (sendexpr space)
-                          ;; Loads
-                          (apply
-                           #'%progn
-                           (loop for queue in loads for nth upfrom 0
-                                 when (and queue (scope= queue gid))
-                                   collect (progn (setf (nth nth loads) nil) (cdr queue)))
-                           ;; ALUs
-                           (list body)
-                           ;; Stores
-                           (loop for queue in stores for nth upfrom 0
-                                 when (and queue (scope= queue gid))
-                                   collect (progn (setf (nth nth stores) nil) (cdr queue)))))))
-          (flet ((e (id)
-                   (when (gethash id id->bind)
-                     (setf (gethash id storage-map) (gethash id id->bind)))
-                   (gethash id id->bind id)))
-            (loop for w in writes for wt in write-types do
-              (%global (e w) (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
-            (loop for r in reads for rt in read-types do
-              (%global (e r) (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt))))))
-          (dolist (b binds) (emit b))
-          (%progn (node->id body)))))))
-
-(defun copy-item (item &aux (item (copy-node item)))
-  (setf (node-id item) (gensym "NID"))
-  item)
-
-(defun items/fold-and-verify-toplevel-views (items reads writes)
-  (declare (optimize (speed 3)) (type list items reads writes))
-  (let ((w->r (make-hash-table)))
-    (loop for i in items
-          if (eql (node-type i) :VIEW) do
-;;            (assert (find (the symbol (car (node-reads i))) reads)
-;;                    ()
-;;                    "Detected illegal scheduling group: Affine groups should not compose multiple views.")
-            (assert (null (find (the symbol (car (node-writes i))) writes))
-                    ()
-                    "Detected illegal scheduling group: Affine groups should not return VIEW.")
-            (setf (gethash (car (node-writes i)) w->r) (car (node-reads i))))
-    (flet ((n (id) (gethash id w->r id)))
-      (loop for i in items
-            if (not (eql (node-type i) :VIEW))
-              collect
-              (progn
-                (setf (node-reads i) (map 'list #'n (node-reads i)))
-                i)))))
 
 (defun grids-ensure-affine (grids)
+  "Converts grids into NonAffine if the given Affine grids is no worth to jit-compile.
+- If the grid view isn't paired w/ any jitable nodes.
+- grids is composed of scalar computations."
+  (declare (type grids grids))
   ;; Affine composed of a single VIEW = NonAffine
-  (when (and (= 1 (length (grids-items grids)))
-             (eql :VIEW (node-type (car (grids-items grids)))))
+  (when (and (= 1 (length (grids-items grids))) (eql :VIEW (node-type (car (grids-items grids)))))
     (setf (grids-is-affine grids) nil
           (grids-is-zero-cost grids) t))
   ;; Scalar Graph = NonAffine
@@ -571,6 +81,7 @@
           (every #'(lambda (node) (find (node-type node) `(:ALLOCATE :LOAD))) (grids-items grids)))))
 
 (defun grids-init-edges (grids id->grids id->users graph-outputs)
+  "Finalizes grids.reads and grids.writes, also determines the types of them."
   (declare (type Grids grids) (type hash-table id->grids id->users) (type list graph-outputs) (optimize (speed 3)))
   (labels ((node-is-output-p (node)
              (or
@@ -596,56 +107,14 @@
       (setf (grids-writes grids) grid-writes*
             (grids-reads grids) grid-reads*))))
 
-(defun grids->schedule-item (id->bind graph grids val->grids)
-  (assert (grids-writes grids))
-  (let ((grid-reads (map 'list #'car (grids-reads grids)))
-        (grid-writes (map 'list #'car (grids-writes grids)))
-        (grid-read-types (map 'list #'cdr (grids-reads grids)))
-        (grid-write-types (map 'list #'cdr (grids-writes grids))))
-    (when (null (grids-is-affine grids))
-      (return-from grids->schedule-item ($nonaffine grid-writes grid-reads :items (grids-items grids))))
-    ;; If grids is affine => prepare for scheduling ...
-    (let ((extra-items
-            (loop for r in grid-reads for nth upfrom 0
-                  for g = (gethash r val->grids)
-                  if (and g (grids-is-zero-cost g))
-                    do (setf (nth nth grid-reads) (map 'list #'car (grids-reads g))
-                             (nth nth grid-read-types) (map 'list #'cdr (grids-reads g)))
-                    and append (grids-items g))))
-      (setf grid-reads (alexandria:flatten grid-reads)
-            grid-read-types (alexandria:flatten grid-read-types))
-      (setf (grids-items grids)
-            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (append extra-items (grids-items grids))) grid-reads grid-writes)))
-    ;; Early Loop Coalesce (Cannot judged in polyhedral model)
-    (let* ((iterspace (get-grouped-dims (grids-items grids) graph))
-           (_ (fixup-items-iteration-space (grids-items grids) iterspace graph))
-           (order (initial-loop-permutation (grids-items grids) (length (the list (car iterspace)))))
-           (gids (permute-list order (map 'list #'gid (range 0 (length (the list (car iterspace)))))))
-           (group-size (permute-list order (car iterspace)))
-           (__ (items-permute-all (grids-items grids) order))
-           (storage-map (make-hash-table))
-           (bp (lower-into-blueprint storage-map id->bind gids group-size (grids-items grids) grid-writes grid-reads grid-write-types grid-read-types))
-           (has-reduce-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids))))
-      (declare (ignore _ __))
-      (setf bp (caten/aasm::%simplify-ast bp))
-      (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
-        ($affine grid-writes
-                 (loop for r in grid-reads
-                       if (find (gethash r storage-map r) args)
-                         collect r)
-                 :polyhedron (make-polyhedral-schedule-item bp :scal->array nil)
-                 :blueprint bp
-                 :reduction has-reduce-p
-                 :storage-map storage-map)))))
-;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO]
-;; - [x] Rename: make-schedule-graph
-;; - [ ] Schedule involving scalars
-;; - [ ] Schedule threefry (Reduce)
-;; - [ ] KVCache Scheduling
-;; - [x] SETF Bind failing case w/ Softmax CSE
+(declaim (ftype (function (Graph) (values ScheduleGraph)) make-schedule-graph))
 (defun make-schedule-graph (graph)
-  "Constructs ScheduleGraph from the given tensorgraph."
+  "
+```
+(make-schedule-graph graph)
+```
+Creates a ScheduleGraph from the given grpah.
+"
   (declare (type Graph graph) (optimize (speed 3)))
   (graph-infer-type-relay graph)
   (assert (null (graph-seen graph)) () "tensor-graph->schedule-graph: Scheduling partial graph is not allowed! Set graph-seen = nil")
@@ -703,6 +172,244 @@
         (setf g (->schedule-graph g))
         (verify-graph g)
         g))))
+;; ~~ Lowering ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; TODO
+;; - [ ] !view from INDEX-COMPONENTS? (e.g.: mask is applied?)
+;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
+(defun lower-into-blueprint (storage-map id->bind iterspace gids grid-id items base-graph writes reads write-types read-types
+                             &aux (domain-out) (schedule-out) (read-union-map-out) (write-union-map-out))
+  "Creates blueprint from storage-map:
+- storage-map
+- id->bind
+"
+  (declare (type hash-table id->bind) (type list gids items iterspace) (type Graph base-graph)
+           (type fixnum grid-id) (type list writes reads write-types read-types))
+  (assert (= 1 (length writes)))
+  ;; Ensure no sequence is introduced.
+  ;; TODO
+  ;; - [x] Polyhedral Model Construction At Here
+  ;; - [ ] Reduction
+  ;; - [x] Single Domain
+  ;; - [ ] Aref can introduce extra args
+  ;; - [ ] SYMBOLIC
+  ;; - [ ] EXPRifyもこの段階で挿入してあげる
+  ;; - [ ] _gid conflict発生しない？
+  ;; - [ ] SCoPを簡略化する？
+  ;; - [ ] define-global ==> rename
+  (values
+   (with-blueprint (:noopt t)
+     (let ((binds) (root) (const-loads) (expr-write-to (intern (format nil "E_~a" grid-id))))
+       (labels ((guard-scalar (v &key (allow-raw))
+                  (etypecase v
+                    (number (if allow-raw v (%load (%salloc :dtype :int64) v)))
+                    (symbol
+                     (let ((definition (id->value base-graph v)))
+                       (assert definition () "lower-into-blueprint: Cannot introduce symbolic shape ~a because it is not in the given tensor-graph. Is the type-relay up-to-date?" v)
+                       (let ((type (car (relay-writes (read-type-relay definition)))))
+                         (push (cons v (tensor-relay-dtype type)) const-loads)
+                         v)))))
+                (ensure-expr (id)
+                  (etypecase id
+                    (number id)
+                    (symbol (%expr id))))
+                (relay->aref (name relay)
+                  (declare (type TensorRelay relay))
+                  ;; Note
+                  ;; - [ ] (fconst 'a) どのようにLowerされる？
+                  (%PolyAref
+                   name
+                   (map 'list #'guard-scalar (tensor-relay-stride relay))
+                   (loop for nth upfrom 0 below (tensor-relay-nrank relay)
+                         for v = (nth nth (tensor-relay-views relay))
+                         for gid = (nth nth gids) ;; (upfrom below by broadcast)
+                         if (fourth v) ;; broadcasted
+                           collect (guard-scalar 0)
+                         else
+                           collect
+                           (if (null v)
+                               gid
+                               (%add (guard-scalar (car v)) (%mul (guard-scalar (third v)) gid))))))
+                (%insert-item (item)
+                  ;; Output/Reduction
+                  (loop for w in (node-writes item)
+                        for wt in (relay-writes (read-type-relay item))
+                        for nth upfrom 0
+                        if (find w writes) do
+                          (let ((waypoint (gensym "WP"))
+                                (write-to
+                                  (if (getattr item :reduction :allow-undefined t)
+                                      (progn
+                                        (setf (gethash (car (node-writes item)) id->bind)
+                                              (make-node :JIT :BIND (list (car (node-writes item))) (list expr-write-to) :value (car (node-reads item))))
+                                        (relay->aref (car (node-reads item)) (car (relay-reads (read-type-relay item)))))
+                                      (relay->aref w wt))))
+                            (assert (null root) () "lower-into-blueprint: Single grids should provide single root (given items are invalid)")
+                            (setf (nth nth (node-writes item)) waypoint)
+                            (setf root (%setf write-to waypoint))))
+                  
+                  (loop for r in (node-reads item)
+                        for rt in (relay-reads (read-type-relay item))
+                        for nth upfrom 0
+                        if (find r reads)
+                          do (setf (nth nth (node-reads item)) (car (node-writes (relay->aref r rt)))))
+                  (assert (= 1 (length (node-writes item))) () "lower-into-blueprint: JITAble nodes must have a single output.")
+                  (emit item))
+                (lower-item (item)
+                  (case (node-type item)
+                    (:INDEX-COMPONENTS
+                     (assert (= (length gids) (length (cdr (node-reads item)))) () "lower-into-blueprint: Cannot lower index-components because iteration spaces does not match.")
+                     (let ((node
+                             (reduce
+                              #'%add
+                              (loop for stride in (cdr (node-reads item))
+                                    for gid in gids
+                                    if (eql stride 1)
+                                      collect (%load (%salloc :dtype :int64) 0)
+                                    else
+                                      collect (%mul (guard-scalar stride) gid)))))
+                       (setf (node-writes node) (node-writes item))
+                       (emit node)))
+                    (otherwise (%insert-item item)))))
+         (mapc #'lower-item items)
+         (assert root () "lower-into-blueprint: the root was not found")
+         ;; Blueprint construction
+         (let* ((stmt (%expr (node->id root)))
+                (constraints) (quasiaffine-params)
+                (body expr-write-to)) ;; Can introduce only single stmt
+           (setf (node-id stmt) (intern (format nil "STMT_~a" grid-id)) ;; Rename unique but more readable NID for stmt
+                 (car (node-writes stmt)) expr-write-to)
+           (loop for gid in (reverse gids) for space in (reverse iterspace)
+                 do (push (format nil "0 <= ~(~a~) <= ~a" gid space) constraints)
+                    (when (symbolp space) (push space quasiaffine-params))
+                    (setf body (%range gid (ensure-expr (guard-scalar space :allow-raw t)) body :rid gid)))
+           ;; Finalize graph input/outputs, and scalar outputs gathered by (guard-scalar)
+           (flet ((e (id)
+                    (if (gethash id id->bind)
+                        (progn
+                          (setf (gethash id storage-map) (getattr (gethash id id->bind) :value))
+                          (getattr (gethash id id->bind) :value))
+                        id)))
+             (loop for w in writes for wt in write-types do
+               (%global w (e w) (tensor-relay-dtype wt) (not (= 0 (tensor-relay-nrank wt)))))
+             (loop for r in reads for rt in read-types do
+               (%global r (e r) (tensor-relay-dtype rt) (not (= 0 (tensor-relay-nrank rt))))))
+           ;; Constant Arguments
+           (loop for (name . dtype) in const-loads do
+             (%global name name dtype nil :mode :read))
+           (dolist (b binds) (emit b))
+           ;; Polyhedral Model Initialization
+           (let* ((domain (isl:union-set-from-str
+                           (format nil "[~{~a~^, ~}] -> { ~a[~{~(~a~)~^, ~}] : ~{~a~^ and ~} }"
+                                   quasiaffine-params (node-id stmt) gids constraints)))
+                  (theta (isl:schedule-get-root (isl:schedule-from-domain domain))))
+             (loop for gid in gids
+                   for mupa = (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" (node-id stmt) gids gid))
+                   do (setf theta (isl:schedule-node-insert-partial-schedule (isl:schedule-node-first-child theta) mupa)))
+             (setf domain-out domain
+                   schedule-out (isl:schedule-node-get-schedule theta)
+                   ;; [TODO] Read/Write UnionMap Construction
+                   ;; - [ ] DiskCache Creationの最適化
+                   ;; - [ ] Read/WriteMapをどう作成するか考える，update polyhedral.lisp
+                   read-union-map-out (isl:union-map-from-str "{}")
+                   write-union-map-out (isl:union-map-from-str "{}")))
+           (%progn (node->id body))))))
+   domain-out
+   schedule-out
+   read-union-map-out
+   write-union-map-out))
+
+(defun copy-item (item &aux (item (copy-node item)))
+  (setf (node-id item) (gensym "NID"))
+  item)
+
+(defun items/fold-and-verify-toplevel-views (items reads writes)
+  "Removes `VIEW` from items w/ keeping the graph consistency."
+  (declare (optimize (speed 3)) (type list items reads writes) (ignore reads))
+  (let ((w->r (make-hash-table)))
+    (loop for i in items
+          if (eql (node-type i) :VIEW) do
+            ;; TODO: Detect illegal scheduling like:
+            ;; A -> [VIEW] -> B -> [VIEW]
+            (assert (null (find (the symbol (car (node-writes i))) writes))
+                    ()
+                    "Detected illegal scheduling group: Affine groups should not return VIEW.")
+            (setf (gethash (car (node-writes i)) w->r) (car (node-reads i))))
+    (flet ((n (id) (gethash id w->r id)))
+      (loop for i in items
+            if (not (eql (node-type i) :VIEW))
+              collect
+              (progn
+                (setf (node-reads i) (map 'list #'n (node-reads i)))
+                i)))))
+
+(defun get-grouped-dims (items)
+  "Determines the common iteration space among items"
+  (declare (type list items))
+  (let ((kernel-rank
+          (loop for node in items
+                for type = (read-type-relay node)
+                maximize
+                (loop for r in (append (relay-reads type) (relay-writes type))
+                      when r maximize (length (tensor-relay-shape r)))))
+        (rank2space (make-hash-table)))
+    (labels ((check (relay)
+               (when (and relay (> (tensor-relay-nrank relay) 0))
+                 (assert (= kernel-rank (tensor-relay-nrank relay)) () "get-grouped-dims: Co-grouped items must have the same rank by VIEW. kernel-rank=~a vs tensor-relay-nrank=~a" kernel-rank (tensor-relay-nrank relay))
+                 (loop for s in (tensor-relay-shape relay)
+                       for rank upfrom 0 below kernel-rank
+                       do (setf (gethash rank rank2space)
+                                (if (eql s 1)
+                                    (or (gethash rank rank2space) s)
+                                    s)))))
+             (explore (node)
+               (mapc #'check (relay-reads (read-type-relay node)))
+               (mapc #'check (relay-writes (read-type-relay node)))))
+      (mapc #'explore items))
+    (loop for rank upfrom 0 below kernel-rank collect
+          (or (gethash rank rank2space) (error "get-grouped-dims: The size for rank ~a is not determined." rank)))))
+                               
+(defun grids->schedule-item (id->bind graph grids val->grids)
+  "Converts Grids ==> $Affine"
+  (assert (grids-writes grids))
+  (let ((grid-reads (map 'list #'car (grids-reads grids)))
+        (grid-writes (map 'list #'car (grids-writes grids)))
+        (grid-read-types (map 'list #'cdr (grids-reads grids)))
+        (grid-write-types (map 'list #'cdr (grids-writes grids))))
+    (when (null (grids-is-affine grids))
+      (return-from grids->schedule-item ($nonaffine grid-writes grid-reads :items (grids-items grids))))
+    ;; If grids is affine => prepare for scheduling ...
+    (let ((extra-items
+            (loop for r in grid-reads for nth upfrom 0
+                  for g = (gethash r val->grids)
+                  if (and g (grids-is-zero-cost g))
+                    do (setf (nth nth grid-reads) (map 'list #'car (grids-reads g))
+                             (nth nth grid-read-types) (map 'list #'cdr (grids-reads g)))
+                    and append (grids-items g))))
+      (setf grid-reads (alexandria:flatten grid-reads)
+            grid-read-types (alexandria:flatten grid-read-types))
+      (setf (grids-items grids)
+            (items/fold-and-verify-toplevel-views (map 'list #'copy-item (append extra-items (grids-items grids))) grid-reads grid-writes)))
+    (let* ((iterspace (get-grouped-dims (grids-items grids)))
+           (gids      (map 'list #'gid (range 0 (length (the list iterspace))))) ;; gid0 gid1 ...
+           (is-memory-intensive-p (some #'(lambda (x) (getattr x :reduction :allow-undefined t)) (grids-items grids)))
+           (storage-map (make-hash-table)))
+      (multiple-value-bind (bp domain schedule read-union-map write-union-map)
+          (lower-into-blueprint storage-map id->bind iterspace gids (grids-id grids) (grids-items grids) graph grid-writes grid-reads grid-write-types grid-read-types)
+        (setf bp (caten/aasm::%simplify-ast bp))
+        (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
+          (caten/codegen/blueprint:print-blueprint bp t)
+          ($affine grid-writes (loop for a in args if (null (find a grid-writes)) collect a)
+                   :polyhedron (%make-polyhedral-schedule-item domain schedule read-union-map write-union-map)
+                   :blueprint bp
+                   :storage-map storage-map
+                   :reduction is-memory-intensive-p))))))
+;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO]
+;; - [x] Rename: make-schedule-graph
+;; - [ ] Schedule involving scalars
+;; - [ ] Schedule threefry (Reduce)
+;; - [ ] KVCache Scheduling
+;; - [x] SETF Bind failing case w/ Softmax CSE
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-item-apply-schedule (graph item &key (allow-fission nil) (keep-scop t))
   (declare (type Node item))
@@ -962,10 +669,14 @@
 
   )
 ;; Visualizeが大事？
+;; [TODO]
+;; - [ ] codegen再実装をやっちゃおう
+    ;; - [ ] make-schedule-graph再実装が終わったら，
+    ;; - [ ] specs, aasm, codegen周りの大掃除やる
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
-    (schedule-graph-fuse sched) Minimize Proximity
+    (schedule-graph-fuse sched) ; Minimize Proximity
     (schedule-graph-solve-memory-planner sched)
     (schedule-graph-finalize sched)
     sched))
