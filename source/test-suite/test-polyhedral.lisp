@@ -493,6 +493,10 @@
 
 (deftest test-fusion9
   (caten (!matmul (!softmax (!div (!matmul (make-tensor `(10 8 5 10)) (make-tensor `(10 8 10 5))) (fconst 512.0))) (make-tensor `(10 8 5 10)))))
+
+(deftest test-fusion10
+  (let ((tg (tensor-lowered-graph (!matmul (!softmax (!div (!matmul (make-tensor `(N HEads SeqLen 10)) (make-tensor `(N Heads SeqLen Dims))) (fconst 512.0))) (make-tensor `(N Heads SeqLen Dims))))))
+    (time (caten/codegen/lowerer::make-schedule-graph tg))))
 ;; - [ ] TileGPU, 次元数で分割を辞めてすべてCoalesceにする
 ;; - [ ] 4次元のBandをCoalesceして一次元のGrid/Threadにするのはどうなんだろう。
 ;;   - [ ] CPU Parallelと同じことをやる

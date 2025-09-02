@@ -298,9 +298,10 @@ Creates a ScheduleGraph from the given grpah.
              (%global name name dtype nil :mode :read))
            (dolist (b binds) (emit b))
            ;; Polyhedral Model Initialization
-           (let* ((domain (isl:union-set-from-str
-                           (format nil "[~{~a~^, ~}] -> { ~a[~{~(~a~)~^, ~}] : ~{~a~^ and ~} }"
-                                   quasiaffine-params (node-id stmt) gids constraints)))
+           (let* ((domain
+                    (isl:union-set-from-str
+                     (format nil "[~{~a~^, ~}] -> { ~a[~{~(~a~)~^, ~}] : ~{~a~^ and ~} }"
+                             (remove-duplicates quasiaffine-params) (node-id stmt) gids constraints)))
                   (theta (isl:schedule-get-root (isl:schedule-from-domain domain))))
              (loop for gid in gids
                    for mupa = (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" (node-id stmt) gids gid))
@@ -671,8 +672,11 @@ Creates a ScheduleGraph from the given grpah.
 ;; Visualizeが大事？
 ;; [TODO]
 ;; - [ ] codegen再実装をやっちゃおう
-    ;; - [ ] make-schedule-graph再実装が終わったら，
-    ;; - [ ] specs, aasm, codegen周りの大掃除やる
+;; - [ ] make-schedule-graph再実装が終わったら，
+;; - [ ] specs, aasm, codegen周りの大掃除やる
+;; - [ ] renderer, etcに使ってない関数多すぎ
+;; - [ ] 一回のScheduleGraphで使われたStride全てでBroadcastを実施する
+;; - [ ] Fusionについて，途中のCSEが必要なくなるのでは？
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
