@@ -803,6 +803,20 @@
   (:give union-map)
   (:take union-map))
 
+(define-isl-function map-reverse %isl-map-reverse
+  (:give map)
+  (:take map))
+
+(define-isl-function map-apply-range %isl-map-apply-range
+  (:give map)
+  (:take map)
+  (:take map))
+
+(define-isl-function map-apply-domain %isl-map-apply-domain
+  (:give map)
+  (:take map)
+  (:take map))
+             
 (define-isl-function union-map-gist-range %isl-union-map-gist-range
   (:give union-map)
   (:take union-map)
