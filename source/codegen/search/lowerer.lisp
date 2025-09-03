@@ -278,7 +278,7 @@ This may cause a significant increase in compilation time. Please check the foll
   ;; - [x] SYMBOLIC
   ;; - [x] EXPRifyもこの段階で挿入してあげる
   ;; - [ ] _gid conflict発生しない？ during fusion
-  ;; - [ ] SCoPを簡略化する？
+  ;; - [x] SCoPを簡略化する？
   ;; - [ ] define-global ==> rename, reimpl at byoc
   (values
    (with-blueprint (:noopt t)
@@ -493,9 +493,9 @@ This may cause a significant increase in compilation time. Please check the foll
 ;; ~~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - [x] Rename: make-schedule-graph
-;; - [ ] Schedule involving scalars
+;; - [x] Schedule involving scalars
 ;; - [ ] Schedule threefry (Reduce)
-;; - [ ] KVCache Scheduling
+;; - [x] KVCache Scheduling
 ;; - [x] SETF Bind failing case w/ Softmax CSE
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-item-apply-schedule (graph item &key (allow-fission nil) (keep-scop t))
@@ -553,7 +553,7 @@ This may cause a significant increase in compilation time. Please check the foll
              :blueprint (blueprint-sequence (getattr a1 :blueprint) (getattr a2 :blueprint))
              :reduction (or (getattr a1 :reduction) (getattr a2 :reduction)))))
 
-(defun affine/solve-ilp-fusion-pair (parent child &key (mode :full)) ;; assuming parent.order < child.order
+(defun affine/solve-ilp-fusion-pair (parent child &key (order :forward)) ;; assuming parent.order < child.order
   (declare (type Node parent child))
   (assert (eql (node-type parent) :Affine)) (assert (eql (node-type child) :Affine))
   (flet ((m (x) (getattr x :polyhedron)))
@@ -564,11 +564,11 @@ This may cause a significant increase in compilation time. Please check the foll
     ;; - [ ] 2. 少しHeavyなILPベースでFusionを実施する
     ;; - [ ] 3. ある程度データが集まったら，検索ベースでFusionを実施するアルゴリズムを作る
     ;; Parent/Childは同一RankのTensor操作だと仮定する
-    (let ((fused (ILP/SolveProximity (m parent) (m child))))
+    (let ((fused (ILP/SolveProximity (m parent) (m child) :order order)))
       (when fused
         (merge-affine parent child fused)))))
 
-(defun affine/solve-ilp-fusion (unfused-ops parent children block &key (mode :full))
+(defun affine/solve-ilp-fusion (unfused-ops parent children block &key (order :forward))
   (declare (type Node parent) (type list children))
   (when (not (= 1 (length children)))
     (flet ((p (i) (or (position (node-writes i) unfused-ops :key #'node-writes :test #'intersection) 0)))
@@ -576,7 +576,7 @@ This may cause a significant increase in compilation time. Please check the foll
       (setf children (sort children #'< :key #'p))))
   (dolist (c children)
     (when (null (find (node-id c) block :key #'node-id))
-      (let ((fused (affine/solve-ilp-fusion-pair parent c :mode mode)))
+      (let ((fused (affine/solve-ilp-fusion-pair parent c :order order)))
         (when (null fused) (return-from affine/solve-ilp-fusion))
         (setf parent fused))))
   parent)
@@ -585,12 +585,12 @@ This may cause a significant increase in compilation time. Please check the foll
   (declare (type list ops))
   (find-if #'(lambda (node) (and (eql (node-type node) :Affine) (getattr node :reduction))) ops))
 
-(defun fuse-successor (unfused-ops graph sp sucs block &key (mode :full))
+(defun fuse-successor (unfused-ops graph sp sucs block &key (order :full))
   (declare (type ScheduleGraph graph) (type list block sucs unfused-ops) (type node sp))
   ;; Only Affine is mergeable
   (when (or (= 0 (length sucs)) (some #'(lambda (x) (eql (node-type x) :NonAffine)) sucs))
     (return-from fuse-successor sp))
-  (let ((fused (affine/solve-ilp-fusion unfused-ops sp sucs block :mode mode)))
+  (let ((fused (affine/solve-ilp-fusion unfused-ops sp sucs block :order order)))
     ;; Stop when no fusable pairs, or fusion is not beneficial.
     (when (null fused) (return-from fuse-successor sp))
     (dolist (w (node-writes fused)) (remnode graph w))
@@ -598,7 +598,7 @@ This may cause a significant increase in compilation time. Please check the foll
     (verify-graph graph)
     (setf block (nconc block sucs))
     (dolist (w (node-writes fused))
-      (setf fused (fuse-successor unfused-ops graph fused (id->users graph w) block :mode mode)))
+      (setf fused (fuse-successor unfused-ops graph fused (id->users graph w) block :order order)))
     fused))
 
 (defun schedule-graph-fuse (graph)
@@ -613,7 +613,7 @@ This may cause a significant increase in compilation time. Please check the foll
             ;; Head to successor
             (dolist (w (node-writes sp))
               ;; [todo] optimize id->users which is O(N)
-              (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :full))
+              (fuse-successor unfused-ops graph sp (id->users graph w) block :order :forward))
             ;; Update unfused-ops
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
@@ -624,12 +624,12 @@ This may cause a significant increase in compilation time. Please check the foll
           while sp for block = (list sp)
           if (eql (node-type sp) :Affine) do
             (dolist (w (node-writes sp))
-              (fuse-successor unfused-ops graph sp (id->users graph w) block :mode :partial))
+              (fuse-successor unfused-ops graph sp (id->users graph w) block :order :backward))
             (loop for b in block do
               (setf unfused-ops (remove (node-id b) unfused-ops :key #'node-id))))
     (assert (null unfused-ops)))
     ;; [todo] this will break graph
-    (schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow? 
+    ;;(schedule-graph-apply-schedule graph :allow-fission nil) ;; [TODO] is it slow? 
     graph))
 
 ;; [TODO] Runtime is a subclass of FastGraph
@@ -774,6 +774,6 @@ This may cause a significant increase in compilation time. Please check the foll
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
     (schedule-graph-fuse sched) ; Minimize Proximity
-    (schedule-graph-solve-memory-planner sched)
-    (schedule-graph-finalize sched)
+    ;(schedule-graph-solve-memory-planner sched)
+    ;(schedule-graph-finalize sched)
     sched))

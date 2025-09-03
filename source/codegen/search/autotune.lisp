@@ -178,8 +178,20 @@ BEAM Search Workflow:
               ;(psi-write-union-map root) new-write
               ;(psi-dependency-graph root) new-deps)
         root))))
-
-(defun ILP/SolveProximity (parent child &key (fuse-into :parent))
+;; - [ ] Fusion Profitable
+;;  - [ ] Extend:
+;;   - [ ] Maximize cache line?
+;;   - [ ] Consider tiling
+;;   - [ ] read article
+;; - [ ] Matmul+Matmul Fusion
+;;  - [ ] Flash
+(defun ILP/SolveProximity (parent child &key (order :forward))
+  (print "Fusion")
+  (print parent)
+  (print child)
+  (print (isl:union-map-apply-range (psi-read-union-map child) (isl:union-map-reverse (psi-write-union-map parent))))
+  nil)
+#|
   (print "Searching ...")
   (print parent)
   (print child)
@@ -199,3 +211,4 @@ BEAM Search Workflow:
                          (setf (psi-theta (car prev-items)) (schedule-remove-all-marks (psi-theta (car prev-items))))
                          (return-from ILP/SolveProximity (car prev-items))))))))
       (loop while t do (beam)))))
+|#
