@@ -11,7 +11,7 @@
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
    #:dependency-graph #:psi-dependency-graph #:psi-domain #:psi-strategy
-   #:psi-read-union-map #:psi-write-union-map
+   #:psi-read-union-map #:psi-write-union-map #:psi-global-lex-order
    #:opt-history #:psi-opt-history
    #:psi-evaluation
    #:%make-polyhedral-schedule-item
@@ -22,8 +22,8 @@
    #:psi-clone-for-next-generation
    #:psi-verify-legality
    #:psi.
-   #:extract-accesses
-   ))
+   #:extract-accesses))
+
 (in-package :caten/codegen/search/polyhedral)
 
 (defstruct Global-Lex-Order
@@ -53,6 +53,7 @@ indices.
   over loop iterators and symbolic parameters. Non-affine terms are not allowed.
 - Each dim components MUST be an constant term."
   (session-id nil :type symbol)
+  (quasiaffine nil :type list)
   (dict (make-hash-table) :type hash-table))
 
 (defun global-lex-order-dim (glo)
@@ -83,13 +84,12 @@ indices.
    (read-union-map :accessor psi-read-union-map :initarg :read)
    (write-union-map :accessor psi-write-union-map :initarg :write)
    (dependency-graph :accessor psi-dependency-graph :initarg :dependency-graph)
+
    (strategy :accessor psi-strategy :initarg :strategy)
+   (global-lex-order :accessor psi-global-lex-order :initarg :global-lex-order :initform nil)
    
    (opt-history :accessor psi-opt-history :initform nil :initarg :opt-history)
-   (evaluation :accessor psi-evaluation :initform *+inf* :type double-float)
-   ;; ctx?
-   ;; during transformation blueprint should not be used
-   )
+   (evaluation :accessor psi-evaluation :initform *+inf* :type double-float))
   (:documentation "
 Class `Polyhedral-Schedule-Item` is a wrapper around a Blueprint.
 
@@ -123,15 +123,16 @@ During the optimization, auto scheduler tries to minimize the floating value of 
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "Context for tracking loop structure during traversal"
+  (glo nil :type (or null Global-Lex-Order))
   (stack nil :type list)
   (node-to-loops (make-hash-table) :type hash-table)
   (all-loops nil :type list)
   (exprs nil :type list)
   (scal->access (make-hash-table) :type hash-table))
 
-(defun make-scop-ctx-from-blueprint (graph &key (allow-if nil))
+(defun make-scop-ctx-from-blueprint (graph &key (allow-if nil) (glo nil))
   "Traverse the blueprint graph to extract loop structure"
-  (let ((ctx (make-ctx)) (visited (make-hash-table)))
+  (let ((ctx (make-ctx :glo glo)) (visited (make-hash-table)))
     (labels ((traverse (node)
                (when (or (null node) (gethash (node-id node) visited)) (return-from traverse))
                (setf (gethash (node-id node) visited) t)
@@ -208,7 +209,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                (let* ((p (id->value blueprint (car (node-reads node))))
                       (v (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node))))
                       (p (if (and p (eql (node-type p) :BIND)) (getattr p :value) (car (node-reads node)))))
-                 (push (cons (cons p v) (second (node-reads node))) found)
+                 (push (cons (cons p v) (cdr (node-reads node))) found)
                  (return-from explore)))
              (mapc #'explore (node-reads node))))
     (explore id)
@@ -232,6 +233,13 @@ During the optimization, auto scheduler tries to minimize the floating value of 
            (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
       (setf (gethash visible-name (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
       access)))
+;; - [ ] Remove scal->array option? or leave it for calculating parallelism? it depends on how beam should be
+;; - implemented
+;; - [ ] QuasiAffine
+(defun render-index-for-isl (ctx index blueprint)
+  (declare (type ctx ctx) (type list index) (type FastGraph blueprint))
+  (assert (ctx-glo ctx) () "render-index-for-isl: Cannot render index space w/o providing Global-Lex-Order")
+  (polyaref-on-global-lex-order (ctx-glo ctx) (caten/aasm:%polyaref 'tmp (subseq index 0 (/ (length index) 2)) (subseq index (/ (length index) 2))) blueprint))
 
 (defun render-access-for-node (ctx node loops buffers index blueprint &key (scal->array t) (getlisp))
   "Render access relation for a single node"
@@ -239,9 +247,8 @@ During the optimization, auto scheduler tries to minimize the floating value of 
     (declare (ignore visible-id))
     (let ((domain (format nil "~{~a~^, ~}" (map 'list #'(lambda (l) (format nil "~(~a~)" (getf l :idx))) (reverse loops)))))
       (if getlisp
-          (list (node-id node) graph-id (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops) :scal->array scal->array)))
-          (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id
-                  (if index (render-expr-for-isl index blueprint) (render-default-isl-access ctx blueprint buffers (reverse loops) :scal->array scal->array)))))))
+          (list (node-id node) graph-id (render-index-for-isl ctx index blueprint))
+          (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id (render-index-for-isl ctx index blueprint))))))
 
 (defun extract-accesses (ctx blueprint &key (scal->array t) (getlisp) &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
@@ -332,14 +339,15 @@ During the optimization, auto scheduler tries to minimize the floating value of 
       (assert (= 1 (length (graph-outputs blueprint))))
       (rewrite-node (car (graph-outputs blueprint))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %make-polyhedral-schedule-item (domain schedule reads writes &key (strategy))
+(defun %make-polyhedral-schedule-item (domain schedule reads writes &key (strategy) (global-lex-order))
   (declare (type isl::union-set domain) (type isl::union-map reads writes) (type isl::schedule schedule))
   (make-instance 'Polyhedral-Schedule-Item
                  :dependency-graph (compute-dependence-relation reads writes schedule)
                  :initial-theta schedule :read reads :write writes
-                 :domain domain :strategy strategy :opt-history nil))
+                 :domain domain :strategy strategy :opt-history nil
+                 :global-lex-order global-lex-order))
 
-(defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy) (opt-history))
+(defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy) (opt-history) (global-lex-order))
   "
 - scal->array[bool]
   - If set to T, scalar values are rendered as tensor (to maximize parallelism)
@@ -356,10 +364,16 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
     (make-instance 'Polyhedral-Schedule-Item
                    :dependency-graph (compute-dependence-relation reads writes schedule)
                    :initial-theta schedule :read reads :write writes
-                   :domain domain :strategy strategy :opt-history opt-history)))
+                   :domain domain :strategy strategy :opt-history opt-history
+                   :global-lex-order global-lex-order)))
 
 (defun psi. (psi1-before psi2-after)
   "Merges two schedule into a single schedule"
+  (assert (and (psi-global-lex-order psi1-before) (psi-global-lex-order psi2-after)))
+  (assert (eql (global-lex-order-session-id (psi-global-lex-order psi1-before))
+               (global-lex-order-session-id (psi-global-lex-order psi2-after)))
+          ()
+          "psi.: psi1-before and psi2-after must live in the same session!")
   (let* ((new-read (isl:union-map-union (psi-read-union-map psi1-before) (psi-read-union-map psi2-after)))
          (new-write (isl:union-map-union (psi-write-union-map psi1-before) (psi-write-union-map psi2-after)))
          (new-domain (isl:union-set-union (psi-domain psi1-before) (psi-domain psi2-after)))
@@ -368,4 +382,5 @@ Error:~%~a~%Is the loop affine?" (car reads/writes) (cdr reads/writes) c)))
                    :dependency-graph (compute-dependence-relation new-read new-write new-schedule)
                    :initial-theta new-schedule :read new-read :write new-write
                    :domain new-domain :strategy (psi-strategy psi1-before)
-                   :opt-history (append (psi-opt-history psi1-before) (psi-opt-history psi2-after)))))
+                   :opt-history (append (psi-opt-history psi1-before) (psi-opt-history psi2-after))
+                   :global-lex-order (psi-global-lex-order psi1-before))))

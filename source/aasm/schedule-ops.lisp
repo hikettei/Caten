@@ -26,7 +26,7 @@
   (verify-schedule-graph (->fast-graph graph :cls 'ScheduleGraph :args (list :symbolic nil))))
 ;; ~~ Schedule Items ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun $affine (writes reads &key (polyhedron) (blueprint) (reduction) (storage-map (make-hash-table))
-                               (dbkey (uiop:symbol-call :caten/codegen/diskcache :make-diskcache-entry blueprint)))
+                               (dbkey (uiop:symbol-call :caten/codegen/diskcache :make-diskcache-entry blueprint polyhedron)))
   (declare (type list writes reads))
   (emit (make-node :Schedule :Affine writes reads :storage-map storage-map :polyhedron polyhedron :blueprint blueprint :reduction reduction :dbkey dbkey)))
 

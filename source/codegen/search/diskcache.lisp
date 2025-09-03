@@ -14,9 +14,9 @@
   (ironclad:byte-array-to-hex-string
    (ironclad:digest-sequence :sha256 (babel:string-to-octets string :encoding :utf-8))))
 
-(defun make-kernel-description (graph &key (version) (cache-polyhedral nil) (getraw nil) &aux (seen))
+(defun make-kernel-description (graph &key (version) (cache-polyhedral nil) (getraw nil) (glo) &aux (seen))
   (let ((renderer (make-instance 'JSONStyle-Renderer :graph graph))
-        (reads/writes (when cache-polyhedral (extract-accesses (make-scop-ctx-from-blueprint graph) graph :scal->array nil :getlisp t)))
+        (reads/writes (when cache-polyhedral (extract-accesses (make-scop-ctx-from-blueprint graph :glo glo) graph :scal->array nil :getlisp t)))
         (reads) (writes))
     (when reads/writes (setf reads (car reads/writes) writes (cdr reads/writes)))
     (funcall
@@ -149,10 +149,12 @@
 
   )
 
-(defun make-diskcache-entry (blueprint)
-  (declare (type FastGraph blueprint))
-  (make-instance
-   'DBEntry
-   :device (princ-to-string (ctx:getenv :BACKEND))
-   :sha256/sched (make-kernel-description blueprint :getraw nil :cache-polyhedral t) ;; Cache ShapeTracker
-   :sha256/graph (make-kernel-description blueprint :getraw nil))) ;; Cache Kernel (Same ID = Same Computation)
+(defun make-diskcache-entry (blueprint polyhedron)
+  (declare (type FastGraph blueprint) (type Polyhedral-Schedule-Item polyhedron))
+  (let ((glo (psi-global-lex-order polyhedron)))
+    (assert glo () "make-diskcache-entry: Global-Lex-Order must be provided to create a diskcache")
+    (make-instance
+     'DBEntry
+     :device (princ-to-string (ctx:getenv :BACKEND))
+     :sha256/sched (make-kernel-description blueprint :getraw nil :cache-polyhedral t :glo glo) ;; Cache ShapeTracker
+     :sha256/graph (make-kernel-description blueprint :getraw nil)))) ;; Cache Kernel (Same ID = Same Computation)

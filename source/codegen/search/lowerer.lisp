@@ -110,7 +110,7 @@ Throughout the entire scheduling process, it must be ensured that when items in 
 (defun extract-access (sp list dom-str constraints bp)
   (let ((accesses))
     (loop for item in (graph-nodes bp)
-          if (and (eql (node-type item) :PolyAref) (find (car (node-writes item)) list :key (alexandria:compose #'car #'node-writes)))
+          if (and (eql (node-type item) :PolyAref) (find (car (node-reads item)) list :key (alexandria:compose #'car #'node-reads)))
             do (let ((dg (id->value bp (car (node-reads item)))))
                  (assert (eql (node-type dg) :DEFINE-GLOBAL))
                  (push (format nil "~a -> ~(~a~)[~a]" dom-str (getattr dg :name) (polyaref-on-global-lex-order sp item bp)) accesses)))
@@ -183,7 +183,8 @@ Creates a ScheduleGraph from the given grpah.
                                         :polyhedron (%make-polyhedral-schedule-item
                                                      (getf item :domain) (getf item :schedule)
                                                      (extract-access schedule-space (getf item :read-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
-                                                     (extract-access schedule-space (getf item :write-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint)))
+                                                     (extract-access schedule-space (getf item :write-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
+                                                     :global-lex-order schedule-space)
                                         :blueprint (getf item :blueprint)
                                         :reduction (getf item :reduction)
                                         :storage-map (getf item :storage-map))
@@ -237,12 +238,12 @@ This may cause a significant increase in compilation time. Please check the foll
   ;; Ensure no sequence is introduced.
   ;; TODO
   ;; - [x] Polyhedral Model Construction At Here
-  ;; - [ ] Reduction
+  ;; - [x] Reduction
   ;; - [x] Single Domain
-  ;; - [ ] Aref can introduce extra args
-  ;; - [ ] SYMBOLIC
-  ;; - [ ] EXPRifyもこの段階で挿入してあげる
-  ;; - [ ] _gid conflict発生しない？
+  ;; - [x] Aref can introduce extra args
+  ;; - [x] SYMBOLIC
+  ;; - [x] EXPRifyもこの段階で挿入してあげる
+  ;; - [ ] _gid conflict発生しない？ during fusion
   ;; - [ ] SCoPを簡略化する？
   ;; - [ ] define-global ==> rename
   (values
@@ -717,6 +718,8 @@ This may cause a significant increase in compilation time. Please check the foll
 ;; - [ ] ScheduleTree ==> DataFlowGraphを作成する。
 ;;   - [ ] これはTile探索のVislizeも兼ねる
 ;; ↓これがFusionできないといけない。
+;; - (fconst 'a)
+;; - (!add gemm gemm)
 ;; (let ((tg (tensor-lowered-graph (!sin (!t (!relu (!matmul (make-tensor `(1024 1024)) (make-tensor `(1024 1024)))))))))
 ;;              (time (caten/codegen/lowerer::codegen tg)))
 (defun schedule-item-to-optrules ()
@@ -730,6 +733,11 @@ This may cause a significant increase in compilation time. Please check the foll
 ;; - [ ] renderer, etcに使ってない関数多すぎ
 ;; - [ ] 一回のScheduleGraphで使われたStride全てでBroadcastを実施する
 ;; - [ ] Fusionについて，途中のCSEが必要なくなるのでは？
+;; - [ ] Polyhedral: SCOP
+;; - [ ] IDを見やすくするRewriting Ruleを導入する。
+;;   - [ ] N Load => N_1とかにする
+;;   - [ ] Fix DB
+;; - [ ] Start w/ Simple Fusion Rule
 (defun codegen (graph)
   (declare (type Graph graph))
   (let ((sched (make-schedule-graph graph)))
