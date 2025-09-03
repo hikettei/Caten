@@ -2,6 +2,7 @@
   (:documentation "TensorGraph => ScheduleGraph Lowerer")
   (:use :cl :caten/air :caten/aasm :caten/aasm/expr :caten/codegen/helpers
    :caten/codegen/search/polyhedral :caten/codegen/search/autotune
+   :caten/common.gensym
    :caten/codegen/search/ast :caten/runtime)
   (:export
    #:make-schedule-graph
@@ -116,6 +117,36 @@ Throughout the entire scheduling process, it must be ensured that when items in 
                  (push (format nil "~a -> ~(~a~)[~a]" dom-str (getattr dg :name) (polyaref-on-global-lex-order sp item bp)) accesses)))
     (isl::union-map-from-str (format nil "~a -> { ~{~a~^; ~} }" constraints accesses))))
 
+(defun graph-rewrite-edge-ids (graph &aux (context (make-hash-table)))
+  (declare (type Graph graph))
+  (with-local-gensym ()
+    (flet ((ensure-getid (id)
+             (let* ((node (id->value graph id)) (thing "value_")
+                    (type (and node (car (relay-writes (read-type-relay node)))))
+                    (is-const-p (and type (= 0 (tensor-relay-nrank type)))))
+               ;; Rename thing depending on the nature of id
+               (cond
+                 ((and node type is-const-p (eql (node-type node) :LOAD) (numberp (getattr node :value)))
+                  (setf thing (format nil "CONST_~a_" (if (integerp (getattr node :value)) (getattr node :value) "FLT"))))
+                 ((and node type is-const-p (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
+                  (setf thing (format nil "CONST_~a_" (ensure-string-as-compilable (princ-to-string (getattr node :value))))))
+                 ((and node type is-const-p)
+                  (setf thing "CST_"))
+                 ((and node type (null is-const-p))
+                  (setf thing "BUF_")))
+               (if (symbolp id)
+                   (or (gethash id context) (setf (gethash id context) (lgensym thing)))
+                   id))))
+      (let ((new-graph (make-graph)))
+        (dolist (node (tpsort-graph graph))
+          (let ((node (copy-node node)))
+            (setf (node-reads node) (map 'list #'ensure-getid (node-reads node))
+                  (node-writes node) (map 'list #'ensure-getid (node-writes node)))
+            (push node (graph-nodes new-graph))))
+        (setf (graph-seen new-graph) (map 'list #'ensure-getid (graph-seen graph))
+              (graph-outputs new-graph) (map 'list #'ensure-getid (graph-outputs graph)))
+        new-graph))))
+
 (declaim (ftype (function (Graph) (values ScheduleGraph)) make-schedule-graph))
 (defun make-schedule-graph (graph)
   "
@@ -125,80 +156,84 @@ Throughout the entire scheduling process, it must be ensured that when items in 
 Creates a ScheduleGraph from the given grpah.
 "
   (declare (type Graph graph) (optimize (speed 3)))
-  (graph-infer-type-relay graph)
-  (assert (null (graph-seen graph)) () "tensor-graph->schedule-graph: Scheduling partial graph is not allowed! Set graph-seen = nil")
-  (let ((id->grids (make-hash-table)) (id->users (make-hash-table)) (queue)
-        (in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
-    (flet ((butseen (list) (loop for l in list for v = (id->value graph l) if (and v (symbolp l)) collect v)))
-      (loop for node in (graph-nodes graph) do
-        (assert (= 1 (length (the list (node-writes node)))))
-        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
-        (dolist (r (butseen (node-reads node)))
-          (let ((node-id (car (node-writes r))))
-            (when (null (find (node-id node) (the list (gethash node-id id->users)) :key #'node-id))
-              (push node (gethash node-id id->users))))
-          (when (null (find (the symbol (node-id node)) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
-            (push node (gethash (node-id r) out-degrees))))))
-    ;; [TODO]
-    ;; Insert (car (node-writes backward)) to node-reads of all backward nodes
-    (loop for node in (graph-nodes graph) if (null (gethash (node-id node) in-degrees)) do (push node queue))
-    (loop while queue
-          for node = (pop queue)
-          for new-grid = (make-grids-from-node graph node id->grids id->users) do
-            (dolist (w (node-writes node)) (setf (gethash w id->grids) new-grid))
-            (dolist (adj (gethash (node-id node) out-degrees))
-              (setf (gethash (node-id adj) in-degrees) (remove (node-id node) (gethash (node-id adj) in-degrees) :key #'node-id))
-              (when (null (gethash (node-id adj) in-degrees))
-                (push adj queue)))
-            (remhash (node-id node) out-degrees))
-    (assert (= 0 (hash-table-count out-degrees)) ()
-            "The following nodes are not scheduled. circular dependencies?~%~a" (alexandria:hash-table-values out-degrees))
-    ;; Construct Graph
-    (let ((all-grids (make-hash-table)) (n-scheduled 0) (val->grids (make-hash-table)))
-      (declare (type fixnum n-scheduled))
-      ;; circular dependency of schedule graph? will it happen?
-      (maphash
-       #'(lambda (id grids)
-           (declare (ignore id))
-           (setf (gethash (grids-id grids) all-grids) grids))
-       id->grids)
-      ;; [todo] parallelize grids-init w/ lparallel!
-      (mapc #'grids-ensure-affine (alexandria:hash-table-values id->grids))
-      (mapc
-       #'(lambda (x)
-           (grids-init-edges x id->grids id->users (graph-outputs graph))
-           (dolist (w (grids-writes x))
-             (setf (gethash (car w) val->grids) x)))
-       (alexandria:hash-table-values id->grids))
-      (let* ((g
-               (loop with id->bind = (make-hash-table)
-                     for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
-                     for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
-                     collect (grids->schedule-item id->bind graph grids val->grids)))
-             (schedule-space (create-lexicographical-ctx g))
-             (g
-               (loop for item in g
-                     if (listp item)
-                       collect ($affine (getf item :grid-writes) (getf item :grid-reads)
-                                        :polyhedron (%make-polyhedral-schedule-item
-                                                     (getf item :domain) (getf item :schedule)
-                                                     (extract-access schedule-space (getf item :read-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
-                                                     (extract-access schedule-space (getf item :write-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
-                                                     :global-lex-order schedule-space)
-                                        :blueprint (getf item :blueprint)
-                                        :reduction (getf item :reduction)
-                                        :storage-map (getf item :storage-map))
-                     else
-                       collect item)))
-        (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 1)
-          (let ((dims (the list (alexandria:hash-table-keys (global-lex-order-dict schedule-space)))))
-            (caten/common.logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
-        (assert (= n-scheduled (length (the list (graph-nodes graph)))))
-        (setf g (apply #'make-graph g)
-              (graph-outputs g) (copy-list (graph-outputs graph)))
-        (setf g (->schedule-graph g))
-        (verify-graph g)
-        g))))
+  (with-local-gensym ()
+    ;; Creating a copy + make edge ids identical
+    (graph-infer-type-relay graph)
+    (setf graph (->fast-graph (graph-rewrite-edge-ids graph)))
+    (graph-infer-type-relay graph)
+    (assert (null (graph-seen graph)) () "tensor-graph->schedule-graph: Scheduling partial graph is not allowed! Set graph-seen = nil")
+    (let ((id->grids (make-hash-table)) (id->users (make-hash-table)) (queue)
+          (in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
+      (flet ((butseen (list) (loop for l in list for v = (id->value graph l) if (and v (symbolp l)) collect v)))
+        (loop for node in (graph-nodes graph) do
+          (assert (= 1 (length (the list (node-writes node)))))
+          (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
+          (dolist (r (butseen (node-reads node)))
+            (let ((node-id (car (node-writes r))))
+              (when (null (find (node-id node) (the list (gethash node-id id->users)) :key #'node-id))
+                (push node (gethash node-id id->users))))
+            (when (null (find (the symbol (node-id node)) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
+              (push node (gethash (node-id r) out-degrees))))))
+      ;; [TODO]
+      ;; Insert (car (node-writes backward)) to node-reads of all backward nodes
+      (loop for node in (graph-nodes graph) if (null (gethash (node-id node) in-degrees)) do (push node queue))
+      (loop while queue
+            for node = (pop queue)
+            for new-grid = (make-grids-from-node graph node id->grids id->users) do
+              (dolist (w (node-writes node)) (setf (gethash w id->grids) new-grid))
+              (dolist (adj (gethash (node-id node) out-degrees))
+                (setf (gethash (node-id adj) in-degrees) (remove (node-id node) (gethash (node-id adj) in-degrees) :key #'node-id))
+                (when (null (gethash (node-id adj) in-degrees))
+                  (push adj queue)))
+              (remhash (node-id node) out-degrees))
+      (assert (= 0 (hash-table-count out-degrees)) ()
+              "The following nodes are not scheduled. circular dependencies?~%~a" (alexandria:hash-table-values out-degrees))
+      ;; Construct Graph
+      (let ((all-grids (make-hash-table)) (n-scheduled 0) (val->grids (make-hash-table)))
+        (declare (type fixnum n-scheduled))
+        ;; circular dependency of schedule graph? will it happen?
+        (maphash
+         #'(lambda (id grids)
+             (declare (ignore id))
+             (setf (gethash (grids-id grids) all-grids) grids))
+         id->grids)
+        ;; [todo] parallelize grids-init w/ lparallel!
+        (mapc #'grids-ensure-affine (alexandria:hash-table-values id->grids))
+        (mapc
+         #'(lambda (x)
+             (grids-init-edges x id->grids id->users (graph-outputs graph))
+             (dolist (w (grids-writes x))
+               (setf (gethash (car w) val->grids) x)))
+         (alexandria:hash-table-values id->grids))
+        (let* ((g
+                 (loop with id->bind = (make-hash-table)
+                       for key in (sort (the list (alexandria:hash-table-keys all-grids)) #'<)
+                       for grids = (gethash key all-grids) do (incf n-scheduled (length (the list (grids-items grids))))
+                       collect (grids->schedule-item id->bind graph grids val->grids)))
+               (schedule-space (create-lexicographical-ctx g))
+               (g
+                 (loop for item in g
+                       if (listp item)
+                         collect ($affine (getf item :grid-writes) (getf item :grid-reads)
+                                          :polyhedron (%make-polyhedral-schedule-item
+                                                       (getf item :domain) (getf item :schedule)
+                                                       (extract-access schedule-space (getf item :read-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
+                                                       (extract-access schedule-space (getf item :write-arefs) (getf item :domain-str) (getf item :constraints) (getf item :blueprint))
+                                                       :global-lex-order schedule-space)
+                                          :blueprint (getf item :blueprint)
+                                          :reduction (getf item :reduction)
+                                          :storage-map (getf item :storage-map))
+                       else
+                         collect item)))
+          (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 1)
+            (let ((dims (the list (alexandria:hash-table-keys (global-lex-order-dict schedule-space)))))
+              (caten/common.logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
+          (assert (= n-scheduled (length (the list (graph-nodes graph)))))
+          (setf g (apply #'make-graph g)
+                (graph-outputs g) (copy-list (graph-outputs graph)))
+          (setf g (->schedule-graph g))
+          (verify-graph g)
+          g)))))
 ;; ~~ Lowering ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun create-lexicographical-ctx (items &key (warn-threshold 30))
   "Collect all the strides used within the compilation session and construct a hash table.
@@ -222,7 +257,6 @@ This may cause a significant increase in compilation time. Please check the foll
 - There is a possibility that the TensorGraph Simplifier failed to detect Common Subexpression Elimination (CSE) for complex stride computations.
 - If you believe this behavior is correct, please partition the TensorGraph partially and compile it to improve compilation speed." warn-threshold))
     lex))
-
 ;; TODO
 ;; - [ ] !view from INDEX-COMPONENTS? (e.g.: mask is applied?)
 ;; TODO: Test (!exp (!add (!sin (make-tensor `(3 3))) (make-tensor `(3 3)) :reduce t))
@@ -245,7 +279,7 @@ This may cause a significant increase in compilation time. Please check the foll
   ;; - [x] EXPRifyもこの段階で挿入してあげる
   ;; - [ ] _gid conflict発生しない？ during fusion
   ;; - [ ] SCoPを簡略化する？
-  ;; - [ ] define-global ==> rename
+  ;; - [ ] define-global ==> rename, reimpl at byoc
   (values
    (with-blueprint (:noopt t)
      (let ((binds) (root) (const-loads) (expr-write-to (intern (format nil "E_~a" grid-id))))
@@ -265,8 +299,6 @@ This may cause a significant increase in compilation time. Please check the foll
                     (symbol (%expr id))))
                 (relay->aref (name relay)
                   (declare (type TensorRelay relay))
-                  ;; Note
-                  ;; - [ ] (fconst 'a) どのようにLowerされる？
                   (%PolyAref
                    name
                    (map 'list #'(lambda (x) (guard-scalar x :allow-raw t)) (tensor-relay-stride relay))
@@ -286,7 +318,7 @@ This may cause a significant increase in compilation time. Please check the foll
                         for wt in (relay-writes (read-type-relay item))
                         for nth upfrom 0
                         if (find w writes) do
-                          (let ((waypoint (gensym "WP"))
+                          (let ((waypoint (lgensym "WP_"))
                                 (write-to
                                   (if (getattr item :reduction :allow-undefined t)
                                       (progn

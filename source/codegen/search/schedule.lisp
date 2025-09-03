@@ -1110,6 +1110,7 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
     (let ((dom-name (isl::set-get-tuple-name (isl::map-domain map))))
       (when (string= dom-name id)
         (let* ((expr (isl::%isl-map-to-str (isl::map-handle map)))
+               (expr (subseq expr (position (aref "{" 0) expr))) ;; Ignore quasiaffine params (e.g.: [A] -> { ...)
                (pos  (position (aref ">" 0) expr))
                (pos1 (when pos (position (aref "[" 0) expr :start pos)))
                (pos2 (when pos (position (aref "]" 0) expr :start pos)))
