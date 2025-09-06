@@ -119,7 +119,8 @@ During the optimization, auto scheduler tries to minimize the floating value of 
   (make-instance 'Polyhedral-Schedule-Item
                  :dependency-graph (psi-dependency-graph psi) :domain (psi-domain psi)
                  :read (psi-read-union-map psi) :write (psi-write-union-map psi) :strategy (psi-strategy psi)
-                 :initial-theta (psi-theta psi) :opt-history (copy-list (psi-opt-history psi))))
+                 :initial-theta (psi-theta psi) :opt-history (copy-list (psi-opt-history psi))
+                 :global-lex-order (psi-global-lex-order psi)))
 ;; ~~ SCoP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "Context for tracking loop structure during traversal"

@@ -24,6 +24,7 @@ TODO:
    ;; Fusuion/Parallelism
    #:RewriteTree
    #:Fuse
+   #:Transpose
    ;; Optimization
    #:Interchange
    ))
@@ -171,14 +172,6 @@ schedule: ... <-------|
 ```
 "))
 
-
-(defmethod optrule-generate-search-space (poly (id (eql :Transpose0)))
-  (let* ((seq (isl:schedule-node-first-child (isl:schedule-get-root (psi-theta poly)))))
-    (assert (eql :schedule-node-sequence (isl:schedule-node-get-type seq)))
-    ;; [TODO]
-    ;; - [ ] Transpose, Tileなど，とりあえずScheduleLangから実装
-    ))
-
 (defmethod optrule-generate-search-space (poly (id (eql :Transpose)))
   (let* ((pos (psi-get-first-unoptimized-sequence poly))
          (status
@@ -199,8 +192,7 @@ schedule: ... <-------|
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Transpose))
   (with-slots ((at at) (depth depth)) optrule
-    (let* ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))
-           (band (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1))))
+    (let* ((band (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)))
       (setf (psi-theta poly) (isl:schedule-node-get-schedule (schedule-node-band-scoop-up band depth))))))
 
 (defclass Shift (OptimizationRule) nil) ;; Skewing

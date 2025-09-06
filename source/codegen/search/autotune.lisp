@@ -185,11 +185,26 @@ BEAM Search Workflow:
 ;;   - [ ] read article
 ;; - [ ] Matmul+Matmul Fusion
 ;;  - [ ] Flash
+;;  - [ ] Remove ShapeTracker in caten/api
+;;  - [ ] NO_SHAPETRACKER=1 ConvND Fusion
+;;   - [ ] ReshapeMask, etc
 (defun ILP/SolveProximity (parent child &key (order :forward))
   (print "Fusion")
   (print parent)
   (print child)
-  (print (isl:union-map-apply-range (psi-read-union-map child) (isl:union-map-reverse (psi-write-union-map parent))))
+  ;; (print (isl:union-map-apply-range (psi-read-union-map child) (isl:union-map-reverse (psi-write-union-map parent))))
+  ;; _gid0=_gid0'みたいなConstraintがないとそのLoopではFusionできないようにする
+  ;; - まずはいい感じのRaWを求める (for Matmul+Matmul Fusion)
+  ;; - Tileも反映
+  ;; - RaW DependenciesからルールベースでFusionを実施，CostModelで評価
+  (let* ((root (psi. parent child)))
+    (setf root (apply-optimization root (make-instance 'RewriteTree :rule :Maximize-Band-Depth)))
+    (print (isl:schedule-get-root (psi-theta root)))
+
+    
+    (print root)
+    (multiple-value-bind (dep a1 a2 a3) (compute-dependence-relation (psi-read-union-map child) (psi-write-union-map parent) (psi-theta root))
+      (print a1)))
   nil)
 #|
   (print "Searching ...")
