@@ -19,5 +19,5 @@
                 `(let ((pkg (find-package ,(intern (format nil "CATEN/TEST-SUITE/~a" component) "KEYWORD"))))
                    (format t ,(format nil "Running ~a ...~%" component))
                    (assert pkg () ,(format nil "A package CATEN/TEST-SUITE/~a is not found" component))
-                   (uiop:symbol-call :rove :run-suite pkg)
+                   (uiop:symbol-call :rove :run-suite pkg) ;; style spec is available on latest commit of rove
                    )))))
