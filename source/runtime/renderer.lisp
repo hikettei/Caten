@@ -14,3 +14,5 @@
 (defgeneric %render-node (renderer node-id node))
 (defgeneric %render-const (renderer obj))
 
+;; :IF :EXPR etc ...
+;; - [ ] %render-nodeを使って実装可能？

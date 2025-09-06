@@ -5,7 +5,6 @@
   :depends-on ("caten.graph" "caten.ir" "closer-mop")
   :serial t
   :components ((:file "buffer")
-               (:file "profile")
                (:file "runtime")
                (:file "kernel")
                (:file "bring-your-own-backend")

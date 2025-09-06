@@ -67,4 +67,16 @@
                                    collect `(,bind (caten/graph:getattr node ,attr))))
                       ,@form)))))))
 
-(defmacro define-kernel ())
+(defmacro define-kernel ((kernel-name renderer-name) direct-superclasses direct-slots &key (launch) (compile))
+  `(progn
+     (defclass ,kernel-name (,@direct-superclasses caten/runtime/kernel:Kernel) ,direct-slots)
+     (defmethod caten/runtime/kernel:kernel-load-blueprint ((kernel ,kernel-name) (blueprint caten/ir:ASTGraph))
+       (caten/runtime/kernel:%kernel-write-program
+        blueprint ;; render ast
+        kernel))
+     (defmethod caten/runtime/kernel:kernel-compile ((kernel ,kernel-name) runtime)
+
+       )
+     (defmethod caten/runtime/kernel:kernel-launch ((kernel ,kernel-name) runtime)
+
+       )))
