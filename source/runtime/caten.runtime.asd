@@ -7,6 +7,7 @@
   :components ((:file "buffer")
                (:file "profile")
                (:file "runtime")
+               (:file "kernel")
                (:file "bring-your-own-backend")
                (:file "package")))
 ;; [TODO] Renderer, BYOC Design

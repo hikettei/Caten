@@ -1,8 +1,8 @@
 (in-package :caten/ir)
 
-(defclass RuntimeGraph (FastGraph)
-  nil)
+(defclass RuntimeGraph (FastGraph) nil)
 
-;; [TODO]
-;; - [ ] Implement "Exportable" RuntimeGraph
-;;  - [ ] And Specs for it ...
+(defgeneric realize (runtime))
+
+;; [ ] Export RuntimeGraph into C
+
