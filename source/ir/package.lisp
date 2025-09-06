@@ -39,6 +39,7 @@
   ;; from ops.lisp
   (:export
    ;; Binary
+   #:TensorGraph
    #:*wrap-around-mode*
    #:%add
    #:%sub
@@ -73,9 +74,7 @@
   ;; from view.lisp
   (:export
    #:infer-tensor-info
-   #:%view
-   #:%reshape
-   )
+   #:%view)
   ;; from logical.lisp
   (:export
    #:%where)
@@ -87,7 +86,7 @@
    #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list #:tensor-relay-iterspace #:tensor-relay-vectorize
    #:copy-tensor-relay #:make-tensor-relay)
   ;; AST
-  (:export #:with-blueprint #:simplify-ast)
+  (:export #:ASTGraph #:with-blueprint #:simplify-ast)
   ;; ASTOps
   (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%polyaref #:%function #:%expr #:%setf #:%defsmem #:%function #:%lid)
   ;; RuntimeOps

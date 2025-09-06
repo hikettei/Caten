@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 ;; ~~ ScheduleGraph ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass ScheduleGraph (FastGraph)
   ;; [TODO]

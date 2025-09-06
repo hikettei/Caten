@@ -1,8 +1,8 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defpattern boolean (x) `(guard ,x (typep ,x 'boolean)))
-(defpattern dtype-float-p (dtype) `(guard ,dtype (caten/common.dtype:dtype/floatp ,dtype)))
+(defpattern dtype-float-p (dtype) `(guard ,dtype (caten/utilities/dtype:dtype/floatp ,dtype)))
 (defnode (:Tmp :_TmpScalarConst) () "" :slots ((dtype))) ;; TODO: delete
 
 (defun reinitialize-tensor (graph node &aux (id (car (node-writes node))))
@@ -249,7 +249,7 @@
           (let ((idiv (id->value graph (car (node-reads node)))))
             (with-context-nodes (_ (%idiv (car (node-reads idiv)) (second (node-reads idiv)) :id (car (node-writes node))))))))))
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
-    ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
+    ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/utilities/dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
     ((:Mul ((Const x dtype) (Const y _))) -> (Const (* x y) dtype))
     ((:Mul ((Const x dtype) (:Recip ((Const y _))))) -> (Const (/ x y) dtype))

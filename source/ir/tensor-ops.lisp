@@ -1,4 +1,6 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
+
+(defclass TensorGraph (FastGraph) nil)
 
 (defparameter *default-order* (ctx:getenv :DEFAULT_ORDER))
 (defparameter *default-float* (ctx:getenv :DEFAULT_FLOAT))
@@ -275,34 +277,6 @@ broadcast=~a"
 			     (map 'list #'node->id1 by)
 			     (map 'list #'node->id1 stride))
 		     :nrank nrank :broadcast broadcast :permute permute :tr tr))))
-;; Not recommended: use %view instead
-;; Note that x must be a contiguous array.
-(defun %reshape (x shape &key (id (gensym "RID")) (order :row))
-  "In-placed reshape"
-  (declare (type node x)
-	   (type list shape)
-	   (type (member :row :column) order))
-  (flet ((->const (x) (if (node-p x) x (%iconst x))))
-    (setf shape (map 'list #'->const shape)))
-  
-  (assert (every #'node-p shape)
-	  ()
-	  "Assertion Failed: shape must be a list of Node.")
-  (emit (make-node :Buffer :View (list id)
-		   (append
-		    (list (node->id x))
-		    ;;shape
-		    (map 'list #'node->id shape)
-		    ;; from
-		    (loop for i in shape collect (node->id (%iconst 0)))
-		    ;; to
-		    (map 'list #'node->id shape)
-		    ;; by
-		    (loop for i in shape collect (node->id (%iconst 1)))
-		    ;; stride
-		    (map 'list #'node->id (%stride shape order)))
-		   :nrank (length shape)
-		   :broadcast (loop for i in shape collect nil))))
 
 (defmethod print-node ((node Node) (id (eql :View)))
   (let ((nrank (getattr node :nrank)))
