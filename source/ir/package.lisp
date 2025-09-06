@@ -90,7 +90,7 @@
   ;; ASTOps
   (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%polyaref #:%function #:%expr #:%setf #:%defsmem #:%function #:%lid)
   ;; RuntimeOps
-  (:export #:$sink #:$kernel #:$sync)
+  (:export #:RuntimeGraph #:$sink #:$kernel #:$sync)
   ;; ScheduleOps
   (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse)
   (:Export #:ast-remove-extra-memloads #:ast-concrete-sequence #:ast-merge-expr-from-aref-subgraph)

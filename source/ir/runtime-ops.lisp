@@ -1,4 +1,8 @@
 (in-package :caten/ir)
 
+(defclass RuntimeGraph (FastGraph)
+  nil)
+
 ;; [TODO]
-;; - [ ] Rewrite Affine => Kernel
+;; - [ ] Implement "Exportable" RuntimeGraph
+;;  - [ ] And Specs for it ...
