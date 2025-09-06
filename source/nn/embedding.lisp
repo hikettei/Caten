@@ -20,6 +20,6 @@ Implements an embedding layer.
 	     (arange (!expand arange big-shp))
 	     (idx (!expand (!reshape x (append (shape x) `(1 1))) big-shp))
 	     (vals (!expand (!reshape weight weight-shp) big-shp)))
-	(let* ((out (!sum (!where (!eq arange idx) vals (!const x 0)) :axis 2))
+	(let* ((out (!sum (!where (!eq arange idx) vals (!const x 0)) :axis 2 :keepdims t))
 	       (shp (append (shape x) (list embedding-dim))))
 	  (!reshape out shp))))))

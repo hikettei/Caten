@@ -158,6 +158,39 @@ It is supported to compose multiple views; the viewed tensors can be created fro
   "Equivalent to !view but it ignores the base view object."
   (make-view-internal base subscripts :allow-merge nil))
 
+(defclass DropDims (Func) ((dims :initarg :dims :initform nil)
+                           (tr :accessor dd-tr)))
+
+(defmethod forward ((op DropDims) &rest inputs)
+  (let* ((out (st "A[~] -> A[~]" (inputs)))
+         (dims (slot-value op 'dims))
+         (tr (copy-tracker (tensor-tr out))))
+    (assert (null (tensor-buffer out)))
+    (flet ((drop-dims (list)
+             (loop for nth upfrom 0
+                   for l in list
+                   if (null (find nth dims))
+                     collect l)))
+      (setf (tr-shape tr) (drop-dims (tr-shape tr))
+            (tr-base-shape tr) (drop-dims (tr-base-shape tr))
+            (tr-stride tr) (drop-dims (tr-stride tr))
+            (tr-broadcast tr) (drop-dims (tr-broadcast tr))
+            (tr-mask tr) (drop-dims (tr-mask tr))
+            (tr-permute tr) (range 0 (length (drop-dims (tr-permute tr))))
+            (tensor-shape out) (drop-dims (tensor-shape out))
+            (tensor-views out) (drop-dims (tensor-views out))
+            (dd-tr op) tr)
+      out)))
+;; [TODO] Implement DropDims Backward when reimplemting caten/api
+(defmethod backward ((op DropDims) &optional prev-grad))
+(defmethod lower ((op DropDims) &rest inputs)
+  (%make-view-from-tracker (dd-tr op) (gensym "TID") (car inputs)))
+
+(defun !drop-dims (tensor dims)
+  (declare (type list dims))
+  (assert (every #'(lambda (x) (and (integerp x) (>= x 0))) dims))
+  (forward (make-instance 'DropDims :dims dims) tensor))
+
 (defclass Permute (Func)
   ((nrank :initarg :nrank :accessor permute-nrank)
    (order :initarg :order :accessor permute-order)

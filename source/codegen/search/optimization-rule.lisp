@@ -18,13 +18,14 @@ TODO:
    #:optrule-apply-transform-on-polyhedral
    #:optrule-apply-transform-on-blueprint
    #:apply-optimization
+   #:psi-get-first-unoptimized-sequence
    
    #:NoOpt
    ;; Fusuion/Parallelism
    #:RewriteTree
    #:Fuse
+   #:Transpose
    ;; Optimization
-   #:Reschedule
    #:Interchange
    ))
 
@@ -51,7 +52,8 @@ TODO:
 (defun apply-optimization (polyhedral optrule)
   (declare (type Polyhedral-Schedule-Item polyhedral) (type OptimizationRule optrule))
   (let ((polyhedral (psi-clone-for-next-generation polyhedral)))
-    (push optrule (psi-opt-history polyhedral))
+    (when (not (typep optrule 'NoOpt))
+      (setf (psi-opt-history polyhedral) (nconc (psi-opt-history polyhedral) (list optrule))))
     (optrule-apply-transform-on-polyhedral polyhedral optrule)
     polyhedral))
 ;; ~~ NoOpt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -70,7 +72,7 @@ TODO:
   (setf (psi-theta poly)
         (ecase (rt-rule optrule)
           (:Maximize-Filter-Candidates (schedule-split-all-band (psi-theta poly)))
-          (:Maximize-Band-Depth        (schedule-fuse-all-band  (psi-theta poly))))))
+          (:Maximize-Band-Depth (schedule-fuse-all-band (schedule-compute-parallel (psi-theta poly) (psi-dependency-graph poly)))))))
 ;; ~~ Optimizations on schedule-node-sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun psi-get-first-unoptimized-sequence (poly) (car (schedule-get-non-marked-sequence/set (psi-theta poly))))
 
@@ -88,8 +90,7 @@ TODO:
         (case status
           (:valid (list (make-instance 'Fuse :at seq)))
           (:need-reorder
-           (let ((order
-                   (schedule-node-sequence-tpsort (schedule-node-sequence-splice-children seqnode))))
+           (let ((order (schedule-node-sequence-tpsort (schedule-node-sequence-splice-children seqnode) (psi-read-union-map poly) (psi-write-union-map poly))))
              (list (make-instance 'Reorder :at seq :order order))))
           (otherwise
            ;; TODO: (list (make-instance 'Fail))
@@ -109,7 +110,7 @@ TODO:
       (setf
        (psi-theta poly)
        (isl:schedule-node-get-schedule
-        (schedule-node-sequence-group-sequence
+        (progn;schedule-node-sequence-group-sequence
          (schedule-node-sequence-reorder seq order)))))))
 
 (defclass Fission (OptimizationRule)
@@ -138,7 +139,8 @@ TODO:
                   (list (make-instance 'NoOpt))
                   (list
                    (make-instance 'Fission :at pos :sizes sizes)))
-              (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))))))))
+              ;; (list (make-instance 'Flash :at pos :size (reduce #'isl:value-min sizes)))
+              ))))))
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Fission))
   (with-slots ((at at) (sizes sizes)) optrule
@@ -190,72 +192,10 @@ schedule: ... <-------|
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (optrule Transpose))
   (with-slots ((at at) (depth depth)) optrule
-    (let* ((seq (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at))
-           (band (isl:schedule-node-first-child (isl:schedule-node-get-child seq 1))))
+    (let* ((band (schedule-node-at-path (isl:schedule-get-root (psi-theta poly)) at)))
       (setf (psi-theta poly) (isl:schedule-node-get-schedule (schedule-node-band-scoop-up band depth))))))
 
 (defclass Shift (OptimizationRule) nil) ;; Skewing
-;; ~~ Reschedule ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Reschedule (OptimizationRule)
-  ((outer-coincidence :initarg :outer-coincidence :initform 0)
-   (maximize-coincidence :initarg :maximize-coincidence :initform 0)
-   (treat-coalescing :initarg :treat-coalescing :initform 0)
-   (maximize-band-depth :initarg :maximize-band-depth :initform 0)
-   (schedule-whole-component :initarg :schedule-whole-component :initform 0)
-   (serialize-sccs :initarg :serialize-sccs :initform 0)
-   (max-coefficient :initarg :max-coefficient :initform 1) ;; always set to 1 to keep simplicy!
-   (max-constant-term :initarg :max-constant-term :initform 0)) ;; always set to 0 to keep simplicity!
-  (:documentation "Polyhedral rescheduling rule. Sets ISL scheduling options and solves the
-ILP-based scheduler over constraints C(D,Δ) to obtain a new schedule θ.
-Parameters (0/1 unless stated):
-  outer-coincidence, maximize-coincidence   — fusion/parallelism bias;
-  treat-coalescing                          — favor stride/coalesced access;
-  maximize-band-depth                       — prefer deeper bands;
-  schedule-whole-component                  — schedule SCCs jointly;
-  serialize-sccs                            — serialize SCCs (enables fission);
-  max-coefficient, max-constant-term ∈ ℤ≥0  — bounds on affine coefficients.
-Effect: computes θ := schedule-constraints-compute-schedule(C) under these
-options; typically used to seed candidate schedules at the start of search."))
-(defmethod optrule-generate-search-space (poly (id (eql :Serialize)))
-  (list (make-instance 'Reschedule :serialize-sccs 1)))
-;; [TODO]Remove
-(defmethod optrule-generate-search-space (poly (id (eql :Reschedule)))
-  ;; Reschedule can be placed on the top of scheduling commands.
-  (list
-   ;(make-instance 'Reschedule) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   (make-instance 'Reschedule :serialize-sccs 1) ;; Maximize Fusion Chance!
-   ;; Locality Strategy
-   (make-instance 'Reschedule :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 1 :treat-coalescing 1) ;; Full Fusion
-   (make-instance 'Reschedule :outer-coincidence 1 :schedule-whole-component 1) ;; Keep Loop Fusion (Softmax, FlashAttention)
-   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 0 :maximize-band-depth 1 :schedule-whole-component 0)
-   (make-instance 'Reschedule :outer-coincidence 0 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
-   (make-instance 'Reschedule :outer-coincidence 1 :maximize-coincidence 1 :maximize-band-depth 0 :schedule-whole-component 0)
-   ))
-
-(defmethod optrule-apply-transform-on-polyhedral (poly (optrule Reschedule))
-  (macrolet ((set-option (name slot)
-	       `(cffi:foreign-funcall
-                 ,(format nil "isl_options_set_~(~a~)" name)
-                 :pointer (isl::context-handle isl::*context*)
-                 :int (slot-value optrule ',slot)
-		 :void)))
-    (set-option "schedule_serialize_sccs" serialize-sccs)
-    (set-option "schedule_max_constant_term" max-constant-term)
-    (set-option "schedule_max_coefficient" max-coefficient)
-    (set-option "schedule_outer_coincidence" outer-coincidence)
-    (set-option "schedule_maximize_coincidence" maximize-coincidence)
-    (set-option "schedule_treat_coalescing" treat-coalescing)
-    (set-option "schedule_maximize_band_depth" maximize-band-depth)
-    (set-option "schedule_whole_component" schedule-whole-component))
-  (let ((new-schedule
-          (isl:schedule-constraints-compute-schedule
-           (compute-schedule-constraints
-            (psi-domain poly)
-            (compute-dependence-relation
-             (psi-read-union-map poly)
-             (psi-write-union-map poly)
-             (psi-theta poly))))))
-    (setf (psi-theta poly) new-schedule)))
 ;; ~~ Exploration Space ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; ~~ Interchange ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Interchange (OptimizationRule) ((order :initarg :order :accessor interchange-order :type list)))

@@ -129,7 +129,7 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   ;; - 入力のSymbolicに応じて変動する。
   (let ((*autotune-node-callback*))
     ;; PostLoopFusion
-    (caten/codegen/search/autotune::runtime-graph-fuse-all (runtime-graph runtime))
+    ;; (caten/codegen/search/autotune::runtime-graph-fuse-all (runtime-graph runtime))
     ;; AutoScheduler
     (%autotune runtime)
     (when (typep (runtime-graph runtime) 'Graph) ;; TODO: Delete this after everything is DAG refactor

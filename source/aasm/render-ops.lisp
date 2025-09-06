@@ -49,9 +49,9 @@ Constraints:
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
-(defun %global (name dtype pointer-p &key (mode :io))
-  (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name))
-  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil :dtype dtype :pointer-p pointer-p :mode mode)))
+(defun %global (write-to name dtype pointer-p &key (mode :io))
+  (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name write-to))
+  (emit (make-node :Render :DEFINE-GLOBAL (list write-to) nil :name name :dtype dtype :pointer-p pointer-p :mode mode)))
 
 (defun %local (name size dtype)
   (declare (type dtype-t dtype) (type list size) (type symbol name))
@@ -81,6 +81,11 @@ Constraints:
 (defun %aref (name idx &key (out (gensym "AREF")))
   (declare (type (or symbol node) name idx))
   (emit (make-node :JIT :Aref (list out) (map 'list #'node->id1 (list name idx)))))
+
+(defun %polyaref (name strides affs &key (out (gensym "PAREF")))
+  (declare (type (or symbol node) name) (type list strides affs))
+  (assert (= (length strides) (length affs)))
+  (emit (make-node :JIT :PolyAref (list out) (map 'list #'node->id1 (append (list name) strides affs)) :nrank (length strides))))
 
 (defun %setf (tgt value &key (out (gensym "SETF")))
   (declare (type (or symbol node) tgt value))
@@ -485,10 +490,10 @@ A <- L
           (if changed-p (ast-ensure-expr-is-singleton graph) graph))))))
 
 (defun %make-parse-ctx (graph)
-  (let* ((ctx (uiop:symbol-call :caten/codegen/polyhedral :make-scop-ctx-from-blueprint graph :allow-if t))
-         (node-to-loops (uiop:symbol-call :caten/codegen/polyhedral :ctx-node-to-loops ctx))
-         (allloops (uiop:symbol-call :caten/codegen/polyhedral :ctx-all-loops ctx))
-         (exprs (uiop:symbol-call :caten/codegen/polyhedral :ctx-exprs ctx)))
+  (let* ((ctx (uiop:symbol-call :caten/codegen/search/polyhedral :make-scop-ctx-from-blueprint graph :allow-if t))
+         (node-to-loops (uiop:symbol-call :caten/codegen/search/polyhedral :ctx-node-to-loops ctx))
+         (allloops (uiop:symbol-call :caten/codegen/search/polyhedral :ctx-all-loops ctx))
+         (exprs (uiop:symbol-call :caten/codegen/search/polyhedral :ctx-exprs ctx)))
     (values node-to-loops allloops exprs)))
 
 (defun ast-rewrite-ssa-style-as-tree (graph)
@@ -1613,3 +1618,129 @@ for x in range(M*N*K):
       (insert-nodes graph (list outerband))
       (simplify-ast graph)
       graph)))
+
+(defun ast-concrete-sequence (blueprint &aux (visited (make-hash-table)))
+  "Concretes the execution order such as:
+```
+val_1[idx] = ...;   // EXPR(STORE) OUT=A
+val_2 = val_1[idx]; // ==> BIND(A, val_1)
+```
+so that cse won't break the blueprint."
+  (declare (type FastGraph blueprint))
+  (dolist (node (graph-nodes blueprint))
+    (loop for r in (node-reads node) for nth upfrom 0
+          for n = (id->value blueprint r)
+          if (eql (node-type n) :BIND) do
+            (setf (nth nth (node-reads node)) (getattr n :value))))
+  (verify-graph blueprint)
+  (let ((id->bind (make-hash-table)))
+    (labels ((f (item)
+               (loop for n in (node-reads item) for nth upfrom 0
+                     for k = (gethash n id->bind)
+                     if k do
+                       (setf (nth nth (node-reads item)) (car (node-writes k))))
+               ;; // EXPR(STORE)
+               (let* ((parent (id->value blueprint (car (node-reads item))))
+                      (setf/out
+                        (when (and parent (eql (node-type parent) :SETF))
+                          (id->value blueprint (car (node-reads parent))))))
+                 (when (and
+                        (eql (node-type item) :EXPR)
+                        parent setf/out
+                        (eql :SETF (node-type parent)))
+                   (let* ((val (case (node-type setf/out)
+                                 (:AREF (car (node-reads setf/out)))
+                                 (:EXPR (car (node-writes setf/out)))
+                                 (otherwise (error "ast-concrete-sequence: detected illegal order. SETF(X, Y), X should be AREF or EXPR."))))
+                          (tmpid (gensym "BIND"))
+                          (bind (make-node :JIT :BIND (list tmpid) (node-writes item) :value val)))
+                     (setf (gethash val id->bind) bind)
+                     (insert-nodes blueprint (list bind))))))
+             (explore (id bfs &aux (node (id->value blueprint id)))
+               (when (or (null node) (gethash (node-id node) visited))
+                 (return-from explore))
+               (setf (gethash (node-id node) visited) t)
+               (if (or bfs (eql (node-type node) :EXPR))
+                   (progn
+                     (mapc #'(lambda (x) (explore x t)) (node-reads node))
+                     (f node))
+                   (progn
+                     (f node)
+                     (mapc #'(lambda (x) (explore x bfs)) (node-reads node))))))
+      (mapc #'(lambda (x) (explore x nil)) (graph-outputs blueprint))
+      (verify-graph blueprint)
+      blueprint)))
+
+(defun ast-remove-extra-memloads (blueprint singletons &aux (deleted))
+  "Rewrites the following pattern but val_1 is a member of singletons.
+```
+idx = ai+b;
+val_1[idx] = 0.0;
+float acc = val_1[idx];
+```
+===>
+```
+float acc = 0.0;
+```
+"
+  (declare (type FastGraph blueprint) (type list singletons))
+  (labels ((getchild (id type)
+             (let ((children (id->users blueprint id)))
+               (when (and (= 1 (length children)) (eql type (node-type (car children))))
+                 (car children))))
+           (replace-for-id (id)
+             (let* ((aref (getchild id :AREF))
+                    (setf (when aref (getchild (car (node-writes aref)) :SETF)))
+                    (expr (when setf (getchild (car (node-writes setf)) :EXPR)))
+                    (binds (when expr (id->users blueprint (car (node-writes expr)))))
+                    (bind (find :BIND binds :key #'node-type))
+                    (aref-child (when (and expr bind (not (eql (node-id expr) (node-id bind))))
+                                  (id->users blueprint (car (node-writes bind)))))
+                    (aref-child (when (and aref-child (= 1 (length aref-child)))
+                                  (car aref-child))))
+               ;; [TODO] Assert aref-child.reads[1] == aref.reads[1]
+               (when (and aref-child)
+                 ;; remove expr
+                 (push (car (node-writes expr)) deleted)
+                 (dolist (usr (id->users blueprint (car (node-writes aref-child))))
+                   (setf (node-reads usr)
+                         (loop for r in (node-reads usr)
+                               if (eql r (car (node-writes aref-child)))
+                                 collect (second (node-reads setf))
+                               else
+                                 collect r)))))))
+    (mapc #'replace-for-id singletons)
+    (dolist (node (graph-nodes blueprint))
+      (when (eql (node-type node) :PROGN)
+        (setf (node-reads node)
+              (loop for r in (node-reads node)
+                    if (null (find r deleted))
+                      collect r))))
+    (verify-graph blueprint)
+    blueprint))
+
+(defun ast-merge-expr-from-aref-subgraph (blueprint &aux (seen (make-hash-table)))
+  (declare (type FastGraph blueprint))
+  (labels ((explore (id is-aref-subgraph &aux (node (id->value blueprint id)))
+             (when (or (null node) (gethash (node-id node) seen))
+               (when (null is-aref-subgraph)
+                 (return-from explore)))
+             (setf (gethash (node-id node) seen) t)
+             (when (or is-aref-subgraph (eql (node-type node) :AREF))
+               (let ((new-reads
+                       (loop for r in (node-reads node)
+                             for v = (id->value blueprint r)
+                             if (and v (eql (node-type v) :EXPR))
+                               collect (car (node-reads v))
+                             else
+                               collect r)))
+                 (setf (node-reads node) new-reads)))
+             (if (eql (node-type node) :AREF)
+                 (progn
+                   (assert (null is-aref-subgraph))
+                   (explore (nth 0 (node-reads node)) nil)
+                   (explore (nth 1 (node-reads node)) t))
+                 (mapc #'(lambda (x) (explore x is-aref-subgraph)) (node-reads node)))))
+    (mapc #'(lambda (x) (explore x nil)) (graph-outputs blueprint))
+    (verify-graph blueprint)
+    (%simplify-ast blueprint)))

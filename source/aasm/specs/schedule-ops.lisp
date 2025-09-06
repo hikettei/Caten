@@ -1,0 +1,33 @@
+(in-package :caten/aasm)
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
+(defclass ScheduleItem () nil)
+(defclass ScheduleTime (AType) ((type :initarg :type :reader st-type)))
+
+(defun verify-schedule-item (self)
+  #'(lambda (id->type node)
+      (let ((ptypes (loop for i in (node-reads node) collect (gethash i id->type))))
+        (assert (every #'(lambda (x) (find (st-type x) `(:Affine :Nonaffine))) ptypes)))
+      (list (make-instance 'ScheduleTime :type self))))
+;; ~~ Specs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:Schedule :Affine) (ScheduleItem)
+         "
+```
+  [VIEW]
+     ↓
+ [items x N] where each item is jitable
+     ↓
+   [out]
+```
+"
+         :slots ((polyhedron) (blueprint) (reduction :initform nil) (storage-map :initform (make-hash-table)) (dbkey))
+         :type-relay (verify-schedule-item :Affine))
+
+(defnode (:Schedule :NonAffine) (ScheduleItem)
+         ""
+         :slots ((items :initform nil))
+         :type-relay (verify-schedule-item :Nonaffine))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+) ;; eval-when

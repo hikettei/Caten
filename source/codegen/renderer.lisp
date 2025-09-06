@@ -8,6 +8,7 @@
    ;; Renderers
    #:Default-Renderer
    #:CStyle-Renderer
+   #:JSONStyle-Renderer
 
    #:make-renderer
    #:render-expr
@@ -17,7 +18,7 @@
    
    #:render-index
    #:render-aref-index
-   #:make-kernel-description))
+   #:jr-gensym))
 
 (in-package :caten/codegen/renderer)
 
@@ -103,7 +104,7 @@
          (iteration-space-views is)
          (iteration-space-strides is)
          iterations))))))
-
+;; [todo] delete
 (defun expr-index-components (renderer node index-space)
   (assert (eql (node-type node) :INDEX-COMPONENTS))
   (labels ((from-expr (shapes components)
@@ -134,7 +135,7 @@
       (from-expr (iteration-space-shape is) components))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
-  nil
+  ((render-expr->expr :initarg :render-expr->expr :initform nil))
   (:documentation "Default Renderer used to print-object in repl"))
 
 (defmethod %render-const ((renderer Default-Renderer) obj)
@@ -192,11 +193,28 @@
   (def :!= "!=")
   (def :< "<"))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (getattr node :name)))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
   (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
     (if (and p (eql (node-type p) :BIND))
         (format nil "~(~a~)[~(~a~)]" (getattr p :value) (render-node renderer (second (node-reads node))))
-        (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))))
+        (format nil "~(~a~)[~(~a~)]" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :PolyAref)) node)
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node))))
+        (nrank (getattr node :nrank))
+        (accesses))
+    (flet ((r (id) (render-node renderer id)))
+      (loop with offset = (/ (1- (length (node-reads node))) 2)
+            for i upfrom 0 below nrank
+            for stride = (nth (1+ i) (node-reads node))
+            for gid = (nth (+ offset i 1) (node-reads node))
+            do (push (format nil "<~a|~a>" (r stride) (r gid)) accesses))
+      (if (and p (eql (node-type p) :BIND))
+          (format nil "<PolyAref(BIND):<~(~a~)->~(~a~)>[~{~a~^, ~}]>" (render-node renderer (car (node-reads node))) (getattr p :value) (reverse accesses))
+          (format nil "<PolyAref:~(~a~)[~{~a~^, ~}]>" (render-node renderer (car (node-reads node))) (reverse accesses))))))
 
 (defmethod %render-node ((renderer default-renderer) (id (eql :Swizzle)) node)
   (with-output-to-string (out)
@@ -231,7 +249,9 @@
           (render-node renderer (third (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :EXPR)) node)
-  (%render-const renderer (car (node-writes node))))
+  (if (slot-value renderer 'render-expr->expr)
+      (render-node renderer (car (node-reads node)))
+      (%render-const renderer (car (node-writes node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :DEFINE-LOCAL)) node)
   (%render-const renderer (car (node-writes node))))
@@ -342,7 +362,7 @@
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
-  (%render-const renderer (car (node-writes node))))
+  (%render-const renderer (getattr node :name)))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RANGE)) node)
   (%render-const renderer (getattr node :idx)))
@@ -356,7 +376,7 @@
   (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-GLOBAL)) node)
-  (%render-const renderer (car (node-writes node))))
+  (%render-const renderer (getattr node :name)))
 
 (defmethod %render-node ((renderer Renderer) (id (eql :DEFINE-LOCAL)) node)
   (%render-const renderer (car (node-writes node))))
@@ -441,80 +461,12 @@
 (defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :BIND)) node)
   (%render-const renderer (getattr node :value)))
 
-(defun sha256-hex (string)
-  (ironclad:byte-array-to-hex-string
-   (ironclad:digest-sequence :sha256 (babel:string-to-octets string :encoding :utf-8))))
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (getattr node :name)))
 
-(defun make-kernel-description (graph &key (version) (getraw nil) &aux (seen))
-  (let ((renderer (make-instance 'JSONStyle-Renderer :graph graph)))
-    (funcall
-     (if getraw #'identity #'sha256-hex)
-     (with-output-to-string (out)
-       (format out "{\"version\": ~a," version)
-       (format out "\"globals\":[")
-       (loop for node in (graph-nodes graph)
-             if (eql (node-type node) :DEFINE-GLOBAL) do
-               (format out "{\"arg\":\"~a\",\"dtype\":~a_~a_~a},"
-                       (jr-gensym renderer (car (node-writes node)))
-                       (if (getattr node :pointer-p) "*" "")
-                       (getattr node :mode)
-                       (getattr node :dtype)))
-       (format out "{\"op\":\"end\"}],")
-       (labels ((r (s &aux (val (id->value graph s)))
-                  (when (and val (null (find (node-id val) seen)))
-                    (f val) (push (node-id val) seen))
-                  s)
-                (e (id) (render-node renderer id))
-                (emit-array (items emit-fn)
-                  (format out "[")
-                  (loop for it in items
-                        for i from 0 do
-                          (when (> i 0) (format out ","))
-                          (funcall emit-fn it))
-                  (format out "]"))
-                (f (node)
-                  (case (node-type node)
-                    (:PROGN
-                      (format out "{\"progn\":")
-                      (emit-array (node-reads node) #'r)
-                      (format out "}"))
-                    (:EXPR
-                     (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
-                         (format out "{\"expr_store\":~a}" (e (car (node-reads node))))
-                         (let ((type (car (relay-writes (read-type-relay node)))))
-                           (format out "{\"expr\":{\"id\":~a,\"sym\":~a,\"value\":"
-                                   (->cdtype (tensor-relay-dtype type))
-                                   (jr-gensym renderer (car (node-writes node))))
-                           (format out "~a" (e (car (node-reads node))))
-                           (format out "}}"))))
-                    (:FOR
-                     (multiple-value-bind (range body) (apply #'values (node-reads node))
-                       (setf range (id->value graph range))
-                       (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
-                       (multiple-value-bind (bind size step) (values (jr-gensym renderer (getattr range :idx)) (first (node-reads range)) (second (node-reads range)))
-                         (when (symbolp size)
-                           (let ((val (id->value graph size)))
-                             (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
-                             (setf size (car (node-reads val)))))
-                         (when (symbolp step)
-                           (let ((val (id->value graph step)))
-                             (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
-                             (setf step (car (node-reads val)))))
-                         (format out "{\"for\":{\"idx\":\"~(~a~)\",\"lower\":0,\"upper\":" bind)
-                         (format out "~a" (e size))
-                         (format out ",\"step\":~a,\"body\":" (e step))
-                         (r body)
-                         (format out "}}"))))
-                    (:IF
-                     (multiple-value-bind (cond body) (apply #'values (node-reads node))
-                       (setf cond (id->value graph cond))
-                       (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
-                       (format out "{\"if\":{\"cond\":~a,\"then\":" (e (car (node-reads cond))))
-                       (r body)
-                       (format out "}}")))
-                    (otherwise
-                     (warn "JSONStyleRenderer: Unknown op type ~a" (node-type node))
-                     (format out "{\"unknown_op\":~a}" (node-type node))))))
-         (format out ",\"body\":")
-         (f (id->value graph (car (graph-outputs graph))))
-         (format out "}"))))))
+(defmethod %render-node ((renderer JSONStyle-Renderer) (id (eql :PolyAref)) node)
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
+    (flet ((r (id) (render-node renderer id)))
+      (if (and p (eql (node-type p) :BIND))
+          (format nil "<PAref:~(~a~)[~{~a~^, ~}]>" (%render-const renderer (getattr p :value)) (map 'list #'r (cdr (node-reads node))))
+          (format nil "<PAref~(~a~)[~{~a~^, ~}]>" (render-node renderer (car (node-reads node))) (map 'list #'r (cdr (node-reads node))))))))

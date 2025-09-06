@@ -1,9 +1,35 @@
 (in-package :caten/isl)
-;; Codes are inspired from https://github.com/marcoheisig/cl-isl/blob/main/code/isl-object.lisp
+
 (defgeneric copy (isl-object))
+(defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
+;; __isl_give
+;; __isl_keep
+;; __isl_take
 (defstruct (isl-object (:copier nil))
   (handle (alexandria:required-argument :handle)
-   :type cffi:foreign-pointer))
+   :type cffi:foreign-pointer)
+  (no-copy-for-next-take nil :type boolean)
+  (is-compromised nil :type boolean))
+
+(defun ! (isl-object)
+  (declare (type isl-object isl-object))
+  (assert (null (isl-object-no-copy-for-next-take isl-object))() "isl-object-no-copy-for-next-take was already set.")
+  (assert (null (isl-object-is-compromised isl-object)) () "The object was already compromised")
+  (setf (isl-object-no-copy-for-next-take isl-object) t)
+  isl-object)
+
+(defun __isl_take (isl-object)
+  (declare (type isl-object isl-object))
+  (assert (null (isl-object-is-compromised isl-object)) () "Comprimised object ~a cannot be used as an argument." isl-object)
+  (if (isl-object-no-copy-for-next-take isl-object)
+      (progn
+        (setf (isl-object-is-compromised isl-object) t)
+        isl-object)
+      (copy isl-object)))
+
+(defun __isl_keep (isl-object)
+  (declare (type isl-object isl-object))
+  isl-object)
 
 (defmethod print-object ((isl-object isl-object) stream)
   (print-unreadable-object (isl-object stream :type t)
@@ -27,24 +53,15 @@ of type OBJECT-NAME."
 (defun isl-object-name-p (x)
   (and (symbolp x) (not (null (isl-object-%make x)))))
 
-;;; This hash table is used in each ISL object constructor to ensure that
-;;; each handle has exactly one corresponding wrapper object.
-(defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
-(defun %free-objects-in-context () (mapc #'funcall (alexandria:hash-table-values *isl-object-table*)))
-(defmacro with-isl-context (&body body)
-  "Assumes ISL Objects created under this context will be freed when the context is closed.
-= ISL Objects created under this context will not be shared or cached by other compiler session."
-  `(let* ((*isl-object-table* (make-hash-table))
-          (*context* (make-context)))
-     (unwind-protect (progn ,@body) (%free-objects-in-context)))) ;; Note(hikettei): *context* has always have a younger ID? and %free is called last?
-
 (defmacro define-isl-object
-    (name &key (abstract nil)
-            (list-type nil)
-            (superclass 'isl-object)
-            (from-str nil)
-            ((:free %free) (isl-object-%free superclass))
-            ((:copy %copy) (isl-object-%copy superclass)))
+    (name
+     &key
+       (abstract nil)
+       (list-type nil)
+       (superclass 'isl-object)
+       (from-str nil)
+       ((:free %free) (isl-object-%free superclass))
+       ((:copy %copy) (isl-object-%copy superclass)))
   (let ((predicate (make-isl-sym name (if (find #\- (string name)) "-P" "P")))
         (%make (make-isl-sym "%MAKE-" name))
         (%%make (make-isl-sym "%%MAKE-" name))
@@ -53,14 +70,13 @@ of type OBJECT-NAME."
     (setf (isl-object-%copy name) %copy)
     (setf (isl-object-%make name) %make)
     (setf (isl-object-%free name) %free)
-    `(progn
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
        (defstruct (,name (:include ,superclass)
                          (:predicate ,predicate)
                          (:copier nil)
                          (:constructor ,%%make (handle))))
        (declaim (ftype (function (cffi:foreign-pointer) (values ,name &optional)) ,%make))
-       ,@(when list-type
-           `((define-isl-object-list ,list-type ,name)))
+       ,@(when list-type `((define-isl-object-list ,list-type ,name)))
        ,@(when from-str
            `((define-isl-function ,%from-str-us ,%from-str-library
                (:give ,name)
@@ -72,8 +88,6 @@ of type OBJECT-NAME."
                (when (null (gethash (cffi:pointer-address handle) *isl-object-table*))
                  (setf (gethash (cffi:pointer-address handle) *isl-object-table*)
                        #'(lambda ()
-                           (when (= 1 (ctx:getenv :DEBUG_GC))
-                             (format t "DEBUG_GC=1 | (caten/isl) %free [~a] ~a~%" ',name (cffi:pointer-address handle)))
 			   (remhash (cffi:pointer-address handle) *isl-object-table*)
 			   (,%free handle))))
                (,%%make handle))))

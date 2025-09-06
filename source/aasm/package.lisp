@@ -90,8 +90,11 @@
   ;; AST
   (:export #:with-blueprint #:simplify-ast)
   ;; ASTOps
-  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%function #:%lid)
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%polyaref #:%function #:%expr #:%setf #:%defsmem #:%function #:%lid)
   ;; RuntimeOps
   (:export #:$sink #:$kernel #:$sync)
   ;; ScheduleOps
-  (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse))
+  (:export #:%ast-band-tile #:ast-band-tile-gpu #:ast-apply-cse)
+  (:Export #:ast-remove-extra-memloads #:ast-concrete-sequence #:ast-merge-expr-from-aref-subgraph)
+  ;; schedule-ops
+  (:export #:ScheduleGraph #:->schedule-graph #:$affine #:$nonaffine))

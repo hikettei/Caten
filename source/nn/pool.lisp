@@ -43,7 +43,7 @@
          (x (!unfold x k_ :stride (or stride k_) :dilation dilation :ceiling ceiling))
          (axis (map 'list #'- (range 1 (1+ (length k_)))))
          (reduced-shape (butlast (shape x) (length k_))))
-    (!reshape (funcall f x :axis axis) reduced-shape)))
+    (!reshape (funcall f x :axis axis :keepdims t) reduced-shape)))
 ;; ~~ apis ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (AvgPool (kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling)) :documentation "
 ```

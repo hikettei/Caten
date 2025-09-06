@@ -36,12 +36,12 @@ Returns:
          (rank
            (caten/codegen/search/schedule:schedule-node-count-bands
             (schedule-get-root schedule)))
-	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
+	 (ast-build (ast-build-from-context (set-from-str "{:}")))
          (ast-build
            (isl:ast-build-set-iterators
             ast-build
-            (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
-         (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
+            (apply #'make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
+         (ast-build-node (ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Variable/Context Counter
@@ -227,7 +227,10 @@ Returns:
 	   (id         (isl::%isl-ast-expr-id-get-id first-expr))
 	   (name       (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
 	   (args       (loop for i upfrom 1 below n collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i) :toplevel-p nil)))
-           (node (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp))
+           (node
+             (or
+              (find name (graph-nodes (pctx-blueprint ctx)) :key (alexandria:compose #'symbol-name #'node-id) :test #'equalp)
+              (error "The node ~a is not found in the given blueprint during applying schedule." name)))
            (node-to-loops (reverse (gethash (node-id node) (ctx-node-to-loops (pctx-scop-ctx ctx)))))
            (rewrite-map (make-hash-table))
            (new-idx-map (make-hash-table)))
@@ -236,7 +239,7 @@ Returns:
       (loop for base-domain in node-to-loops
             for new-args in args
             do (setf (gethash (getf base-domain :idx) rewrite-map) new-args))
-      ;; Creating a clone of subgraph
+      ;; Creating a clone of expr subgraph but indexes are replaced.
       (labels ((e (id &aux (node (id->value (pctx-blueprint ctx) id)))
                  (when (or (null node) (gethash (node-id node) visited)) (return-from e (gethash id new-idx-map id)))
                  (when (eql (node-type node) :EXPR) (return-from e (gethash id new-idx-map id)))
@@ -274,8 +277,8 @@ Returns:
                    (emit node)
                    new-id)))
         (let ((node (copy-node node)))
-          (setf (node-id node) (gensym "NID"))
-          (setf (node-reads node) (map 'list #'e (node-reads node)))
+          (setf (node-id node) (gensym "NID")
+                (node-reads node) (map 'list #'e (node-reads node)))
           (emit node)
           (setf (gethash (node-id node) (pctx-expr2args ctx))
                 (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
@@ -301,7 +304,7 @@ Returns:
 ;; acc_0 as a tensor temporary buffer!.
 ;; [TODO]
 ;; If the tmp buffer access is [i] -> [i] (bidijective) there should be more optimization path!
-(defun kernel-fixup-loop-fission-args (kernels)
+(defun kernel-fixup-loop-fission-args (kernels) ;; todo: delete
   ;; Insert DEFINE-GLOBAL if the definition was separated by Loop Fission
   (labels ((id->value-from-kernels (id)
              (loop for k in kernels
@@ -520,7 +523,7 @@ Returns:
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        parse-ctx (pctx-scop-ctx parse-ctx)
        (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast blueprint)))
-    (values (ast-apply-cse (apply-directives new-bp)) extra-allocs)))
+    (values (ast-concrete-sequence (ast-apply-cse (ast-concrete-sequence (apply-directives new-bp)))) extra-allocs)))
 
 (defun apply-schedule (schedule blueprint &key (ctx (make-scop-ctx-from-blueprint blueprint)))
   "
@@ -562,12 +565,74 @@ Return (value (list kernels) tmp-buffer-allocations)
                      k))
              (remove-duplicates extra-allocs :key (alexandria:compose #'car #'node-writes))))))))
 ;; ~~ Printer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast->str (ast)
+(cffi:defcfun (%isl-ast-node-map-descendant-bottom-up "isl_ast_node_map_descendant_bottom_up")
+    :pointer
+  (x :pointer) (y :pointer) (z :pointer))
+
+(cffi:defcfun (%isl-ast-node-foreach-descendant-top-down "isl_ast_node_foreach_descendant_top_down")
+    :int
+  (x :pointer) (y :pointer) (z :pointer))
+
+(defparameter *tmpwrite* nil)
+(defparameter *tmpread* nil)
+(cffi:defcallback ast-user-add-annot :pointer
+    ((ast-node :pointer) (user :pointer))
+  (declare (ignore user))
+  (let ((write-umap *tmpwrite*) (read-umap *tmpread*))
+    (assert (and write-umap read-umap))
+    (if (eql (isl::%isl-ast-node-get-type ast-node) :ast-node-user)
+        (let* ((str (isl::%isl-ast-node-to-c-str ast-node))
+               (expr (isl::%isl-ast-expr-op-get-arg (isl::%isl-ast-node-user-get-expr ast-node) 0))
+               (id   (isl::%isl-ast-expr-id-get-id expr))
+	       (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
+          (assert name)
+          (setf str (subseq str 0 (- (length str) 2))) ;; remove newline
+          (setf str (format nil "~a{ ~{~a~^, ~} = ~a(~{~a~^, ~}) };"
+                            (subseq str (length name))
+                            (caten/codegen/search/schedule:umap-get-set-list-on-id write-umap name)
+                            name
+                            (caten/codegen/search/schedule:umap-get-set-list-on-id read-umap name)))
+          (isl::%isl-ast-node-set-annotation ast-node (isl::identifier-handle (isl::make-id-from-str str))))
+        ast-node)))
+
+(cffi:defcallback ast-user-add-annot/read :pointer
+    ((ast-node :pointer) (user :pointer))
+  ast-node)
+
+(defun ast-annotate-dataflow-graph (ast read write)
+  (let ((*tmpread* read) (*tmpwrite* write))
+    (isl::%make-ast-node
+     (%isl-ast-node-map-descendant-bottom-up
+      (isl::ast-node-handle (isl::__isl_take ast))
+      (cffi:callback ast-user-add-annot)
+      (cffi:null-pointer)))))
+
+(cffi:defcallback ast-print-apply-annot :int
+    ((ast-node :pointer) (user :pointer))
+  (let ((annot (isl::%isl-ast-node-get-annotation ast-node)))
+    (when (not (cffi:null-pointer-p annot))
+      (setf (cffi:mem-ref user :string)
+            (cl-ppcre:regex-replace
+             (let ((str (isl::%isl-ast-node-to-c-str ast-node)))
+               (setf str (cl-ppcre:regex-replace "\\(" str "\\\\("))
+               (setf str (cl-ppcre:regex-replace "\\)" str "\\\\)"))
+               (subseq str 0 (1- (length str))))
+             (cffi:mem-ref user :string)
+             (isl::%isl-id-to-str annot)))))
+  1)
+
+(defun ast->str (ast &key (indent 0) (polyhedron))
+  (when polyhedron
+    (setf ast (ast-annotate-dataflow-graph ast (psi-read-union-map polyhedron) (psi-write-union-map polyhedron))))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+         (p     (isl::%isl-printer-set-indent p indent))
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
-    str))
+    (cffi:with-foreign-object (str* :string)
+      (setf (cffi:mem-ref str* :string) str)
+      (%isl-ast-node-foreach-descendant-top-down (isl::ast-node-handle ast) (cffi:callback ast-print-apply-annot) str*)
+      (cffi:mem-ref str* :string))))
 
 (defmethod print-object ((pg Polyhedral-Schedule-Item) stream)
   (print-unreadable-object (pg stream :type t :identity t)
@@ -580,3 +645,5 @@ Return (value (list kernels) tmp-buffer-allocations)
 ;;     - これはEXPRのSubstituteを使えば簡単にできるし，こっちの方が断然簡単そう。
 ;;     - 絶対こっちでやる。DIRECTIVEにCOALESCE=Tを追加するのが手っ取り早い
 ;; - 2. MOVE Optimization Path (Bidijective Path)
+;; - 3. AST OffsetのScaleなどもASTLevelで実施する
+;; - 4. PrintをSimpleにする (e.g.: for i in range(10, 4):)

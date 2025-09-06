@@ -100,18 +100,21 @@ Reads and binds attributes from module.
 (defun normalize-axes (x axes)
   (if (listp axes) (map 'list #'(lambda (n) (normalize-axis x n)) axes) (list (normalize-axis x axes))))
 
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))
+
 (defun parse-reduce-axes (x lst)
   (declare (type tensor x))
   (ematch lst
     ((eql t)
-     (values (loop for i in (shape x) collect 1) (loop for i in (shape x) collect `(:~ ,i))))
+     (values (loop for i in (shape x) collect 1) (loop for i in (shape x) collect `(:~ ,i)) (range 0 (length (shape x)))))
     ((guard axis (numberp axis))
      (let ((axis (normalize-axis x axis))
 	   (shape-after (shape x))
-	   (view-after  (loop for i in (shape x) collect t)))
+	   (view-after (loop for i in (shape x) collect t)))
        (setf (nth axis shape-after) 1
 	     (nth axis view-after) `(:~ ,(nth axis (shape x))))
-       (values shape-after view-after)))
+       (values shape-after view-after (list axis))))
     ((list* axes)
      (let ((axes (map 'list #'(lambda (a) (normalize-axis x a)) axes))
 	   (shape-after (shape x))
@@ -119,10 +122,7 @@ Reads and binds attributes from module.
        (dolist (axis axes)
 	 (setf (nth axis shape-after) 1
 	       (nth axis view-after) `(:~ ,(nth axis (shape x)))))
-       (values shape-after view-after)))))
-
-(defmacro range (from below &optional (by 1))
-  `(loop for i from ,from below ,below by ,by collect i))
+       (values shape-after view-after axes)))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun collect-initargs-names (args)

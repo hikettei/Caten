@@ -39,15 +39,6 @@
                      :iterspace (tensor-relay-iterspace relay)
                      :vectorize (tensor-relay-vectorize relay)))
 
-(defun merge-with-initial-value (node-reads realized-args)
-  (assert (= (length node-reads) (length realized-args)))
-  (loop for nr in node-reads
-        for rr in realized-args
-        if (numberp nr) ;; i.e.: Constant
-          collect nr
-        else ;; i.e.: Symbolic
-        collect (if rr (or (tensor-relay-value rr) nr) nr)))
-
 (defun assert-verify-tensor-relay (id->type node &key (assert-scalar nil) (nthcdr 0))
   (mapc
    #'(lambda (x nth &aux (type (gethash x id->type)))
@@ -316,7 +307,7 @@ out = allocate(*shape, *stride)
                  (pool :initform nil :type (or null Buffer)))
          :type-relay #'(lambda (id->type node)
                          (assert-verify-tensor-relay id->type node :assert-scalar t)
-                         (let ((args (merge-with-initial-value (node-reads node) (map 'list #'(lambda (x) (or (gethash x id->type) x)) (node-reads node))))
+                         (let ((args (node-reads node))
                                (nrank (getattr node :nrank)))
                            (assert (= (length (node-reads node)) (* 2 nrank)) () "Failed to verify :ALLOCATE. Invaild number of node-reads (~a)" node)
                            (list (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype) nil)))))
@@ -359,7 +350,7 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
          :type-relay #'(lambda (id->type node)
                          (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
                          (macrolet ((nsubseq (x y z) `(subseq ,x (1+ ,y) (1+ ,z))))
-                           (let* ((args (merge-with-initial-value (node-reads node) (map 'list #'(lambda (x) (or (gethash x id->type) x)) (node-reads node))))
+                           (let* ((args (node-reads node))
                                   (nrank (getattr node :nrank))
                                   (shape (nsubseq args 0 nrank))
                                   (upfrom (nsubseq args nrank (* 2 nrank)))

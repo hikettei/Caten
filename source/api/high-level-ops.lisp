@@ -3,12 +3,12 @@
 ;; ~~~ reduce ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun st/reduction (op x)
   (with-attrs ((axis :axis) (keepdims :keepdims)) op
-    (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
+    (multiple-value-bind (new-shape new-view dims) (parse-reduce-axes x axis)
       (let* ((out (apply #'!view (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0) new-view))
 	     (out (st "A[~] B[~] -> A[~]" (out x)))
 	     (out (if keepdims
-		      out
-		      (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
+		      (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view))
+                      (!drop-dims out dims))))
 	(setf (tensor-op out) nil (tensor-variables out) nil)
 	out))))
 
@@ -20,13 +20,13 @@
 		  :impl
 		  ((op x)
 		   (with-attrs ((axis :axis) (keepdims :keepdims)) op
-		     (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
+		     (multiple-value-bind (new-shape new-view dims) (parse-reduce-axes x axis)
 		       (let* ((out (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element ,initial-element))
 			      (out (apply #'!view out new-view))
 			      (out (,op out x :reduce t))
 			      (out (if keepdims
-				       out
-				       (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
+				       (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view))
+                                       (!drop-dims out dims))))
                          (setf (reduce-x op) x (reduce-ret op) out)
                          out)))))))
   (defreduce SumNode "Sum tensors along axis" !add)
@@ -82,8 +82,7 @@ Compute the ~a of the tensor.
 	     (let* ((mid (loop for i upfrom 0 below (min (- n1 1) (- n2 1) 1) collect 1))
 		    (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
 		    (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (min n2 2))))))
-	       (let ((z (!mul x (!transpose y -1 (- (min n2 2))))))
-                 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
+	       (!sum (!mul x (!transpose y -1 (- (min n2 2)))) :axis -1)))))
 
 (defun !matmul (a b)
   "

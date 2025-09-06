@@ -1,9 +1,9 @@
 (defpackage :caten/codegen/search/autotune
   (:use :cl :caten/air :caten/codegen/search/polyhedral :caten/codegen/byoc :caten/codegen/search/evaluator
-        :caten/codegen/search/optimization-rule)
+        :caten/codegen/search/optimization-rule :caten/codegen/search/schedule)
   (:export
-   #:online-autotune-kernel
-   #:fuse
+   #:ILP/Search
+   #:ILP/SolveProximity
    ))
 
 (in-package :caten/codegen/search/autotune)
@@ -89,29 +89,19 @@ pruned (Top-k), and expanded to produce the next generation."))
 (defun sgt-improvements (old-sgt new-sgt)
   (assert (and (sgt-best-score old-sgt) (sgt-best-score new-sgt)))
   (/ (sgt-best-score new-sgt) (sgt-best-score old-sgt)))
-;; ~~ Exploration Stages/Spaces ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun sgt-prepare-for-sketch-generation (sgt)
-  (sgt-apply-transformations sgt :Serialize)
-  (sgt-apply-transformations sgt :Maximize-Filter-Candidates))
-
-(defun sgt-finalize-sketch (sgt)
-  (sgt-apply-transformations sgt :Coincidence)
-  (sgt-apply-transformations sgt :Maximize-Band-Depth))
-
-(defun sgt-prepare-for-device-optimization (sgt)
-  (sgt-apply-transformations sgt :Interchange :Tile :Vectorize :SplitReduce))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
 ;; - TILE Parameter Space?
-(defun setup-autotune (runtime blueprint)
+(defun setup-autotune (cost-model)
   (values
    (ctx:getenv :BEAM)
    (+ (ctx:getenv :BEAM_THRESHOLD) 100.0)
-   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint :version (ctx:getenv :BACKEND))
+   cost-model
+;;   (make-instance 'DeviceMeasurer :runtime runtime :blueprint blueprint :version (ctx:getenv :BACKEND))
    ;; evaluator2
    ))
 
-(defun online-autotune-kernel (runtime node)
+(defun ILP/Search (affine &key (cost-model nil))
   "
 BEAM Search Workflow:
                 [Input Blueprint]
@@ -120,132 +110,120 @@ BEAM Search Workflow:
                         |
                    [BEAM Search] Optimizing TILE/VECTORIZE/SPLITREDUCE
 "
-  (when (getattr node :optimized-p) (return-from online-autotune-kernel node))
-  (let ((blueprint (kernel-blueprint (getattr node :kernel-info))))
-    (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune runtime blueprint)
-      (caten/isl::with-isl-context
-        ;; - BEAM Search With Early Pruning
-        ;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
-        ;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
-        ;; [TODO] No Ondevice Profiling Mode
-        (let* ((root (make-polyhedral-schedule-item blueprint))
-               (gen0 (make-instance 'Schedule-Generation-Tree :items (list root))))
-          ;; [Template Construction] (Which is the best?)
-          ;; - Option1: BEAM Search + LightWeight Cost Function
-          ;; - Option2: ISL Reschedule
-          ;; - Option3: No Template Search
-;;          (print (car (sgt-items gen0)))
-;;          (sgt-apply-transformations gen0 :Tile :Interchange :Vectorize :SplitReduce)
-;;
-;;          (sgt-apply-transformations gen0 :Interchange)
-;;          (sgt-apply-transformations gen0 :Parallel :TileGPU)
-;;          (sgt-add-evaluations gen0 cost1 blueprint)
-;;          (sgt-prune-topk gen0 3)
-;;          (print (sgt-make-nextgen gen0))
-          ;; 次やること(ちょっとむずい)
-          ;; - online-autotune-kernel終了時点で，正しい計算結果をReturnする(Bring Back Replayer)
-          ;;  - うまくArrayをCopy
-          ;; - First Kernel Generation
-          ;; - Vectorize/Tile etc generation and finish implementing beam search
-          (error "STOP")
-          t
-          )))))
-;; [TODO] Prevent Non-beneficial fusion (e.g.: Matmul+Matmul)
-;; ==> CostFunction Design
-;; ==> CmdHistoryから求める？(Less Transpose/Reshape The Better)
-;; [TODO] Faster Exploration Time (Call ISL APIs Directly?)
-;; [TODO] ↓をSCCsのみで実行するようにして，End2EndでILP Based Polyhedral Compiler
-;; [TODO]
-;; - Fast ILP Solver (Build Conv+ReLU+Pool < 1e-2)
-;;   - Restrict the exploration space
-;;   - Optimize ISL ops
-;;   - Transpose ==> How to pickup just "relavant" dim?
-;; - FlashAttention => Avoid FullFuse
-;; - Restrict The Exploration Space for Transpose
-;; - Finish Reorder? Should we search it?
-;; - [TODO] Finalize Fusion
-;;   - [ ] Reorder
-;;   - [ ] Flash
-;;   - [ ] Optimize ISL
-;;   - [ ] CostModel
-;;   - [ ] If it works well ==> apply this function algo end2end
-(defun ApplyReschedule (polyhedral &key (cost-model))
-  "Generates a maximum fused graph"
-  (declare (type Polyhedral-Schedule-Item polyhedral))
-  ;; [TODO]
-  ;; - RescheduleSeenをMarkする
-  ;; - FlashAttention ==> InnerMostがReductionだとFullFuseできない？How to separate?
-  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral))))
-    (labels ((generate (&aux (prev-items (sgt-items gen0)))
-               ;; Search Valid Permutation, Reshape, and Fusion
+  (declare (type node affine))
+  (assert (eql (node-type affine) :Affine))
+  (let ((polyhedral (getattr affine :polyhedron)))
+    (multiple-value-bind (beam-width threshold cost1 cost2) (setup-autotune cost-model)
+      ;; [TODO]
+      ;; - [ ] exp2 recomputation
+      ;; - [ ] opt-history ==> Extend
+      ;; - [ ] smoll exploration space
+      (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list polyhedral)))
+            (minimized nil))
+        ;; Stage1: ScheduleTree Preprocessing (MaximizeBandDepth, ComputeParallel)
+        ;; - [ ] todo: compute permutable
+        (sgt-apply-transformations gen0 :Maximize-Band-Depth)
+        (print (car (sgt-items gen0)))
+        (error "STOP (BEAM Search)")
+        ;; Step1. Mapping then w/ Parallel
+        (sgt-apply-transformations gen0 :Interchange)
+        (sgt-apply-transformations gen0 :Parallel :TileGPU)
+        ;; CPUだと無条件でParallel
+        ;; itemsが1の時はevalしない
+        ;; TILEGPU ==> GLOBAL/LOCALで分ける
+        ;; LOCALはGLOBALとMarkされたLoopをParallelizeできる。
+        ;; (select_best)
+        ;; Step2. Profile based tuning
+        ;; - [ ] microkernel: create 256x256x256 tile (tileall+sink)
+        ;; - [ ] (!matmul (make-tensor `(n 512 512 512)) (make-tensor `(n 512 512 512)))
+        ;;       ^ 2回目以降BEAMする意味ある？
+        (labels ((search1 ()
+                   ;; [TODO] ここで全てのRecompute可能なbufferだけデータをProfileする
+                   (sgt-apply-transformations gen0 :Recompute))
+                 (next (&aux (prev-items (sgt-items gen0)))
+                   (sgt-apply-transformations
+                    gen0
+                    :MicroKernel ;; これはどうやって4dim から 3dimをselectするかが難しい
+                    :Tile :Vectorize
+                    :Local :Interchange :SplitReduce)
+                   ;; (select_best_topk) (sgt-prune-topk gen0 3)
+                   (when (null (sgt-items gen0))
+                     (setf minimized t))))
+          ;; (loop while (null minimized) do (next))
+          )
+        t))))
+
+;; MCFusion w/ DB Like Approach
+;; Reduction ==> MemoryIntensive
+
+;; [TODO] Make it general beam search function
+;; S1(i, j)    => S(j, i)
+;; S2(i, j, k) => S(j, i, k)
+;; Restrict Search Space by doing:
+;; Many vs One Fusion only
+;; Ref: https://arxiv.org/pdf/2505.07829
+;;(let ((tg (tensor-lowered-graph (!matmul (make-tensor `(256 512)) (!matmul (make-tensor `(512 1024)) (make-tensor `(1024 2048)))))))
+;;              (time (caten/codegen/lowerer::codegen tg)))
+
+(defun ILP/Preprocess (parent child &key (fuse-into :parent))
+  (declare (type Polyhedral-Schedule-Item parent child))
+  (let ((root (psi. parent child)))
+    ;; Pre-transformations 1: Detect Coalesce/Create tile to maximize fusion chance
+    (multiple-value-bind (new-sched new-child-rmap new-child-wmap) (schedule-detect-coalesce (psi-theta root) (psi-read-union-map child) (psi-write-union-map parent) (psi-write-union-map child))
+      ;; Pre-transformations 2: Compute valid permutations in advance.
+      (progn
+        ;; [TODO] Union of domains?
+        (setf (psi-theta root) new-sched)
+              ;(psi-read-union-map root) new-read
+              ;(psi-write-union-map root) new-write
+              ;(psi-dependency-graph root) new-deps)
+        root))))
+;; - [ ] Fusion Profitable
+;;  - [ ] Extend:
+;;   - [ ] Maximize cache line?
+;;   - [ ] Consider tiling
+;;   - [ ] read article
+;; - [ ] Matmul+Matmul Fusion
+;;  - [ ] Flash
+;;  - [ ] Remove ShapeTracker in caten/api
+;;  - [ ] NO_SHAPETRACKER=1 ConvND Fusion
+;;   - [ ] ReshapeMask, etc
+(defun ILP/SolveProximity (parent child &key (order :forward))
+  (print "Fusion")
+  (print parent)
+  (print child)
+  ;; (print (isl:union-map-apply-range (psi-read-union-map child) (isl:union-map-reverse (psi-write-union-map parent))))
+  ;; _gid0=_gid0'みたいなConstraintがないとそのLoopではFusionできないようにする
+  ;; - まずはいい感じのRaWを求める (for Matmul+Matmul Fusion)
+  ;; - Tileも反映
+  ;; - RaW DependenciesからルールベースでFusionを実施，CostModelで評価
+  (let* ((root (psi. parent child)))
+    (setf root (apply-optimization root (make-instance 'RewriteTree :rule :Maximize-Band-Depth)))
+    (print (isl:schedule-get-root (psi-theta root)))
+
+    
+    (print root)
+    (multiple-value-bind (dep a1 a2 a3) (compute-dependence-relation (psi-read-union-map child) (psi-write-union-map parent) (psi-theta root))
+      (print a1)))
+  nil)
+#|
+  (print "Searching ...")
+  (print parent)
+  (print child)
+  (let ((gen0 (make-instance 'Schedule-Generation-Tree :items (list (ILP/Preprocess parent child)))))
+    (print "Fusion ...")
+    (print (sgt-items gen0))
+    (labels ((beam (&aux (prev-items (sgt-items gen0)))
                (sgt-apply-transformations
                 gen0
-                '(:Transpose :Reshape :Fuse))
+                :Fuse)
                (when (null (sgt-items gen0))
-                 (print "Finished")
-                 (print prev-items)
-                 ;; [TODO] How to solve the best one?
-                 (return-from ApplyReschedule gen0))
-               t))
-      (time (loop while t do (generate)))
-      nil)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] BlockLevel Fusion (e.g.: Group multiple sequence of EXPR into a single group)
-;; [Note]
-;; - Assume the compiler gives a multiple section of tensors enclosured by two VIEWS
-;; - G1: [VIEW] -> Add -> Sub -> [VIEW]
-;; - G2: [VIEW] -> Mul -> Exp -> [VIEW]
-;; The function (will be responsible for) fusion G1 and G2 correctly
-;; - [ ] Move byoc.lisp ==> runtime or byoc
-;; - [ ] Move renderer.lisp ==> byoc or runtime
-;; - [ ] Move codegen
-;; - [ ] Remove realize
-;; - [ ] Create ScheduleGraph (each node is Polyhedral w/ Lexiographical Order)
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun fuse (src parents)
-  (when (null parents) (return-from fuse nil))
-  (dolist (item (reverse (append (list src) parents)))
-    (caten/codegen/blueprint:print-blueprint (kernel-blueprint (getattr item :kernel-info)) t))
-  (flet ((m (x) (make-polyhedral-schedule-item (kernel-blueprint (getattr x :kernel-info)) :scal->array nil)))
-    (let* ((t+0 (m src))
-           (t-1 (reduce #'psi. (map 'list #'m parents))))
-      (ApplyReschedule (psi. t-1 t+0))
-      nil)))
-
-(defun runtime-graph-fuse-all (graph &aux (seen (make-hash-table)))
-  (declare (type Graph graph))
-  (labels ((mergeable-item-p (id)
-             (let ((node (id->value graph id)))
-               (and
-                (eql (node-type node) :KERNEL)
-                (= 1 (length (id->users graph id))))))
-           (explore (id &aux (node (id->value graph id)))
-             (when (or (null node) (gethash (node-id node) seen))
-               (return-from explore))
-             (when (eql (node-type node) :KERNEL)
-               (let* ((items (loop for r in (node-reads node)
-                                   if (mergeable-item-p r) collect (id->value graph r)))
-                      (fused (fuse node items)))
-                 (print (length fused))
-                 (error "STOP")
-                 ;; TODO: Replace myself w/ new kernel
-                 ))
-             (mapc #'explore (node-reads node))))
-    (mapc #'explore (graph-outputs graph))
-    (print graph)
-    ;(error "STOP")
-    ))
-
-;; [Workload]
-;; - 100% LoopFusion (FlashX Generation)
-;; - 
-;; TensorGraphからFlashAttention行けそうなんだよなぁ
-;; SequenceにFilter/Bandが混在するとき，Topological Sortをする。
-;; 次にやること 
-;; タイルアクセスを解析して、インターチェンジが有効な次元がどれか列挙する方法はないか考える
-;; はじめにテンプレート生成(実行なし)
-;; 次にタイルなど細かい最適化
-;; - 最初にInterchange, Parallel, Rescheduleから50個くらいの空間を生成
-;; - 古典的なPolyhedral Compilerとしてできないか，top@5ができればいい
-;; - TensorGraphから演算の可換などを考慮してSHA256 Hash作れないかな？
-;; - Node -> Always IMMUTABLE and singleton, can we do that?
+                 (let ((seq (psi-get-first-unoptimized-sequence (car prev-items))))
+                   (if seq
+                       (return-from ILP/SolveProximity nil)
+                       (progn
+                         (print "FusionCompleted")
+                         (setf (psi-theta (car prev-items)) (schedule-remove-all-marks (psi-theta (car prev-items))))
+                         (return-from ILP/SolveProximity (car prev-items))))))))
+      (loop while t do (beam)))))
+|#

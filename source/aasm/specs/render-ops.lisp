@@ -128,16 +128,16 @@ ID <- EXPR(NODE)
 (defnode (:Render :DEFINE-GLOBAL) (RenderOps)
          "
 ```
-X <- ()
+X <- (name=symbol)
 ```
 Declares a buffer.
 "
-         :slots ((dtype) (pointer-p :type boolean) (mode :type (member :io :read :write) :initform :io))
+         :slots ((name) (dtype) (pointer-p :type boolean) (mode :type (member :io :read :write) :initform :io))
          :type-relay #'(lambda (id->type node)
                          (if (getattr node :pointer-p)
                              (funcall (ast-type-map :DEFINE-GLOBAL) id->type node)
                              (list (make-tensor-relay nil nil (getattr node :dtype) nil)))))
-
+;; [todo] removable?
 (defnode (:Render :DEFINE-LOCAL) (RenderOps)
          "
 ```
@@ -149,15 +149,13 @@ Declares SIZE1 x SIZE2 x ... local buffer
          :type-relay #'(lambda (id->type node)
                          (assert (every #'integerp (node-reads node)))
                          (funcall (ast-type-map :DEFINE-LOCAL) id->type node)))
-                         
 
-;;; JITOps
-(defnode (:JIT :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
+(defnode (:JIT :Aref) (RenderOps)
          "
 ```
 X <- Aref(Array, Index)
 ```
-Reads a scalar value from global buffer (DEFINE-GLOBAL)
+Reads a scalar value at index from global memory.
 "
          :slots nil
          :type-relay #'(lambda (id->type node)
@@ -170,6 +168,35 @@ Reads a scalar value from global buffer (DEFINE-GLOBAL)
                               (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil)))
                              (T
                               (error "The first argument for :Aref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
+
+(defnode (:JIT :PolyAref) (RenderOps)
+         "
+
+```
+X <- (Array, Stride1, Stride2, ..., Aff1, Aff2, ..., nrank=fixnum)
+```
+PolyAref reads a scalar value from the global buffer at the position computed from the index.
+
+`index = Stride1*Aff1 + Stride2*Aff2 + ...`
+
+To provide a blueprint for automatic optimization by a polyhedral compiler, all `:Aref` nodes in the `RenderGraph` must be replaced with `:PolyAref`, and it must be guaranteed that every memory access at each point is affine. Thus, each byoc backend does not necessary have to support rendering this node.
+
+After optimization is complete, `:PolyAref` will be rewritten back into `:Aref` according to the following expression.
+
+```
+X <- Aref(Array, idx=Stride1*Aff1+Stride2+Aff2+...)
+```"
+         :slots ((nrank :type fixnum))
+         :type-relay #'(lambda (id->type node)
+                         (let ((arg (gethash (car (node-reads node)) id->type)))
+                           (assert arg () "First argument for :PolyAref should be a Tensor. (ID=~a)" (car (node-reads node)))
+                           (cond
+                             ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-GLOBAL))
+                              (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil)))
+                             ((typep arg 'TensorRelay)
+                              (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil)))
+                             (T
+                              (error "The first argument for :PolyAref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
 
 (defnode (:JIT :Swizzle) (RenderOps)
          "
@@ -208,47 +235,6 @@ X <- VECTOR(LocalVar, size1, size2, ...)
                                                        :vectorize (cdr (node-reads node)))))
                              (T
                               (error "The first argument for :VECTOR should be a SRAM Load (i.e.: :DEFINE-LOCAL)~%Getting ~a" arg))))))
-;;[TODO] Remove
-(defnode (:JIT :Pack) (RenderOps)
-         "
-```
-X <- pack(pointer, val1, val2, val3, ..., contiguous=boolean)
-```
-"
-         :slots ((contiguous :type boolean :initform nil))
-         :type-relay
-         #'(lambda (id->type node)
-             (let ((arg (gethash (car (node-reads node)) id->type))
-                   (vectorize (length (cdr (node-reads node))))
-                   (vectorize-types (map 'list #'(lambda (x) (gethash x id->type)) (cdr (node-reads node)))))
-               (assert arg () "First argument for :Pack should be a Tensor.")
-               (assert (every #'(lambda (x) (and (typep x 'TensorRelay) (= 0 (tensor-relay-nrank x)))) vectorize-types)
-                       ()
-                       ":Pack, val1, val2, ..., val_n should be a scalar tensor.")
-               (cond
-                 ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-GLOBAL))
-                  (list (Make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil :vectorize vectorize)))
-                 ((typep arg 'TensorRelay)
-                  (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil :vectorize vectorize)))
-                 (T
-                  (error "The first argument for :Pack should be either of :DEFINE-GLOBAL or TensorRelay"))))))
-;; [TODO]Remove
-(defnode (:JIT :Unpack) (RenderOps)
-         "
-```
-X <- unpack(vec, idx)
-```
-"
-         :slots nil
-         :type-relay
-         #'(lambda (id->type node)
-             (assert (= 2 (length (node-reads node))))
-             (let ((vec (gethash (car (node-reads node)) id->type))
-                   (idx (second (node-reads node))))
-               (assert (typep vec 'TensorRelay) () "Cannot unpack from ~a" vec)
-               (assert (and (integerp idx) (>= idx 0)) () "The second argument for :Unpack must be a fixnum greater than zero.")
-               (assert (<= idx (tensor-relay-vectorize vec)) () "Cannot unpack ~ath element from ~ax~a vectorized type." idx (tensor-relay-dtype vec) (tensor-relay-vectorize vec))
-               (list (make-tensor-relay nil nil (tensor-relay-dtype vec) nil :vectorize 0)))))
 
 (defnode (:JIT :SETF) () ;; TODO: Rename SETF -> STORE?
          "
@@ -257,7 +243,7 @@ ID <- SETF(AREF(TARGET, IDX), EXPR(...))
 ```
 Writes the value of EXPR into the corresponding region of AREF.
 "
-         :type-relay (make-type-relay 0))
+         :type-relay (make-type-relay 0)) ;; TODO, (car (node-reads node)) is always :AREF or :EXPR
 
 (defnode (:JIT :BIND) ()
          "
@@ -283,14 +269,5 @@ Corresponds to:
          :type-relay #'(lambda (id->type node)
                          (declare (ignore id->type))
                          (list (make-tensor-relay nil nil (getattr node :dtype) nil))))
-;; [TODO] Remove
-(defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
-         :slots ((dtype :type keyword) (size :type integer))
-         :type-relay (ast-type-map :DEFINE-SHARED-MEMORY))
-;; [TODO] Remove
-(defnode (:Render :FUNCTION) () "An entry point for the RenderGraph"
-         :slots ((name :type symbol))
-         :type-relay (ast-type-map :FUNCTION))
-
 ;; Note: More?
 )

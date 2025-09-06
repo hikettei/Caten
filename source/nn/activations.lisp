@@ -57,9 +57,9 @@ Applies the LeakyReLU function element-wise to the input tensor."
   (forward (LeakyReLU :neg-slope neg-slope) x))
 
 (defun _softmax (x &key (axis -1))
-  (let* ((m (!sub x (!max x :axis axis)))
+  (let* ((m (!sub x (!max x :axis axis :keepdims t)))
 	 (e (!exp m)))
-    (values m e (!sum e :axis axis))))
+    (values m e (!sum e :axis axis :keepdims t))))
 
 (defmodel (LogSoftmax (&key (axis -1)) :where "A[~] -> A[~]") ((axis axis)))
 (defmethod call ((op LogSoftmax) &rest inputs)

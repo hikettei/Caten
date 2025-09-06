@@ -28,6 +28,7 @@
    #:schedule-gather-path
    #:schedule-node-at-path
    #:schedule-get-non-marked-sequence/set
+   #:schedule-remove-all-marks
    #:schedule-node-sequence-check-fusible
    #:schedule-node-sequence-full-fuse
    #:schedule-node-sequence-get-band-sizes
@@ -39,7 +40,16 @@
    #:schedule-node-sequence-splice-children
    #:schedule-node-sequence-reorder
    #:schedule-node-sequence-tpsort
-   #:schedule-node-sequence-group-sequence))
+   #:schedule-node-sequence-group-sequence
+   #:schedule-compute-parallel
+   #:umap-get-set-list-on-id
+   #:%foreach-map
+   #:%foreach-set
+   #:align-params/umap
+   #:align-params/uset
+   #:schedule-detect-coalesce
+   #:schedule-compute-dim-equalities-graph
+   #:schedule-permute))
 
 (in-package :caten/codegen/search/schedule)
 
@@ -58,18 +68,18 @@ that y precedes x under S and their memory accesses form flow/output/antidepende
   (declare (type isl::union-map read write)
            (type isl::schedule schedule))
     (let* ((access (union-access-info-from-sink read))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-schedule access schedule))
-           (flow (union-access-info-compute-flow access))
-           (RaW (union-flow-get-must-dependence flow))
+           (access (union-access-info-set-must-source (! access) write))
+           (access (union-access-info-set-schedule (! access) schedule))
+           (flow (union-access-info-compute-flow (! access)))
+           (RaW (union-flow-get-must-dependence (! flow)))
            (access (union-access-info-from-sink write))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-may-source access read))
-           (access (union-access-info-set-schedule access schedule))
-           (flow   (union-access-info-compute-flow access))
+           (access (union-access-info-set-must-source (! access) write))
+           (access (union-access-info-set-may-source (! access) read))
+           (access (union-access-info-set-schedule (! access) schedule))
+           (flow   (union-access-info-compute-flow (! access)))
            (WaW    (union-flow-get-must-dependence flow))
-           (WaR    (union-flow-get-may-dependence flow))
-           (dependencies (union-map-union (union-map-union WaR RaW) WaW)))
+           (WaR    (union-flow-get-may-dependence (! flow)))
+           (dependencies (union-map-union (! (union-map-union WaR RaW)) WaW)))
       (values dependencies RaW WaW WaR)))
 
 (defun compute-schedule-constraints (domain dependencies)
@@ -86,15 +96,15 @@ Returns:
            (schedule-constraints-on-domain domain))
          (schedule-constraints
            (schedule-constraints-set-coincidence
-            schedule-constraints
+            (! schedule-constraints)
             dependencies))
          (schedule-constraints
            (schedule-constraints-set-validity
-            schedule-constraints
+            (! schedule-constraints)
             dependencies))
          (schedule-constraints
            (schedule-constraints-set-proximity
-            schedule-constraints
+            (! schedule-constraints)
             dependencies)))
     schedule-constraints))
 
@@ -253,7 +263,6 @@ Returns:
         (loop for i upfrom 0 below depth do
               (setf band (isl::schedule-node-band-member-set-coincident band i (nth i coincidents-new))))
         band))))
-
 ;; ~~ DomainMaximaResults ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defvar *domain-maxima-results*)
 (cffi:defcfun ("isl_map_domain_tuple_dim" %isl-map-domain-tuple-dim) :int (x :pointer))
@@ -523,7 +532,7 @@ Inputs:
 Returns:
   isl::union-map F' = F ∩ (U × Range(F)) = intersect_domain(F, U).
 If U ∩ Dom(F) = ∅, the result is the empty union map."
-  (caten/isl::union-map-intersect-domain (caten/isl::copy umap) (caten/isl::copy uset)))
+  (caten/isl::union-map-intersect-domain umap uset))
 
 (defun union-map-same-address-relation (acc)
   "Build the same-address (alias) relation over iteration points.
@@ -575,13 +584,68 @@ Procedure:
         band)
       band))
 
+(cffi:defcallback rewrite/collapse-band :pointer
+    ((band :pointer) (user :pointer))
+  (declare (ignore user))
+  ;; 3*_gid0+_gid1 ==> (_gid0), (_gid1)
+  (if (eql (isl::%isl-schedule-node-get-type band) :schedule-node-band)
+      (let* ((bn (isl::%make-schedule-node band))
+             (new-sched) (found-p)
+             (mupa (schedule-node-band-get-partial-schedule bn)))
+        (loop for i upfrom 0 below (multi-union-pw-aff-size mupa)
+              for upa = (multi-union-pw-aff-get-union-pw-aff mupa i) do
+                (%foreach-pwa
+                 upa
+                 #'(lambda (pwa)
+                     (%foreach-piece
+                      pwa
+                      #'(lambda (dom aff)
+                          (declare (ignore dom))
+                          (loop for d upfrom 0 below (aff-dim aff :dim-in)
+                                for coeff = (aff-get-coefficient-val aff :dim-in d)
+                                when (= 1 (value-sign coeff)) do
+                                  (when (> (val->int coeff) 1) (setf found-p t))
+                                  (let ((aff1 aff))
+                                    (dotimes (n (aff-dim aff :dim-in))
+                                      (if (= n d)
+                                          (setf aff1 (aff-set-coefficient-si aff1 :dim-in n 1))
+                                          (setf aff1 (aff-set-coefficient-si aff1 :dim-in n 0))))
+                                    (let ((mupa-at-dim (multi-union-pw-aff-from-union-pw-aff (union-pw-aff-from-aff aff1))))
+                                      (if new-sched
+                                          (setf new-sched (multi-union-pw-aff-flat-range-product mupa-at-dim new-sched))
+                                          (setf new-sched mupa-at-dim))))))))))
+        (if (and new-sched found-p)
+            (let ((band (isl::%isl-schedule-node-delete band)))
+              (dotimes (i (multi-union-pw-aff-size new-sched) band)
+                (let ((mupa (multi-union-pw-aff-from-union-pw-aff (multi-union-pw-aff-get-union-pw-aff new-sched i))))
+                  (setf band (isl::%isl-schedule-node-insert-partial-schedule band (isl::multi-union-pw-aff-handle (copy mupa)))))))
+            band))
+      band))
+
 (cffi:defcallback rewrite/fuse-band :pointer
     ((band :pointer) (user :pointer))
   (declare (ignore user))
   (if (eql (isl::%isl-schedule-node-get-type band) :schedule-node-band)
-      (let ((depth (schedule-node-band-get-depth (isl::%%make-schedule-node-band band))))
-        ;; [TODO] 
-        band)
+      (let ((depth (schedule-node-band-get-n-chain (isl::%%make-schedule-node-band band))))
+        (if (= 0 depth)
+            band
+            (let ((coincidents)
+                  (mupa (schedule-node-band-get-partial-schedule (isl::%%make-schedule-node-band band))))
+              (dotimes (nth-band (isl::%isl-schedule-node-band-n-member band))
+                (push (isl::%isl-schedule-node-band-member-get-coincident band nth-band) coincidents))
+              (dotimes (i depth)
+                (setf band (isl::%isl-schedule-node-delete band))
+                (let ((sched (schedule-node-band-get-partial-schedule (isl::%%make-schedule-node-band band))))
+                  (setf mupa (multi-union-pw-aff-flat-range-product mupa sched))
+                  (dotimes (nth-band (isl::%isl-schedule-node-band-n-member band))
+                    (push (isl::%isl-schedule-node-band-member-get-coincident band nth-band) coincidents))))
+              (let ((band (isl::%isl-schedule-node-insert-partial-schedule (isl::%isl-schedule-node-delete band) (isl::multi-union-pw-aff-handle mupa))))
+                (setf coincidents (reverse coincidents))
+                (dotimes (i (length coincidents))
+                  (setf band (isl::%isl-schedule-node-band-member-set-coincident
+                              band i
+                              (if (eql :bool-true (nth i coincidents)) 1 0))))
+                band))))
       band))
 
 (defun schedule-split-all-band (schedule)
@@ -590,6 +654,9 @@ Procedure:
 (defun schedule-fuse-all-band (schedule)
   "band+child+band ==> [band+band]"
   (schedule-map schedule (cffi:callback rewrite/fuse-band)))
+
+(defun schedule-collapse-all-band (schedule)
+  (schedule-map schedule (cffi:callback rewrite/collapse-band)))
 ;; ~~~ ILP ShapeTracker Solver ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Prerequisites:
 ;; - The given schedule is obtained by schedule-split-all-band
@@ -645,6 +712,21 @@ Procedure:
             (schedule-node-get-schedule
              (isl::schedule-node-delete
               (schedule-node-at-path (schedule-get-root schedule) path)))))
+    schedule))
+
+(defun schedule-remove-all-marks (schedule) ;; todo: optimize
+  (let ((paths
+          (schedule-gather-path
+           (schedule-get-root schedule)
+           #'(lambda (node path)
+               (declare (ignore path))
+               (eql :schedule-node-mark (schedule-node-get-type node))))))
+    (when paths
+      (setf schedule
+            (schedule-node-get-schedule
+             (isl::schedule-node-delete
+              (schedule-node-at-path (schedule-get-root schedule) (car paths)))))
+      (return-from schedule-remove-all-marks (schedule-remove-all-marks schedule)))
     schedule))
 
 (defun schedule-node-sequence-check-fusible (components)
@@ -741,7 +823,7 @@ Procedure:
          (part*   (align-params/umap part   model-space))
          (udom*   (align-params/uset user-domain model-space))
          (full    (isl::union-map-flat-range-product prefix* part*)) ; Dom -> (Prefix × Band)
-         (full   (isl::union-map-intersect-domain full (copy udom*)))
+         (full    (isl::union-map-intersect-domain full (copy udom*)))
          (rng     (isl::union-map-range full)))
     rng))
 
@@ -913,26 +995,67 @@ schedule: ... --------| // Returned
   (let ((new-filters (permute-list order (schedule-node-sequence-get-filters components)))
         (new-filter-list (isl::union-set-list-alloc 0)))
     (dolist (f new-filters)
-      (setf new-filter-list (isl::union-set-list-add new-filter-list f)))
+      (setf new-filter-list (isl::union-set-list-add (! new-filter-list) f)))
     (schedule-node-first-child
      (schedule-node-insert-mark
       (isl::schedule-node-insert-sequence
-       components
-       new-filter-list)
+       (! components)
+       (! new-filter-list))
       (isl::make-id-from-str (format nil "@ApplyOptimization{REORDER}~a" order))))))
 
-(declaim (ftype (function (isl::schedule-node-sequence) list) schedule-node-sequence-tpsort))
-(defun schedule-node-sequence-tpsort (components)
-  (declare (type isl::schedule-node-sequence components))
+(defun %umap-collect-range-names (umap &key (domain-name nil))
+  "Collect distinct range tuple names from UMAP.
+If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used."
+  (let* ((ml (union-map-get-map-list umap))
+         (n  (map-list-size ml))
+         (acc '()))
+    (dotimes (i n (nreverse (remove-duplicates acc :test #'string=)))
+      (let* ((m (map-list-elt ml i))
+             (dn (map-get-tuple-name m :dim-in)))
+        (when (or (null domain-name) (and dn (string= dn domain-name)))
+          (let ((rn (map-get-tuple-name m :dim-out)))
+            (when rn (push rn acc))))))))
+
+(defun read-missing-or-unwritten-p (read-umap written-bufs filter-name)
+  (declare (type isl::union-map read-umap)
+           (type list written-bufs)
+           (type string filter-name))
+  (let ((read-bufs (%umap-collect-range-names read-umap :domain-name filter-name)))
+    (if (null read-bufs)
+        t
+        (every #'(lambda (b) (not (member b written-bufs :test #'string=))) read-bufs))))
+
+(defun union-set-single-tuple-name (uset)
+  (declare (type isl::union-set uset))
+  (let* ((sl (union-set-get-set-list uset))
+         (n  (set-list-n-set sl)))
+    (unless (= n 1) (error "union-set must contain exactly one set, but got ~a" n))
+    (let* ((s (set-list-get-at sl 0))
+           (nm (set-get-tuple-name s)))
+      (or nm (error "union-set-single-tuple-name: uset has no name")))))
+
+(declaim (ftype (function (isl::schedule-node-sequence isl::union-map isl::union-map) list) schedule-node-sequence-tpsort))
+(defun schedule-node-sequence-tpsort (components read-umap write-umap)
+  (declare (type isl::schedule-node-sequence components) (type isl::union-map read-umap write-umap))
   (let* ((filters (schedule-node-sequence-get-filters components))
-         (filter-ids (loop for i upfrom 0 for f in filters collect i)))
-    ;; verify-legality is a heavy op...
-    ;; verify-legality => あんまり信用してない >< if it is fast, generate multiple candidates
-    ;; to smolify the exploration space, group sequence of filters as one.
-    (print filters)
-    ;; [TODO]
-    (print filter-ids)
-    ))
+         (filter-types (schedule-node-sequence-get-filter-types components))
+         (filter-ids (loop for i upfrom 0 for f in filters collect i))
+         (written-bufs (%umap-collect-range-names write-umap :domain-name nil))
+         (filter-is-load-list
+           (loop for f in filters
+                 for ft in filter-types
+                 if (eql ft :schedule-node-leaf)
+                   collect (read-missing-or-unwritten-p read-umap written-bufs (union-set-single-tuple-name f))
+                 else
+                   collect nil))
+         (new-orders))
+    (loop for l in filter-is-load-list
+          for id in filter-ids
+          if l do (push id new-orders))
+    (loop for l in filter-is-load-list
+          for id in filter-ids
+          if (not l) do (push id new-orders))
+    (nreverse new-orders)))
 
 (defun schedule-node-sequence-group-sequence (components)
   (declare (type isl::schedule-node-sequence components))
@@ -958,7 +1081,55 @@ schedule: ... --------| // Returned
     (isl::schedule-node-insert-sequence
      components
      new-filter-list)))
-;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(cffi:defcallback schedule/compute-parallel :pointer
+    ((node :pointer) (user :pointer))
+  (when (eql (isl::%isl-schedule-node-get-type node) :schedule-node-band)
+    (assert (= 1 (isl::%isl-schedule-node-band-n-member node)) () "schedule/compute-parallel: do not fuse band before computing coincidence")
+    (isl::%isl-schedule-node-band-member-set-coincident
+     node
+     0
+     (if (schedule-node-band-parallel-legal-p (isl::%make-schedule-node node) (isl::%make-union-map user))
+         1 0)))
+  node)
+
+(defun schedule-compute-parallel (schedule deps)
+  (declare (type isl::schedule schedule) (type isl::union-map deps))
+  (isl::%make-schedule
+   (isl::%isl-schedule-map-schedule-node-bottom-up
+    (isl::schedule-handle (isl::__isl_take schedule))
+    (cffi:callback schedule/compute-parallel)
+    (isl::union-map-handle (isl::__isl_take deps)))))
+
+;; ~~ umap-get-set-list-on-id ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *stmt-pair-result* nil)
+(cffi:defcallback push-map-on-id :int
+    ((map :pointer) (id :pointer))
+  (let ((map (isl::%make-map map))
+        (id  (cffi:mem-ref id :string)))
+    (let ((dom-name (isl::set-get-tuple-name (isl::map-domain map))))
+      (when (string= dom-name id)
+        (let* ((expr (isl::%isl-map-to-str (isl::map-handle map)))
+               (expr (subseq expr (position (aref "{" 0) expr))) ;; Ignore quasiaffine params (e.g.: [A] -> { ...)
+               (pos  (position (aref ">" 0) expr))
+               (pos1 (when pos (position (aref "[" 0) expr :start pos)))
+               (pos2 (when pos (position (aref "]" 0) expr :start pos)))
+               (var   (when (and pos pos1) (subseq expr (+ 2 pos) pos1)))
+               (index (when (and pos1 pos2) (subseq expr (1+ pos1) pos2))))
+          (assert (and var index) () "umap-get-set-list-on-id: Couldn't extract this map: ~a" map)
+          (push (cons var index) *stmt-pair-result*)))))
+  0)
+(defun umap-get-set-list-on-id (umap filter &key (wrapper-dom #'string-downcase) (wrapper-ran #'(lambda (x) (format nil "[~a]" x))))
+  (declare (type string filter) (type isl::union-map umap))
+  (let ((*stmt-pair-result*))
+    (cffi:with-foreign-object (str* :string)
+      (setf (cffi:mem-ref str* :string) filter)
+      (isl::%isl-union-map-foreach-map
+       (isl::union-map-handle umap)
+       (cffi:callback push-map-on-id)
+       str*))
+    (map 'list #'(lambda (x) (format nil "~a~a" (funcall wrapper-dom (car x)) (funcall wrapper-ran (cdr x)))) *stmt-pair-result*)))
+
 (progn ;; foreach-map
   (defparameter *%foreach-map-fn* nil)  ; dynamic: (map) -> nil
   (cffi:defcallback %each-map-cb :int ((mp :pointer) (user :pointer))
@@ -973,6 +1144,226 @@ schedule: ... --------| // Returned
        (isl::union-map-handle umap)
        (cffi:callback %each-map-cb)
        (cffi:null-pointer)))))
+
+(progn ;; foreach-set
+  (defparameter *%foreach-set-fn* nil)  ; dynamic: (map) -> nil
+  (cffi:defcallback %each-set-cb :int ((mp :pointer) (user :pointer))
+    (declare (ignore user))
+    ;; Call user-supplied Lisp function on a wrapped isl_map
+    (when *%foreach-set-fn* (funcall *%foreach-set-fn* (isl::%make-set mp)))
+    0)
+  (defun %foreach-set (uset fn)
+    "Iterate with ISL's foreach_map. Requires top-level defcallback."
+    (let ((*%foreach-set-fn* fn))
+      (isl::%isl-union-set-foreach-set
+       (isl::union-set-handle uset)
+       (cffi:callback %each-set-cb)
+       (cffi:null-pointer)))))
+
+(progn ;; foreach-pwa
+  (defparameter *%foreach-pwa-fn* nil)
+  (cffi:defcallback %each-pwa-cb :int ((pwa :pointer) (user :pointer))
+    (declare (ignore user))
+    (when *%foreach-pwa-fn* (funcall *%foreach-pwa-fn* (isl::%make-pw-aff pwa)))
+    0)
+  (defun %foreach-pwa (upa fn)
+    (let ((*%foreach-pwa-fn* fn))
+      (isl::%isl-union-pw-aff-foreach-pw-aff
+       (isl::union-pw-aff-handle upa)
+       (cffi:callback %each-pwa-cb)
+       (cffi:null-pointer))))
+  ;; foreach piece
+  (defparameter *%foreach-piece-fn* nil)
+  (cffi:defcallback %each-piece-cb :int ((set :pointer) (aff :pointer) (user :pointer))
+    (declare (ignore user))
+    (when *%foreach-piece-fn* (funcall *%foreach-piece-fn* (isl::%make-set set) (isl::%make-aff aff)))
+    0)
+  (defun %foreach-piece (pwa fn)
+    (let ((*%foreach-piece-fn* fn))
+      (isl::%isl-pw-aff-foreach-piece
+       (isl::pw-aff-handle pwa)
+       (cffi:callback %each-piece-cb)
+       (cffi:null-pointer)))))
+
+;; [TODO]
+;; - [ ] Support Symbolic Graph Coalesce
+;; - [ ] Conv+Pool Fusion.
+
+;; (let ((tg (tensor-lowered-graph (!matmul (make-tensor `(256 2048)) (!t (!matmul (make-tensor `(10 10 512 1024)) (make-tensor `(10 1024 2048))))))))
+;;               (time (caten/codegen/lowerer::codegen tg)))
+(defun val->int (val) (isl::%isl-val-get-num-si (isl::value-handle val)))
+(defun uset-find (uset name)
+  (%foreach-set
+   uset
+   #'(lambda (set)
+       (when (string= (set-get-tuple-name set) name)
+         (return-from uset-find set)))))
+
+(defun map-build-preimage-mt (map filter-name)
+  (print "MAP")
+  (print map)
+  (let* ((bmap (map-affine-hull map))
+         (bset (basic-map-wrap bmap))
+         (cs (basic-set-get-constraint-list bset))
+         (dim2aff (make-hash-table :test 'equal)))
+    (PRINT "ACCESS_MAP")
+    (print bmap)
+    (loop for i upfrom 0 below (constraint-list-size cs)
+          for c = (constraint-list-get cs i)
+          for tgt-dim = nil
+          for affs = nil do
+            (loop for j upfrom 0 below (basic-set-dim bset :dim-out)
+                  for coeff = (get-coefficient-val c :dim-out j)
+                  for name = (constraint-get-dim-name (constraint-list-get cs i) :dim-out j) do
+                    (cond
+                      ((value= coeff (value 1))
+                       (assert (null tgt-dim))
+                       (setf tgt-dim name)) ;; child側のtile
+                      ((= 1 (value-sign coeff))
+                       (push (list :TILE coeff name) affs))
+                      ((= -1 (value-sign coeff))
+                       (push (cons name (value-mul coeff (value -1))) affs))))
+            (setf (gethash tgt-dim dim2aff) (reverse affs)))
+    (let ((from) (to) (offset 0) (dims))
+      ;; should not permute things
+      ;; A = Bを見て行って:
+      ;; - Constraintがない => NoFuse
+      ;; - _gid3=_gid3 => Fuse
+      ;; - _gid3=_gid2 => Interchange+Fuse
+      ;; - _gid3=_gid2-2_gid3 => Tile+Fuse
+      ;; - ScheduleTreeのExploreとして実装する
+      (loop for dim upfrom 0 below (map-dim map :dim-out)
+            for name = (map-get-dim-name map :dim-out dim) do
+              (format t "Fusion For ~a:~%" name)
+              (print (Gethash name dim2aff))))))
+                    
+(defun schedule-pullback-identity (schedule &key (substitute-id) (substitute))
+  (let* ((udom (schedule-node-domain-get-domain (schedule-get-root schedule)))
+         (sets (union-set-get-set-list udom))
+         (upma (union-pw-multi-aff-empty (union-set-get-space udom))))
+    (dotimes (i (set-list-size sets))
+      (let* ((s   (set-list-elt sets i))
+             (sp  (set-get-space s))
+             (tn  (space-get-tuple-name sp :dim-out))
+             (n   (set-dim s :dim-set))
+             (xs  (loop for k below n collect (format nil "_gid~D" k)))
+             (pma
+               (pw-multi-aff-from-str
+                (if (string= tn substitute-id)
+                    substitute
+                    (format nil "{ ~A[~{~A~^, ~}] -> ~A[~{~A~^, ~}] }" tn xs tn xs)))))
+        (setf upma (union-pw-multi-aff-union-add
+                    upma (union-pw-multi-aff-from-pw-multi-aff pma)))))
+    (schedule-pullback-union-pw-multi-aff schedule upma)))
+
+(defun get-collapsed-domain (domain-maxima dims tgt-id)
+  (let ((gids (loop for i upfrom 0 below (length dims) collect i)))
+    (union-set-from-str
+     (flet ((r (id render)
+              (format nil "0 <= _gid~a <= ~a" render (val->int (gethash id domain-maxima)))))
+       (format nil "{ ~a[~{_gid~A~^, ~}] : ~{~A~^and ~}}" tgt-id gids (map 'list #'r dims gids))))))
+;; [TODO] ここでPermuteまで面倒見る？
+(defun schedule-detect-coalesce (merged-schedule child-read-umap parent-write-umap child-write-umap)
+  (multiple-value-bind (deps raw waw war) (compute-dependence-relation child-read-umap parent-write-umap merged-schedule)
+    (declare (ignore deps waw war))
+    (print parent-write-umap)
+    (print child-read-umap)
+    
+    (%foreach-map
+     raw
+     #'(lambda (map
+                &aux
+                  ;; [TODO] domain-maxima => user pw-aff for symbolics
+                  (tgt-name (map-get-tuple-name map :dim-out))
+                  (preimage (map-build-preimage-mt map tgt-name))) ;; CHILD -> PARENT
+         (print map)
+         (print preimage)
+        ; (error "STOP")
+         ))
+    merged-schedule))
+;; [todo] した全部削除
+(defun schedule-compute-dim-equalities-graph (merged-schedule child-read-umap parent-write-umap &aux (results))
+  ;; Returns a list of valid permutations for K2
+  (declare (type isl::schedule merged-schedule) (type isl::union-map child-read-umap parent-write-umap))
+  (multiple-value-bind (deps raw waw war) (compute-dependence-relation child-read-umap parent-write-umap merged-schedule)
+    (declare (ignore deps waw war))
+    (%foreach-map
+     raw
+     #'(lambda (map
+                &aux
+                  (ni (map-dim map :dim-in))
+                  (no (map-dim map :dim-out))
+                  (pairs))
+         ;; [TODO] Coalesceが解消できなかった時どうする？
+         (print map)
+         (dotimes (i ni)
+           (dotimes (j no)
+             (let ((meq (map-equate map :dim-in i :dim-out j)))
+               (when (map-is-equal map meq)
+                 (push (cons i j) pairs)))))
+         (push (cons pairs (permutations-from-equalities-graph pairs ni no)) results)))
+    (if (= 1 (length results))
+        (let ((final (car results)))
+          (values (cdr final) (car final))) ;; (values equalities-graph permutation)
+        (progn
+          (warn "schedule-compute-dim-equalities: case for multiple maps is not implemented yet.")
+          ;; [TODO] Single Write, Multiple Readsの時，Fusionできるケースがあるはず。
+          nil))))
+
+(defun permutations-from-equalities-graph (pairs n-in-k1 n-out-k2)
+  (let* ((order (make-array n-out-k2 :initial-element nil))
+         (taken (make-hash-table)))
+    ;; place paired K2 dims in the order of K1 dims
+    (dotimes (i n-in-k1)
+      (let* ((j (cdr (find i pairs :key #'car))))
+        (when j
+          (setf (aref order i) j)
+          (setf (gethash j taken) t))))
+    ;; append remaining K2 dims (unpaired) after the paired block
+    (let ((k n-in-k1))
+      (dotimes (j n-out-k2)
+        (unless (gethash j taken)
+          (setf (aref order k) j)
+          (incf k))))
+    (coerce order 'list)))
+
+(defun schedule-permute (schedule n perms)
+  (let ((root (schedule-node-get-child (schedule-node-first-child (schedule-get-root schedule)) n))
+        (sequence)
+        (bands))
+    (labels ((explore (node)
+               (case (schedule-node-get-type node)
+                 ((:schedule-node-sequence :schedule-node-set)
+                  (assert (null sequence))
+                  (setf sequence node)
+                  (dotimes (i (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
+                    (let ((child (schedule-node-get-child node i)))
+                      (when (eql (schedule-node-get-type (schedule-node-first-child child)) :schedule-node-band)
+                        (return-from explore (explore child))))))
+                 (:schedule-node-band
+                  (push (schedule-node-band-get-partial-schedule node) bands)
+                  (when (< (length bands) (length perms))
+                    (explore (schedule-node-first-child node))))
+                 (:schedule-node-leaf node)
+                 (otherwise (explore (schedule-node-first-child node))))))
+      (explore root)
+      (setf bands (permute-list perms (nreverse bands))
+            root (schedule-node-delete (schedule-node-first-child root))
+            root (schedule-node-cut root))
+      ;(print "ROOT")
+      ;(print root)
+      (dolist (band bands)
+        (setf root (schedule-node-first-child (schedule-node-insert-partial-schedule root band))))
+      (when sequence
+        (let* ((uset-list (union-set-list-alloc 0))
+               (filters (schedule-node-sequence-get-filters sequence)))
+          (dolist (f filters) (setf uset-list (union-set-list-add uset-list f)))
+          (setf root (schedule-node-insert-sequence root uset-list))))
+      ;(print root)
+      (schedule-node-get-schedule root))))
+;; ~~ NOT TESTED CODES ~~~~~~~~~~~~
+;; ~~~ PERMUTATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ;;; 便利ラッパ（必要なら）
 (defun print-global-dim-dependency-graph (schedule reads writes)
   (dolist (e (build-global-dim-dependency-graph schedule reads writes))
