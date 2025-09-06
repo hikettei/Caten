@@ -22,7 +22,12 @@
     :bref ((buffer idx) (aref (buffer-value buffer) idx)))
 
 (define-renderer CStyle-Renderer () nil
-  ((:ADD (x y)) (format nil "~a+~a" (render x) (render y))))
+  ((:ADD (x y)) (format nil "~a+~a" (render x) (render y)))
+  ((:PROGN (~ x)) nil))
 
-(define-kernel )
-(define-backend)
+(define-kernel (ClangKernel CStyle-Renderer) () nil
+               :launch nil
+               :compile nil)
+
+;; (define-optimizer (ClangOptimizer) :allow-profile t)
+(define-backend :CLANG)

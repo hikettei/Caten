@@ -49,6 +49,7 @@
           `(defmethod caten/runtime/buffer:bref ((,buffer ,buffer-name) ,index) ,@form)))))
 
 (defun render (x) (declare (ignore x)) (error "(render id) is only binded by define-renderer"))
+;; [TODO] ここでSimplifier使えたほうが便利
 (defmacro define-renderer (renderer-name direct-superclasses direct-slots &rest render-nodes)
   `(progn
      (defclass ,renderer-name (,@direct-superclasses caten/runtime/renderer:Renderer) ,direct-slots)
