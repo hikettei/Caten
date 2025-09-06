@@ -104,7 +104,7 @@
   (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes name)
     (let ((node-top '*node-top*) (graph '*graph-bind*))
       `(flet ((,name (,graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil) (,counter 0) (,n-nodes (length (the list (graph-nodes ,graph)))))
-                (declare (type FastGraph ,graph)
+                (declare (type Graph ,graph)
 		         (type boolean no-verify return-changed-p ,fast-graph-p ,changed-p)
 		         (type list ,seen)
                          (type fixnum ,counter)

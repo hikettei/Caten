@@ -1,15 +1,16 @@
-(asdf:defsystem "caten2"
+(asdf:defsystem "caten"
   :description "Programmable Deep Learning Framework"
   :author "hikettei <ichndm@gmail.com>"
   :version "0.2"
   :licence "MIT"
   :depends-on ("caten.graph")
+  :pathname "source"
   :serial t
   :in-order-to
-  ((test-op (test-op "caten2/test"))))
+  ((test-op (test-op "caten/test"))))
 
-(asdf:defsystem "caten2/test"
-  :depends-on ("caten2" "caten2.test-suite")
+(asdf:defsystem "caten/test"
+  :depends-on ("caten" "caten.test-suite")
   :in-order-to
-  ((test-op (asdf:test-op "caten2.test-suite"))))
+  ((test-op (asdf:test-op "caten.test-suite"))))
   
