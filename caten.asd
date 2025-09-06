@@ -13,4 +13,3 @@
   :depends-on ("caten" "caten.test-suite")
   :in-order-to
   ((test-op (asdf:test-op "caten.test-suite"))))
-  

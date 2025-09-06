@@ -1,12 +1,23 @@
-(asdf:defsystem "caten.test-suite"
-  :description "This is where unittest occur for Caten."
-  :author      "hikettei <ichndm@gmail.com>"
-  :depends-on
-  ("rove" "trivia" "cl-ppcre" "py4cl")
-  :serial t
-  :components ((:file "graph/test-rewrite"))
-  :perform
-  (asdf:test-op
-   (o s)
-   (let ((result (uiop:symbol-call (find-package :rove) :run* "caten/test-suite/" :style :spec)))
-     (print result))))
+#.(progn
+    (defparameter *test-components*
+      (list
+       :graph/test-rewrite
+       ))
+    (defun generate-components () (loop for component in *test-components* collect `(:file ,(princ-to-string component))))
+    `(asdf:defsystem "caten.test-suite"
+       :description "This is where unittest occur for Caten."
+       :author      "hikettei <ichndm@gmail.com>"
+       :depends-on ("rove" "py4cl" "trivia" "cl-ppcre")
+       :components ,(generate-components)
+       :serial t
+       :perform
+       (asdf:test-op
+        (o s)
+        (format t "Running test-suite ...~%")
+        ,@(loop for component in *test-components*
+                collect
+                `(let ((pkg (find-package ,(intern (format nil "CATEN/TEST-SUITE/~a" component) "KEYWORD"))))
+                   (format t ,(format nil "Running ~a ...~%" component))
+                   (assert pkg () ,(format nil "A package CATEN/TEST-SUITE/~a is not found" component))
+                   (uiop:symbol-call :rove :run-suite pkg)
+                   )))))
