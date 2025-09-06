@@ -3,7 +3,7 @@
   :author "hikettei <ichndm@gmail.com>"
   :version "0.2"
   :licence "MIT"
-  :depends-on ("caten.utilities" "caten.graph")
+  :depends-on ("caten.utilities" "caten.graph" "caten.ir")
   :pathname "source"
   :serial t
   :in-order-to
