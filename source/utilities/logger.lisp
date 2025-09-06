@@ -12,7 +12,7 @@
    #:with-progress
    #:lformat))
 
-(in-package :caten/common.logger)
+(in-package :caten/utilities/logger)
 
 (eval-when (:load-toplevel :compile-toplevel :execute)
   (defparameter *default-stream* t "A default stream to put out logs")
