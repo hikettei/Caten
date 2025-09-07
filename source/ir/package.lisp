@@ -22,7 +22,6 @@
    #:%alloc
    #:%salloc
    #:%load
-   #:%store
    #:%stride
    #:%shape
    #:%make-tensor
@@ -52,7 +51,6 @@
    #:%or
    #:%xor
    #:%max #:%min
-   #:%gcd
 
    ;; Unary
    #:%sin

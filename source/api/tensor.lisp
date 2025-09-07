@@ -36,13 +36,20 @@
 
 (defun tensor-simplify (tensor)
   (declare (type Tensor tensor))
+  ;; 99% of computation time consist of optimize-aasm
+  ;; we have to optimize it
   (setf (tensor-graph tensor) (optimize-aasm (tensor-graph tensor) :heavy-opt-threshold 0))
+  tensor)
+
+(defun tensor-verify (tensor)
+  (declare (type Tensor tensor))
+  (graph-infer-type-relay (tensor-graph tensor))
   tensor)
 
 (defun tensor-node (tensor)
   (declare (type Tensor tensor))
   (id->value (tensor-graph tensor) (tensor-id tensor)))
-;; POW, SIGMOIDとかはdefnode+rewriting ruleでautodiffできそうね。
+;; POW, SIGMOIDとかはdefnode+rewriting ruleでautodiffできそう。
 ;; VIEWが無理そうだったら，!reshapeで代用
 (defun %concat-tensor-graph (parents child-graph)
   (declare (type list parents) (type TensorGraph child-graph))
@@ -55,14 +62,14 @@
 (defun tensor-from-graph (tensor-graph) ;; Root
   (declare (type TensorGraph tensor-graph))
   (assert (= 1 (length (graph-outputs tensor-graph))) () "tensor-from-graph: The output tensor id must be identical")
-  (tensor-simplify (%%make-tensor tensor-graph (car (graph-outputs tensor-graph)))))
+  (tensor-verify (tensor-simplify (%%make-tensor tensor-graph (car (graph-outputs tensor-graph))))))
 
 (defun apply-tensor-graph (variables tensor-graph) ;; = Forward
   "MakeTensor(Graph=Concat(Tensor->graph, tensor_graph))"
   (declare (type TensorGraph tensor-graph) (type list variables))
   (assert (every #'tensor-p variables) () "apply-tensor-graph: Each of variables must be a Tensor.")
   (assert (= 1 (length (graph-outputs tensor-graph))) () "apply-tensor-graph: The output tensor id must be identical")
-  (tensor-simplify (%%make-tensor (%concat-tensor-graph (map 'list #'tensor-graph variables) tensor-graph) (car (graph-outputs tensor-graph)))))
+  (tensor-verify (tensor-simplify (%%make-tensor (%concat-tensor-graph (map 'list #'tensor-graph variables) tensor-graph) (car (graph-outputs tensor-graph))))))
 
 (defmacro with-inlined-tir ((&rest out-binds) &rest forms)
   (alexandria:with-gensyms (outputs)
@@ -84,7 +91,7 @@
 
 (defmacro apply-tir ((&rest variables) (&rest out-binds) &rest program)
   `(apply-tensor-graph (list ,@variables) (with-inlined-tir (,@out-binds) ,@program)))
-;; コンパイル時は*ctx*を別に作ってSimplifyすることができる
+
 (defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (requires-grad nil) (from nil))
   (tensor-from-graph
    (with-inlined-tir (out)
@@ -104,8 +111,14 @@
   ;; Otherwise => Recompile
   )
 
+(defun !matmul (x y)
+  (!sum (!mul (!reshape x `(N 1 N)) (!reshape x `(N N 1)))
+
 (defun tensor-realize (tensor)
   (tensor-graph tensor))
 ;; - [ ] 残っている懸念事項
-;;   - [ ] Compilation Time Simplify, Compilation Time Shape Inference
+;; - [ ] ShapeInference
+;;  - [ ] RuntimeCheck => handler-caseで対応？てかもういらないか
+;;  - [ ] AOTCheck     => defunが難しい
+;;    - [ ] AOTSimplify => How to do that? 諦める
 ;;  - [ ] Autograd

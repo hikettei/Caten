@@ -72,11 +72,6 @@ If i is a tensor, %load fills the visible area of i with value."
 		  "")
 	      (render-attrs node :except-for `(:from :_loop_bound_Nodes :_loop_bound_nodes_type :_no_group_realize_on_vm :pool))))))
 
-(defun %store (x y &key (id (gensym "LID")) (reduction nil))
-  "Equivalent to x = y;"
-  (declare (type node x y))
-  (emit (make-node :Buffer :Store (list id) (list (node->id x) (node->id y)) :reduction reduction)))
-
 (defun %uconst (value &key (dtype *default-uint*))
   "Creates an unsigned integer"
   (%load (%salloc :dtype dtype) value))
@@ -152,7 +147,6 @@ If i is a tensor, %load fills the visible area of i with value."
   (def %xor :XOR)
   (def %move :MOVE)
   (def %max :MAX)
-  (def %gcd :GCD)
   (def %mod :MOD))
 
 (defun %min (x y &key (id (gensym "BID")) (reduction nil)) (%neg (%max (%neg x) (%neg y) :reduction reduction) :id id))

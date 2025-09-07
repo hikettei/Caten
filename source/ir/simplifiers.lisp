@@ -54,8 +54,6 @@
 (defun Const (x dtype) (with-context-nodes (_ (%load (%salloc :dtype dtype) x))))
 (defpattern Bool (x) `(<Rule> :Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean ,x)))
 (defpattern Cast (x dtype) `(<Rule> :Cast ((:Allocate () :nrank 0 :dtype ,dtype) (Const ,x))))
-(defun Purged (node x)
-  (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))
 
 (declaim (inline scalar-p))
 (defun scalar-p (id graph)
@@ -255,7 +253,6 @@
     ((:Mul ((Const x dtype) (:Recip ((Const y _))))) -> (Const (/ x y) dtype))
     ((:Neg ((Const x dtype))) -> (Const (- x) dtype))
     ((:Recip ((Const x (dtype-float-p dtype)))) -> (Const (/ x) dtype))
-    ((:GCD ((Const x dtype) (Const y _))) -> (Const (gcd x y) dtype))
     ((:< (_ (Const x _) (Const y _))) -> (Const (< x y) :bool))
     ((:!= (_ (Const x _) (Const y _))) -> (Const (not (= x y)) :bool))
     ((:MAX ((Const x dtype) (Const y _))) -> (Const (max x y) dtype))
@@ -303,14 +300,6 @@
   graph)
 
 (defparameter *replaceable-ops* `(:ADD :NEG :MUL :RECIP :IDIV) "A graph consisted of these operations are subject to this rewriting rule.")
-
-(defsimplifier
-    (fuse-duplicated-store :speed 0)
-    ((:Store ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
-     ->
-     ((node graph)
-      (when (and (eql dtype1 dtype2) (equal s1 s2))
-	(make-node :Buffer :Allocate (node-writes node) s1 :nrank nrank :dtype dtype1)))))
 
 (defun minify-duplicated-alloc (graph &key (assert-optimized nil))
   "Consider the following graph structure:
@@ -466,4 +455,4 @@ D = Z
   (fold-constant graph :debug-opt debug-opt)
   (when (>= (length (graph-nodes graph)) heavy-opt-threshold)
     (setf graph (minimize-duplicated-symbolic-path graph)))
-  (fuse-duplicated-store graph))
+  graph)
