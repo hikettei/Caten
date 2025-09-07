@@ -127,3 +127,11 @@
      (<node> :Test-F (list 'a) nil))
     (list
      (<node> :Test-L (list 'a) nil)))))
+
+(deftest rewrite-to-string
+  (ok
+   (string=
+    "F(1, mode=X)"
+    (node-ematch
+     (<Node> :Test-F (list 'out) (list 1) :mode :x)
+     ((:Test-F (x) :mode m) -> (format nil "F(~a, mode=~a)" x m))))))

@@ -50,7 +50,7 @@
          `(make-node ,class ,type (list (gensym)) (list ,@(map 'list #'r reads)) ,@attrs)))
       (_ rule))))
 
-(defun parse-rule (rule bind graph-bind)
+(defun parse-rule (rule bind graph-bind &key (is-match-p nil))
   (declare (type list rule))
   (flet ((r (r) (parse-to-pattern bind r)))
     (match rule
@@ -71,10 +71,13 @@
 		   (let* ((result (progn ,@body))
                           (result (if (node-p result) (list result) result)))
                      (when result
-                       (assert (listp result))
-                       (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
-                       (setf (node-writes (car (last result))) (node-writes ,bind))
-                       result)))))
+                       (if ,is-match-p
+                           result
+                           (progn
+                             (assert (listp result))
+                             (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
+                             (setf (node-writes (car (last result))) (node-writes ,bind))
+                             result)))))))
               ((guard id (typep id 'symbol))
                `((let* ((val (id->value ,graph-bind ,id)))
                    ;; EXPR should not removed from the graph
@@ -87,10 +90,13 @@
 	      (_ `((let* ((result (progn ,to))
                           (result (if (node-p result) (list result) result)))
                      (when result
-                       (assert (listp result))
-                       (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
-                       (setf (node-writes (car (last result))) (node-writes ,bind))
-                       result)))))
+                       (if ,is-match-p
+                           result
+                           (progn
+                             (assert (listp result))
+                             (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
+                             (setf (node-writes (car (last result))) (node-writes ,bind))
+                             result)))))))
 	  *matched-bind*)))
       (_ (error "Follow this notation: (From_Pattern) -> (To_Pattern).~%~a" rule)))))
 
@@ -100,7 +106,7 @@
 (defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind* t))
 ;; Simplifier Computation Order:
 ;; - FastGraph: O(n) where n = the depth of rewriting patterns
-(defmacro simplifier ((&key (speed 0)) &rest rules)
+(defmacro simplifier ((&key (speed 0) (early-return-at-match nil)) &rest rules)
   (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes name)
     (let ((node-top '*node-top*) (graph '*graph-bind*))
       `(flet ((,name (,graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil) (,counter 0) (,n-nodes (length (the list (graph-nodes ,graph)))))
@@ -126,10 +132,13 @@
 		           (let* ((result
                                     (or
                                      ,@(loop for rule in rules collect
-                                             `(let ((result (match ,node-top ,(parse-rule rule node-top graph))))
+                                             `(let ((result (match ,node-top ,(parse-rule rule node-top graph :is-match-p (not (null early-return-at-match))))))
+                                                ,@(when early-return-at-match
+                                                    `((when result (return-from ,early-return-at-match (car result)))))
                                                 (when (car result) result)))))
                                   (replace-rule (car result))
                                   (matched (cdr result)))
+                             
 		             (when (and replace-rule matched)
 		               (when (node-p replace-rule) (setf replace-rule (list replace-rule)))
 		               ;; reject the replace-rule only when:
@@ -201,3 +210,12 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 "
   `(defun ,name (graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil))
      (funcall (Simplifier (:speed ,speed) ,@rules) graph :no-verify no-verify :return-changed-p return-changed-p :debug-opt debug-opt)))
+
+(defmacro node-ematch (node &rest rules)
+  (with-gensyms (graph block)
+    `(let ((,graph (make-graph ,node)))
+       (setf (graph-outputs ,graph) (copy-list (node-writes ,node))
+             ,graph (->fast-graph ,graph))
+       (block ,block
+         (funcall (Simplifier (:early-return-at-match ,block) ,@rules) ,graph)
+         (error "node-ematch: No match for ~a" ,node)))))
