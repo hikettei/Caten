@@ -38,14 +38,18 @@
   (declare (type Tensor tensor))
   (optimize-aasm (tensor-graph tensor))
   tensor)
+
+(defun tensor-node (tensor)
+  (declare (type Tensor tensor))
+  (id->value (tensor-graph tensor) (tensor-id tensor)))
 ;; POW, SIGMOIDとかはdefnode+rewriting ruleでautodiffできそうね。
-(defun %concat-tensor-graph (parent-graph child-graph)
-  (declare (type TensorGraph parent-graph child-graph))
-  (assert (null (graph-seen parent-graph)))
-  (assert (null (graph-seen child-graph)))
+;; VIEWが無理そうだったら，!reshapeで代用
+(defun %concat-tensor-graph (parents child-graph)
+  (declare (type list parents) (type TensorGraph child-graph))
   (let ((g (make-instance 'TensorGraph :output (graph-outputs child-graph) :seen nil :nodes nil)))
-    (maphash #'(lambda (k v) (setf (gethash k (%graph-nodes-table g)) v)) (%graph-nodes-table parent-graph))
-    (maphash #'(lambda (k v) (setf (gethash k (%graph-nodes-table g)) v)) (%graph-nodes-table child-graph))
+    (dolist (graph (append parents (list child-graph)))
+      (assert (typep graph 'TensorGraph) () "%concat-tensor-graph: each of parents must be a TensorGraph.")
+      (maphash #'(lambda (k v) (setf (gethash k (%graph-nodes-table g)) v)) (%graph-nodes-table graph)))
     g))
 
 (defun tensor-from-graph (tensor-graph) ;; Root
@@ -53,33 +57,49 @@
   (assert (= 1 (length (graph-outputs tensor-graph))) () "tensor-from-graph: The output tensor id must be identical")
   (tensor-simplify (%%make-tensor tensor-graph (car (graph-outputs tensor-graph)))))
 
-(defun apply-tensor-graph (tensor tensor-graph) ;; Forward
+(defun apply-tensor-graph (variables tensor-graph) ;; = Forward
   "MakeTensor(Graph=Concat(Tensor->graph, tensor_graph))"
-  (declare (type Tensor tensor) (type TensorGraph tensor-graph))
+  (declare (type TensorGraph tensor-graph) (type list variables))
+  (assert (every #'tensor-p variables) () "apply-tensor-graph: Each of variables must be a Tensor.")
   (assert (= 1 (length (graph-outputs tensor-graph))) () "apply-tensor-graph: The output tensor id must be identical")
-  (%%make-tensor (%concat-tensor-graph (tensor-graph tensor) tensor-graph) (car (graph-outputs tensor-graph))))
+  (tensor-simplify (%%make-tensor (%concat-tensor-graph (map 'list #'tensor-graph variables) tensor-graph) (car (graph-outputs tensor-graph)))))
 
 (defmacro with-inlined-tir ((&rest out-binds) &rest forms)
-  `(->fast-graph
-    (alexandria:with-gensyms (,@out-binds)
-      (let ((g (with-context ,@forms)))
-        (setf (graph-outputs g) (list ,@out-binds))
-        g))
-    :cls 'TensorGraph))
+  (alexandria:with-gensyms (outputs)
+    `(locally (declare (optimize (speed 3)))
+       (->fast-graph
+        (let* ((,outputs)
+               (g (let* ((*ctx* (make-graph))
+                         ,@forms)
+                    ,@(loop for dst in out-binds
+                            collect
+                            `(progn
+                               (assert (node-p ,dst) () "with-inlined-tir: Each of out-binds must produce a node, getting ~a" ,dst)
+                               (assert (= 1 (length (node-writes ,dst))) () "with-inlined-tir: Each of out-binds must produce a single output, getting ~a" ,dst)
+                               (push (car (node-writes ,dst)) ,outputs)))
+                    *ctx*)))
+          (setf (graph-outputs g) ,outputs)
+          g)
+        :cls 'TensorGraph))))
 
-(defmacro apply-tir (tensor (out-binds) &rest program)
-  `(apply-tensor-graph ,tensor (with-inlined-tir (,@out-binds) ,@program)))
+(defmacro apply-tir ((&rest variables) (&rest out-binds) &rest program)
+  `(apply-tensor-graph (list ,@variables) (with-inlined-tir (,@out-binds) ,@program)))
 ;; コンパイル時は*ctx*を別に作ってSimplifyすることができる
 (defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (requires-grad nil) (from nil))
   (tensor-from-graph
-   (with-inlined-tir
-       (tensor)
-       (_ (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order order :id tensor :from from)))))
+   (with-inlined-tir (out)
+       (out (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order order :from from)))))
+
+(defun !add (x y)
+  (apply-tir (x y) (out) (out (%add (tensor-node x) (tensor-node y)))))
 
 (defun %retrive (tensor)
   ;; If ID exists in DB =>
   ;; Otherwise => Recompile
   )
+
+(defun tensor-realize (tensor)
+  (tensor-graph tensor))
 ;; (!add (make-tensor `(3 3)) (make-tensor `(3 3)))
 ;; (A B) (A B)
 ;;    \   /
