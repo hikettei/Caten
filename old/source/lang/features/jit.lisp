@@ -29,53 +29,53 @@
     ((list* (Sym for) idx (Sym =) (list (Sym Range) size step) (Sym do) rest)
      (let* ((range-id (gensym (symbol-name idx))))
        (when (eql size 0) (warn "Detected an empty range: ~a.~%Range is defined as (Range SIZE STEP)" size))
-       `(caten/aasm::%range
+       `(caten/ir::%range
          ',idx ,(jit-rewrite size)
          (let ((,idx ',range-id))
-           (caten/aasm:%progn ,@(map 'list #'jit-rewrite rest)))
+           (caten/ir:%progn ,@(map 'list #'jit-rewrite rest)))
          :step ,(if (numberp step) step (jit-rewrite step))
          :rid ',range-id)))
     ((list* (Sym let) (list* forms) body)
      `(let* (,@(loop for form in forms collect (list (car form) (jit-rewrite (second form)))))
-        (caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
+        (caten/ir:%progn ,@(map 'list #'jit-rewrite body))))
     ((list* (Sym with-locals) (list* forms) body)
-     `(let* (,@(loop for form in forms collect (list (car form) `(caten/aasm:%expr (caten/aasm::node->id1 ,(jit-rewrite (second form))) :out ',(car form)))))
-        (caten/aasm:%progn
+     `(let* (,@(loop for form in forms collect (list (car form) `(caten/ir:%expr (caten/ir::node->id1 ,(jit-rewrite (second form))) :out ',(car form)))))
+        (caten/ir:%progn
          ,@(map 'list #'car forms)
          ,@(map 'list #'jit-rewrite body))))
     ((list* (Sym setf) rest)
      (assert (= 0 (mod (length rest) 2)))
-     `(caten/aasm:%progn
+     `(caten/ir:%progn
        ,@(loop while rest
                for bind = (jit-rewrite (pop rest)) for value = (pop rest) for tmp = (gensym)
                collect
-               `(let ((,tmp (caten/aasm:%expr (caten/aasm::node->id1 (caten/aasm:%setf ,bind ,(jit-rewrite value))))))
+               `(let ((,tmp (caten/ir:%expr (caten/ir::node->id1 (caten/ir:%setf ,bind ,(jit-rewrite value))))))
                   ,(when (symbolp bind)
                      `(setf
                        ,bind
-                       (caten/aasm::node->id1 (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',bind)))))
-                  ,(when (and (listp bind) (eql (car bind) 'caten/aasm:%aref))
+                       (caten/ir::node->id1 (caten/ir:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',bind)))))
+                  ,(when (and (listp bind) (eql (car bind) 'caten/ir:%aref))
                      `(setf
                        ,(second bind)
-                       (caten/aasm::node->id1 (caten/aasm:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',(second bind))))))
+                       (caten/ir::node->id1 (caten/ir:emit (caten/air:make-node :JIT :BIND (list (gensym)) (list (caten/air:node->id ,tmp)) :value ',(second bind))))))
                   ,tmp))))
-    ((list (Sym aref) name idx) `(caten/aasm:%aref ,name ,(jit-rewrite idx)))
+    ((list (Sym aref) name idx) `(caten/ir:%aref ,name ,(jit-rewrite idx)))
     ;; Operator rewriting
-    ((list* (Sym +) rest) `(reduce #'caten/aasm:%add (list ,@(map 'list #'jit-rewrite rest))))
-    ((list (Sym +=) a b)  `(caten/aasm:%add ,(jit-rewrite a) ,(jit-rewrite b) :reduction t))
-    ((list* (Sym -) rest) `(reduce #'caten/aasm:%sub (list ,@(map 'list #'jit-rewrite rest))))
-    ((list* (Sym *) rest) `(reduce #'caten/aasm:%mul (list ,@(map 'list #'jit-rewrite rest))))
-    ((list* (Sym /) rest) `(reduce #'caten/aasm:%div (list ,@(map 'list #'jit-rewrite rest))))
-    ((list* (Sym max) rest) `(reduce #'caten/aasm:%max (list ,@(map 'list #'jit-rewrite rest))))
-    ((list* (Sym idiv) rest) `(reduce #'caten/aasm:%idiv (list ,@(map 'list #'jit-rewrite rest))))
-    ((list* (Sym mod) rest) `(reduce #'caten/aasm:%mod (list ,@(map 'list #'jit-rewrite rest))))
-    ((list (Sym sqrt) x) `(caten/aasm:%sqrt ,(jit-rewrite x)))
-    ((list (Sym exp) x) `(caten/aasm:%exp2 (caten/aasm:%mul ,(jit-rewrite x) ,(jit-rewrite (/ (log 2))))))
-    ((list (Sym scast) val type-to) `(caten/aasm:%cast (caten/aasm:%load (caten/aasm:%salloc :dtype ,type-to) 0.0) ,(jit-rewrite val) ,type-to))
+    ((list* (Sym +) rest) `(reduce #'caten/ir:%add (list ,@(map 'list #'jit-rewrite rest))))
+    ((list (Sym +=) a b)  `(caten/ir:%add ,(jit-rewrite a) ,(jit-rewrite b) :reduction t))
+    ((list* (Sym -) rest) `(reduce #'caten/ir:%sub (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* (Sym *) rest) `(reduce #'caten/ir:%mul (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* (Sym /) rest) `(reduce #'caten/ir:%div (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* (Sym max) rest) `(reduce #'caten/ir:%max (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* (Sym idiv) rest) `(reduce #'caten/ir:%idiv (list ,@(map 'list #'jit-rewrite rest))))
+    ((list* (Sym mod) rest) `(reduce #'caten/ir:%mod (list ,@(map 'list #'jit-rewrite rest))))
+    ((list (Sym sqrt) x) `(caten/ir:%sqrt ,(jit-rewrite x)))
+    ((list (Sym exp) x) `(caten/ir:%exp2 (caten/ir:%mul ,(jit-rewrite x) ,(jit-rewrite (/ (log 2))))))
+    ((list (Sym scast) val type-to) `(caten/ir:%cast (caten/ir:%load (caten/ir:%salloc :dtype ,type-to) 0.0) ,(jit-rewrite val) ,type-to))
     ((number x)
      (if (integerp form)
-         `(caten/aasm:%load (caten/aasm:%salloc :dtype :int64) ,form)
-         `(caten/aasm:%load (caten/aasm:%salloc :dtype :float32) ,form)))
+         `(caten/ir:%load (caten/ir:%salloc :dtype :int64) ,form)
+         `(caten/ir:%load (caten/ir:%salloc :dtype :float32) ,form)))
     (_
      (if (listp form)
          `(,(car form) ,@(map 'list #'jit-rewrite (cdr form)))
@@ -90,10 +90,10 @@
              `(let ((,placeholder (gensym ,(format nil "special_~a_" bind))))
                 (multiple-value-bind (,bind ,dtype ,@shape)
                     (values
-                     (caten/aasm:%global ,placeholder (caten/api:tensor-dtype ,bind) t)
+                     (caten/ir:%global ,placeholder (caten/api:tensor-dtype ,bind) t)
                      (caten/api:tensor-dtype ,bind)
                      ,@(loop for s in shape for nth upfrom 0
-                             collect `(caten/aasm:%load (caten/aasm:%salloc :dtype :int64) (nth ,nth (caten/api:tensor-shape ,bind)))))
+                             collect `(caten/ir:%load (caten/ir:%salloc :dtype :int64) (nth ,nth (caten/api:tensor-shape ,bind)))))
                   (setf (gethash ',bind ,table-place) ,placeholder)
                   ,(expand-args table-place (cdr rest-args) body)))))
           (_
@@ -121,11 +121,11 @@
              `(defun ,kernel-name (,@(map 'list #'second args) &aux (,table-tmp (make-hash-table)))
                 (caten/api::%forward-with-captured-graph
                  ',kernel-name
-                 (caten/aasm:with-blueprint ()
+                 (caten/ir:with-blueprint ()
                    ,(expand-args
                      table-tmp
                      args
-                     `(caten/aasm:%progn ,@(map 'list #'jit-rewrite body))))
+                     `(caten/ir:%progn ,@(map 'list #'jit-rewrite body))))
                  ,table-tmp
                  ',(map 'list #'second args)
                  ,@(map 'list #'second args)))))
