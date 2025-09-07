@@ -218,4 +218,4 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
              ,graph (->fast-graph ,graph))
        (block ,block
          (funcall (Simplifier (:early-return-at-match ,block) ,@rules) ,graph)
-         (error "node-ematch: No match for ~a" ,node)))))
+         (error "node-ematch: No matching case for ~a.~%Patterns: ~a" ,node ',rules)))))

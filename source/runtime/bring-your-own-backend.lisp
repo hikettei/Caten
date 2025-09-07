@@ -49,24 +49,16 @@
           `(defmethod caten/runtime/buffer:bref ((,buffer ,buffer-name) ,index) ,@form)))))
 
 (defun render (x) (declare (ignore x)) (error "(render id) is only binded by define-renderer"))
-;; [TODO] ここでSimplifier使えたほうが便利
-(defmacro define-renderer (renderer-name direct-superclasses direct-slots &rest render-nodes)
-  `(progn
-     (defclass ,renderer-name (,@direct-superclasses caten/runtime/renderer:Renderer) ,direct-slots)
-     ,@(loop for render-node in render-nodes
-             for matcher = (car render-node)
-             for form = (cdr render-node)
-             for id = (car matcher)
-             for args = (second matcher)
-             for attrs = (cddr matcher)
-             collect
-             `(defmethod caten/runtime/renderer:%render-node ((renderer ,renderer-name) (node-id (eql ,id)) node)
-                (flet ((render (id) (caten/runtime/renderer:render-node renderer id)))
-                  (multiple-value-bind (,@args) (apply #'values (node-reads node))
-                    (let* (,@(loop for i upfrom 0 below (length attrs) by 2
-                                   for attr = (nth i attrs) for bind = (nth (1+ i) attrs)
-                                   collect `(,bind (caten/graph:getattr node ,attr))))
-                      ,@form)))))))
+(defmacro define-renderer (renderer-name direct-superclasses direct-slots &rest patterns)
+  (alexandria:with-gensyms (renderer node)
+    `(prog1
+         (defclass ,renderer-name (,@direct-superclasses caten/runtime/renderer:Renderer) ,direct-slots)
+       ,@(loop for pattern in patterns
+               do (assert (and (listp pattern) (keywordp (car pattern))) () "define-renderer: pattern := `(,node_id ,@(pattern_match_rules))")
+               collect
+               `(defmethod caten/runtime/renderer:%render-node ((,renderer ,renderer-name) (node-id (eql ,(car pattern))) ,node)
+                  (flet ((render (id) (caten/runtime/renderer:render-node ,renderer id)))
+                    (caten/graph:node-ematch ,node ,@(cdr pattern))))))))
 
 (defmacro define-kernel ((kernel-name renderer-name) direct-superclasses direct-slots &key (launch) (compile))
   `(progn

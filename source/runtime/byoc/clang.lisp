@@ -1,5 +1,5 @@
 (defpackage :caten/byoc/clang
-  (:use :cl :caten/runtime/bring-your-own-backend)
+  (:use :cl :caten/runtime/bring-your-own-backend :caten/graph)
   (:export
    
    ))
@@ -22,8 +22,8 @@
     :bref ((buffer idx) (aref (buffer-value buffer) idx)))
 
 (define-renderer CStyle-Renderer () nil
-  ((:ADD (x y)) (format nil "~a+~a" (render x) (render y)))
-  ((:PROGN (~ x)) nil))
+  (:ADD ((:ADD (x y)) -> (format nil "~a+~a" (render x) (render y)))))
+;  ((:PROGN (~ x)) nil))
 
 (define-kernel (ClangKernel CStyle-Renderer) () nil
                :launch nil
