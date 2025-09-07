@@ -314,12 +314,8 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 
 - nrank[(unsigned-byte 32)] the rank of viewed tensor.
 - broadcast[list] broadcasting order.
-- permute[list] is an optional parameter and does nothing in VM, but requires to apply Polyhedral Compiler. If the view was created in `caten/api:!permute`, set the argument to this attribute.
 "
-	 :slots ((nrank :type (unsigned-byte 32))
-		 (broadcast :type list)
-		 (permute :type list :initform nil)
-                 (tr :initform nil))
+	 :slots ((nrank :type (unsigned-byte 32)) (broadcast :type list))
          :type-relay #'(lambda (id->type node)
                          (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
                          (macrolet ((nsubseq (x y z) `(subseq ,x (1+ ,y) (1+ ,z))))
