@@ -114,6 +114,7 @@
 
 (defun make-scalar (value &key (dtype *default-float*))
   (declare (type (or symbol number) value))
+  (assert (not (tensor-p value)))
   (tensor-from-graph (with-inlined-tir (out) (out (%load (%salloc :dtype dtype) value)))))
 
 (defun ->size (value)
@@ -239,7 +240,6 @@ Flattens the input tensor into a 2D matrix. If input tensor has shape (d_0, d_1,
          (s2 (apply #'!* (map 'list #'->size (subseq (tensor-shape x) axis)))))
     (!reshape x s1 s2)))
 
-
 (defun !repeat (x &rest repeats &aux (repeats (alexandria:flatten repeats)))
   "
 ```
@@ -263,20 +263,20 @@ Returns a tensor with the shape of `x` broadcasted by `repeats`.
 Returns a tensor that is expanded to the shape that is specified. Expand can also increase the number of dimensions that a tensor has.
 "
   (multiple-value-bind (view-index reshape-to) (apply #'values (pad-left (tensor-shape x) shape))
-    (let ((x (if (= (tensor-nrank x) (length shape)) x (!reshape x reshape-to))))	  
-      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,x))) view-index reshape-to)))))
+    (let ((x (if (= (tensor-nrank x) (length shape)) x (!reshape x reshape-to))))
+      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,y))) view-index reshape-to)))))
 
 (defun !view (x &rest subscripts)
   (declare (type list subscripts) (type tensor x))
-  (let ((views (map 'list #'parse-view-subscript (tensor-shape x) subscripts)))
+  (let* ((views (map 'list #'parse-view-subscript (tensor-shape x) subscripts))
+         (sizes (map 'list #'vrange-size views)))
     (apply-tir
-        (x (map 'list #'viewrange-from views) (map 'list #'viewrange-to views) (map 'list #'viewrange-by views)
-         (map 'list #'viewrange-size views))
+        (x (map 'list #'viewrange-from views) (map 'list #'viewrange-to views) (map 'list #'viewrange-by views) sizes)
         (viewed)
         (viewed
          (%view
           (tensor-node x)
-          (map 'list (alexandria:compose #'tensor-node #'viewrange-size) views)
+          (map 'list #'tensor-node sizes)
           (map 'list (alexandria:compose #'tensor-node #'viewrange-from) views)
           (map 'list (alexandria:compose #'tensor-node #'viewrange-to) views)
           (map 'list (alexandria:compose #'tensor-node #'viewrange-by) views)

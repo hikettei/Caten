@@ -7,12 +7,5 @@
   :components ((:file "buffer")
                (:file "runtime")
                (:file "kernel")
-               (:file "bring-your-own-backend")
-               (:file "package")))
-;; [TODO] Renderer, BYOC Design
-;; - [ ] bring-your-own-backend.lisp (defbackend)
-;; - [ ] runtime.lisp
-;; - [ ] kernel.lisp
-;; - [ ] renderer.lisp
-;; - [ ] buffer.lisp
-;; - [ ] export.lisp
+               (:file "renderer")
+               (:file "bring-your-own-backend")))

@@ -16,8 +16,12 @@
 
 (defun broadcast-elwise (a b)
   (declare (type Tensor a b))
-  (let ((broadcasted (broadcast-shape (list (tensor-shape a) (tensor-shape b)))))
-    (values (!expand a broadcasted) (!expand b broadcasted))))
+  (cond
+    ((= 0 (tensor-nrank a) (tensor-nrank b))
+     (values a b))
+    (T
+     (let ((broadcasted (broadcast-shape (list (tensor-shape a) (tensor-shape b)))))
+       (values (!expand a broadcasted) (!expand b broadcasted))))))
 
 (deftype axis-t () `(or number symbol Tensor))
 (defstruct (ViewRange
