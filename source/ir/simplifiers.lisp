@@ -458,7 +458,7 @@ D = Z
           (progn
             (setf (graph-outputs copy-graph) (graph-outputs graph)
                   (graph-seen copy-graph) (graph-seen graph)
-                  copy-graph (->fast-graph copy-graph))
+                  copy-graph (->fast-graph copy-graph :cls (type-of graph)))
             (values copy-graph table))
           (values copy-graph table)))))
 

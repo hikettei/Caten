@@ -36,7 +36,7 @@
 
 (defun tensor-simplify (tensor)
   (declare (type Tensor tensor))
-  (optimize-aasm (tensor-graph tensor))
+  (setf (tensor-graph tensor) (optimize-aasm (tensor-graph tensor) :heavy-opt-threshold 0))
   tensor)
 
 (defun tensor-node (tensor)
@@ -93,6 +93,12 @@
 (defun !add (x y)
   (apply-tir (x y) (out) (out (%add (tensor-node x) (tensor-node y)))))
 
+(defun !mul (x y)
+  (apply-tir (x y) (out) (out (%mul (tensor-node x) (tensor-node y)))))
+
+(defun !sin (x)
+  (apply-tir (x) (out) (out (%sin (tensor-node x)))))
+;; !reshape lazy assertion?
 (defun %retrive (tensor)
   ;; If ID exists in DB =>
   ;; Otherwise => Recompile
@@ -100,8 +106,6 @@
 
 (defun tensor-realize (tensor)
   (tensor-graph tensor))
-;; (!add (make-tensor `(3 3)) (make-tensor `(3 3)))
-;; (A B) (A B)
-;;    \   /
-;;      +
-;;    Tensor
+;; - [ ] 残っている懸念事項
+;;   - [ ] Compilation Time Simplify, Compilation Time Shape Inference
+;;  - [ ] Autograd
