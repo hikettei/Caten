@@ -56,7 +56,12 @@ out <- f(x)
       (assert type () "The variable ~a is not defined in the graph?" (nth n (node-reads node)))
       (assert-verify-tensor-relay id->type node)
       (when check-shape
-        )
+        (let ((space (gethash (car (node-reads node)) id->type)))
+          (assert space)
+          (loop for id in (cdr (node-reads node))
+                for sp1 = (gethash id id->type) do
+                  (assert sp1)
+                  (assert (equal (tensor-relay-shape space) (tensor-relay-shape sp1))))))
       (list
        (make-tensor-relay (copy-list (tensor-relay-shape type)) (copy-list (tensor-relay-stride type))
                           (tensor-relay-dtype type) (copy-list (tensor-relay-views type))
