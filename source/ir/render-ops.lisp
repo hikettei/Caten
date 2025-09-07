@@ -721,7 +721,6 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
            (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
              ;; Rewriting MUL(MOVE(A, AREF(B)), C) -> MUL(AREF(B), C)
              (funcall (Simplifier () ((:MOVE (_ b)) -> b))  expr-graph)
-             (funcall (Simplifier () ((:STORE (_ b)) -> b)) expr-graph)
              ;; Rewrite the path that are not rendered with Allocate.
              ;; 1. LOAD(ALLOCATE(X))
              ;; 2. TernaryOps(Allocate(_), X, Y)

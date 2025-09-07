@@ -32,6 +32,10 @@
   (declare (type Tensor tensor))
   (tensor-relay-shape (tensor-type tensor)))
 
+(defun tensor-nrank (tensor)
+  (declare (type Tensor tensor))
+  (tensor-relay-nrank (tensor-type tensor)))
+
 (defun tensor-stride (tensor)
   (declare (type Tensor tensor))
   (tensor-relay-stride (tensor-type tensor)))
@@ -43,6 +47,7 @@
 (defun tensor-views (tensor)
   (declare (type Tensor tensor))
   (tensor-relay-views (tensor-type tensor)))
+
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod print-object ((tensor Tensor) stream)
   (print-unreadable-object (tensor stream :type t)
@@ -83,21 +88,20 @@
 
 (defmacro with-inlined-tir ((&rest out-binds) &rest forms)
   (alexandria:with-gensyms (outputs)
-    `(locally (declare (optimize (speed 3)))
-       (->fast-graph
-        (let* ((,outputs)
-               (g (let* ((*ctx* (make-graph))
-                         ,@forms)
-                    ,@(loop for dst in out-binds
-                            collect
-                            `(progn
-                               (assert (node-p ,dst) () "with-inlined-tir: Each of out-binds must produce a node, getting ~a" ,dst)
-                               (assert (= 1 (length (node-writes ,dst))) () "with-inlined-tir: Each of out-binds must produce a single output, getting ~a" ,dst)
-                               (push (car (node-writes ,dst)) ,outputs)))
-                    *ctx*)))
-          (setf (graph-outputs g) ,outputs)
-          g)
-        :cls 'TensorGraph))))
+    `(->fast-graph
+      (let* ((,outputs)
+             (g (let* ((*ctx* (make-graph))
+                       ,@forms)
+                  ,@(loop for dst in out-binds
+                          collect
+                          `(progn
+                             (assert (node-p ,dst) () "with-inlined-tir: Each of out-binds must produce a node, getting ~a" ,dst)
+                             (assert (= 1 (length (node-writes ,dst))) () "with-inlined-tir: Each of out-binds must produce a single output, getting ~a" ,dst)
+                             (push (car (node-writes ,dst)) ,outputs)))
+                  *ctx*)))
+        (setf (graph-outputs g) ,outputs)
+        g)
+      :cls 'TensorGraph)))
 
 (defmacro apply-tir ((&rest variables) (&rest out-binds) &rest program)
   `(apply-tensor-graph (list ,@variables) (with-inlined-tir (,@out-binds) ,@program)))
@@ -111,17 +115,26 @@
 (defun make-scalar (value &key (dtype *default-float*))
   (declare (type (or symbol number) value))
   (tensor-from-graph (with-inlined-tir (out) (out (%load (%salloc :dtype dtype) value)))))
-;; things to handle
+
+(defun ->size (value)
+  (if (tensor-p value)
+      value
+      (make-scalar value :dtype *default-indexing-dtype*)))
+
+;; things to handle (when dealing (!add Tensor[3 3] Tensor[3 3]))
 ;; 1. Shape Error
 ;; 2. Cannot Change Facet Error
 ;; 3. Broadcasting Error
+;; BinaryOps
+;; ShapeTracker?
 (macrolet ((def (lisp-name1 lisp-name2 lisp-name3 ir-name)
              `(progn
                 (declaim (ftype (function (Tensor Tensor &key (:reduction boolean)) (values Tensor)) ,lisp-name3))
                 ;; Primitive Binary Operation (Private)
                 (defun ,lisp-name3 (x y &key (reduction nil))
                   (declare (type Tensor x y) (type boolean reduction))
-                  (apply-tir (x y) (out) (out (,ir-name (tensor-node x) (tensor-node y) :reduction reduction))))
+                  (multiple-value-bind (x y) (broadcast-elwise x y)
+                    (apply-tir (x y) (out) (out (,ir-name (tensor-node x) (tensor-node y) :reduction reduction)))))
                 (declaim (ftype (function (t t &key (:reduction boolean)) (values Tensor)) ,lisp-name2))
                 (defun ,lisp-name2 (x y &key (reduction nil))
                   ,(format nil "[TODO] Docs here")
@@ -132,33 +145,146 @@
   (def !-    !sub primitive/sub-binary %sub)
   (def !*    !mul primitive/mul-binary %mul)
   (def !/    !div primitive/div-binary %div)
-  (def nil   !move primitive/move-binary %move))
+  (def nil   !move primitive/move-binary %move)
+  (def nil   !maximum primitive/maximum-binary %max)
+  (def nil   !minimum primitive/minimum-binary %min))
+  
 
 (defun !contiguous (x)
   (declare (type tensor x))
   (!move (make-tensor (tensor-shape x) :dtype (tensor-dtype x)) x))
-
+;; ~~ MovementOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun !reshape (x &rest shape)
   (declare (type Tensor x) (type list shape))
   ;; [TODO] Check total count matches
-  (let ((shape (the list (alexandria:flatten shape))))
-    (!contiguous
-     (apply-tir (x shape) (reshaped)
-                (reshaped
-                 (%view (tensor-node x) (%shape shape :dtype *default-indexing-dtype*)
-                        (loop for i upfrom 0 below (length shape) collect (%iconst 0 :dtype *default-indexing-dtype*))
-                        (loop for i in shape collect (%iconst 0 :dtype *default-indexing-dtype*))
-                        (loop for i upfrom 0 below (length shape) collect (%iconst 1 :dtype *default-indexing-dtype*))
-                        (loop for i upfrom 0 below (length shape) collect nil)
-                        (%stride shape (ctx:getenv :DEFAULT_ORDER) :dtype *default-indexing-dtype*)))))))
+  (let* ((shapes (the list (alexandria:flatten shape)))
+         (shape (loop for i in shapes if (tensor-p i) collect (tensor-node i) else collect i)))
+    (apply-tir (x shapes) (reshaped)
+               (reshaped
+                (%view (tensor-node x) (%shape shape :dtype *default-indexing-dtype*)
+                       (loop for i upfrom 0 below (length shape) collect (%iconst 0 :dtype *default-indexing-dtype*))
+                       (loop for i in shape collect (%iconst 0 :dtype *default-indexing-dtype*))
+                       (loop for i upfrom 0 below (length shape) collect (%iconst 1 :dtype *default-indexing-dtype*))
+                       (loop for i upfrom 0 below (length shape) collect nil)
+                       (%stride shape (ctx:getenv :DEFAULT_ORDER) :dtype *default-indexing-dtype*))))))
+
+(defun permute-list (order list) (loop for nth in order collect (nth nth list)))
+(defun !permute (x &rest order)
+  (let ((order (alexandria:flatten order)))
+    (flet ((views (n views default)
+             (loop for i upfrom 0 below (length views)
+                   collect (or (nth n (nth i views)) (if (numberp default) default (nth i default))))))
+      (apply-tir (x)
+          (permuted)
+          (permuted
+           (%view (tensor-node x)
+                  (%shape (permute-list order (tensor-shape x)) :dtype *default-indexing-dtype*)
+                  (%shape (permute-list order (views 0 (tensor-views x) 0)) :dtype *default-indexing-dtype*)
+                  (%shape (permute-list order (views 1 (tensor-views x) (tensor-shape x))) :dtype *default-indexing-dtype*)
+                  (%shape (permute-list order (views 2 (tensor-views x) 1)) :dtype *default-indexing-dtype*)
+                  (views 3 (tensor-views x) nil)
+                  (%shape (permute-list order (tensor-stride x)) :dtype *default-indexing-dtype*)))))))
+
+(defun !t (tensor)
+  "
+```
+(!t tensor)
+```
+
+Transposes the last two axes of the tensor
+"
+  (let ((range (range 0 (tensor-relay-nrank tensor)))
+	(n (tensor-relay-nrank tensor)))
+    (setf (nth (- n 2) range) (nth (- n 1) range)
+	  (nth (- n 1) range) (1- (nth (- n 2) range)))
+    (!permute tensor range)))
+
+(defun !transpose (tensor &optional (dim0 1) (dim1 0))
+  "
+```
+(!transpose tensor &optional (dim0 1) (dim1 0))
+```
+
+Transposes `dim0` and `dim1`.
+"
+  (declare (type tensor tensor))
+  (let* ((range (range 0 (tensor-relay-nrank tensor)))
+	 (tmp (nth1 dim0 range)))
+    (setf (nth1 dim0 range) (nth1 dim1 range)
+	  (nth1 dim1 range) tmp)
+    (!permute tensor range)))
+
+(defun !uprank (x n)
+  "
+```
+(!uprank x n)
+```
+
+Returns a tensor with one is inserted at the beginning of the shape of `x` for n times.
+"
+  (declare (type tensor x) (type (integer 0) n))
+  (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
+
+(defun !flatten (x &key (axis 1))
+  "
+```
+(!flatten x &key (axis 1))
+```
+
+Flattens the input tensor into a 2D matrix. If input tensor has shape (d_0, d_1, ... d_n) then the output will have shape (d_0 X d_1 ... d_(axis-1), d_axis X d_(axis+1) ... X dn).
+"
+  (declare (type tensor x) (type fixnum axis))
+  (let* ((axis (normalize-axis x axis))
+         (s1 (apply #'!* (map 'list #'->size (subseq (tensor-shape x) 0 axis))))
+         (s2 (apply #'!* (map 'list #'->size (subseq (tensor-shape x) axis)))))
+    (!reshape x s1 s2)))
 
 
-(defun !mul (x y)
-  (apply-tir (x y) (out) (out (%mul (tensor-node x) (tensor-node y)))))
+(defun !repeat (x &rest repeats &aux (repeats (alexandria:flatten repeats)))
+  "
+```
+(!repeat x &rest repeats)
+```
 
-(defun !sin (x)
-  (apply-tir (x) (out) (out (%sin (tensor-node x)))))
+Returns a tensor with the shape of `x` broadcasted by `repeats`.
+"
+  (let* ((base-shape (append (loop repeat (- (length repeats) (tensor-nrank x)) collect 1) (tensor-shape x)))
+	 (new-shape (loop for s in (tensor-shape x) append (list 1 s)))
+	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
+	 (final-shape (loop for s in (tensor-shape x) for r in repeats collect (!mul (->size s) (->size r)))))
+    (apply #'!view (!reshape (apply #'!view (!reshape x new-shape) expand-shape) final-shape) (loop for f in final-shape collect t))))
 
+(defun !expand (x &rest shape &aux (shape (alexandria:flatten shape)))
+  "
+```
+(!expand x &rest shape)
+```
+
+Returns a tensor that is expanded to the shape that is specified. Expand can also increase the number of dimensions that a tensor has.
+"
+  (multiple-value-bind (view-index reshape-to) (apply #'values (pad-left (tensor-shape x) shape))
+    (let ((x (if (= (tensor-nrank x) (length shape)) x (!reshape x reshape-to))))	  
+      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,x))) view-index reshape-to)))))
+
+(defun !view (x &rest subscripts)
+  (declare (type list subscripts) (type tensor x))
+  (let ((views (map 'list #'parse-view-subscript (tensor-shape x) subscripts)))
+    (apply-tir
+        (x (map 'list #'viewrange-from views) (map 'list #'viewrange-to views) (map 'list #'viewrange-by views)
+         (map 'list #'viewrange-size views))
+        (viewed)
+        (viewed
+         (%view
+          (tensor-node x)
+          (map 'list (alexandria:compose #'tensor-node #'viewrange-size) views)
+          (map 'list (alexandria:compose #'tensor-node #'viewrange-from) views)
+          (map 'list (alexandria:compose #'tensor-node #'viewrange-to) views)
+          (map 'list (alexandria:compose #'tensor-node #'viewrange-by) views)
+          (map 'list #'viewrange-broadcast views)
+          (tensor-stride x))))))
+
+(defun !sum (x))
+(defun !matmul (x y))
 (defun tensor-realize (tensor)
   (tensor-graph tensor)
   ;; lower-hlops

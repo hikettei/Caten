@@ -1,4 +1,4 @@
 (defpackage :caten/api
-  (:use :cl :caten/ir :caten/graph)
+  (:use :cl :trivia :cl-ppcre :caten/ir :caten/graph)
   (:export
    ))

@@ -3,8 +3,9 @@
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
   ("trivia" "cl-ppcre" "float-features")
-  :serial t
   :components ((:file "package")
+               (:file "helpers")
+               (:file "shape")
                (:file "tensor")
                (:file "facets")
                (:file "hlops")))

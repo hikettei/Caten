@@ -37,7 +37,7 @@ Users can extend this method if needed.
   (make-array dimensions :element-type (caten/utilities/dtype:dtype->lisp dtype) :displaced-to array :displaced-index-offset 0))
 
 (defmethod change-facet ((obj number) (direction (eql :tensor))) (make-scalar obj :dtype (obj-dtype-of obj)))
-
+(defmethod change-facet ((obj Tensor) (direction (eql :tensor))) obj)
 (defmethod change-facet ((obj list) direction)
   (labels ((list-dimensions (list depth)
 	     (loop repeat depth
