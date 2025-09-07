@@ -6,4 +6,5 @@
   :serial t
   :components ((:file "package")
                (:file "tensor")
+               (:file "facets")
                (:file "hlops")))

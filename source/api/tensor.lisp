@@ -7,7 +7,7 @@
   (graph graph :type TensorGraph)
   (id id :type symbol)
   (buffer nil :type (or caten/runtime/buffer:AbstractBuffer null)))
-
+;; ~~ TensorOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun tensor-simplify (tensor)
   (declare (type Tensor tensor))
   ;; 99% of computation time consist of optimize-aasm
@@ -43,7 +43,7 @@
 (defun tensor-views (tensor)
   (declare (type Tensor tensor))
   (tensor-relay-views (tensor-type tensor)))
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod print-object ((tensor Tensor) stream)
   (print-unreadable-object (tensor stream :type t)
     (format stream "{Tensor~a[~(~a~)] :shape ~a :id ~a
@@ -108,20 +108,50 @@
        (out)
        (out (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from)))))
 
+(defun make-scalar (value &key (dtype *default-float*))
+  (declare (type (or symbol number) value))
+  (tensor-from-graph (with-inlined-tir (out) (out (%load (%salloc :dtype dtype) value)))))
+;; things to handle
+;; 1. Shape Error
+;; 2. Cannot Change Facet Error
+;; 3. Broadcasting Error
+(macrolet ((def (lisp-name1 lisp-name2 lisp-name3 ir-name)
+             `(progn
+                (declaim (ftype (function (Tensor Tensor &key (:reduction boolean)) (values Tensor)) ,lisp-name3))
+                ;; Primitive Binary Operation (Private)
+                (defun ,lisp-name3 (x y &key (reduction nil))
+                  (declare (type Tensor x y) (type boolean reduction))
+                  (apply-tir (x y) (out) (out (,ir-name (tensor-node x) (tensor-node y) :reduction reduction))))
+                (declaim (ftype (function (t t &key (:reduction boolean)) (values Tensor)) ,lisp-name2))
+                (defun ,lisp-name2 (x y &key (reduction nil))
+                  ,(format nil "[TODO] Docs here")
+                  (,lisp-name3 (change-facet x :tensor) (change-facet y :tensor) :reduction reduction))
+                ,(when lisp-name1
+                   `(defun ,lisp-name1 (&rest tensors) (reduce #',lisp-name2 tensors))))))
+  (def !+    !add primitive/add-binary %add)
+  (def !-    !sub primitive/sub-binary %sub)
+  (def !*    !mul primitive/mul-binary %mul)
+  (def !/    !div primitive/div-binary %div)
+  (def nil   !move primitive/move-binary %move))
+
+(defun !contiguous (x)
+  (declare (type tensor x))
+  (!move (make-tensor (tensor-shape x) :dtype (tensor-dtype x)) x))
+
 (defun !reshape (x &rest shape)
   (declare (type Tensor x) (type list shape))
   ;; [TODO] Check total count matches
   (let ((shape (the list (alexandria:flatten shape))))
-    (apply-tir (x shape) (reshaped)
-               (reshaped
-                (%view (tensor-node x) (%shape shape :dtype *default-indexing-dtype*)
-                       (loop for i upfrom 0 below (length shape) collect (%iconst 0 :dtype *default-indexing-dtype*))
-                       (loop for i in shape collect (%iconst 0 :dtype *default-indexing-dtype*))
-                       (loop for i upfrom 0 below (length shape) collect (%iconst 1 :dtype *default-indexing-dtype*))
-                       (loop for i upfrom 0 below (length shape) collect nil)
-                       (%stride shape (ctx:getenv :DEFAULT_ORDER) :dtype *default-indexing-dtype*))))))
-(defun !add (x y)
-  (apply-tir (x y) (out) (out (%add (tensor-node x) (tensor-node y)))))
+    (!contiguous
+     (apply-tir (x shape) (reshaped)
+                (reshaped
+                 (%view (tensor-node x) (%shape shape :dtype *default-indexing-dtype*)
+                        (loop for i upfrom 0 below (length shape) collect (%iconst 0 :dtype *default-indexing-dtype*))
+                        (loop for i in shape collect (%iconst 0 :dtype *default-indexing-dtype*))
+                        (loop for i upfrom 0 below (length shape) collect (%iconst 1 :dtype *default-indexing-dtype*))
+                        (loop for i upfrom 0 below (length shape) collect nil)
+                        (%stride shape (ctx:getenv :DEFAULT_ORDER) :dtype *default-indexing-dtype*)))))))
+
 
 (defun !mul (x y)
   (apply-tir (x y) (out) (out (%mul (tensor-node x) (tensor-node y)))))
