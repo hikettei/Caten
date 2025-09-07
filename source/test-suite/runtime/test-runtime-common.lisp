@@ -1,6 +1,6 @@
 (defpackage :caten/test-suite/runtime/test-runtime-common
   (:use :rove :cl :caten/runtime/buffer :caten/runtime/runtime :caten/runtime/bring-your-own-backend)
-  (:export #:runtime-test))
+  (:export #:runtime/buffer/test #:runtime/kernel/test #:runtime-test-all))
 (in-package :caten/test-suite/runtime/test-runtime-common)
 
 (defun runtime/buffer/test (&key
@@ -22,4 +22,16 @@
             (open-buffer runtime buf)
             (ok (= 0 (transfer-into-array buf)))
             (close-buffer runtime buf)))))))
-        
+
+(defun runtime/kernel/test (&key
+                              (backend "CLANG")
+                              (dtypes '(:float64 :float32 :int64 :int32 :int16 :int8 :uint64 :uint32 :uint16 :uint8)))
+  ;; Test compiling a simple elwise sin function
+  
+  )
+
+(defun runtime-test-all (&key
+                           (backend "CLANG")
+                           (dtypes '(:float64 :float32 :int64 :int32 :int16 :int8 :uint64 :uint32 :uint16 :uint8)))
+
+  )
