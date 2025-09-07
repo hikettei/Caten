@@ -2,6 +2,18 @@
 
 (defclass TensorGraph (FastGraph) nil)
 
+(defmethod print-object ((graph TensorGraph) stream)
+  (format stream "
+TensorGraph[seen=~a, outputs=~a] {
+~a}
+"
+	  (graph-seen graph)
+	  (graph-outputs graph)
+	  (with-output-to-string (out)
+	    (dolist (node (graph-nodes (->graph-with-tpsort graph)))
+              (loop for line in (cl-ppcre:split "\\n" (print-object node nil))
+                    do (format out "    ~a~%" line))))))
+
 (defparameter *default-order* (ctx:getenv :DEFAULT_ORDER))
 (defparameter *default-float* (ctx:getenv :DEFAULT_FLOAT))
 (defparameter *default-int*   (ctx:getenv :DEFAULT_INT))
@@ -75,34 +87,31 @@ If i is a tensor, %load fills the visible area of i with value."
   "Creates a float const"
   (%load (%salloc :dtype dtype) value))
 
-(defun %stride (shape order)
+(defun %stride (shape order &key (dtype :int64))
   "Compute the stride based on permute and shape."
   (declare (type list shape)
 	   (type (member :row :column) order))
   (if (eql order :row)
-      (%row-major-calc-strides shape)
-      (%column-major-calc-strides shape)))
+      (%row-major-calc-strides shape :dtype dtype)
+      (%column-major-calc-strides shape :dtype dtype)))
 
-(defun %shape (shape &key (dtype *default-uint*))
+(defun %shape (shape &key (dtype :int64))
   "Initialize the shape."
   (declare (type list shape) (type dtype-t dtype))
   (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
     (map 'list #'const shape)))
 
-(defun %make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (from nil))
-  "A useful wrapper for %alloc. it computes stride based on order.
-%make-tensor is used to allocate the initial tensor, later weights are loaded.
-Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=nrank>"
+(defun %make-tensor (shape &key (dtype-indexing *default-int*) (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (from nil))
   (declare (type list shape)
 	   (type dtype-t dtype)
 	   (type (member :row :column) order))
   (assert (every #'(lambda (x) (or (symbolp x) (integerp x) (node-p x))) shape)
 	  ()
-	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%but got ~a" shape)
+	  "%make-tensor: Shape is designed as symbol, integer or node.~%but got ~a" shape)
   (when (= 0 (length shape))
     (assert (null from) () ":from for a scalar creation is ignored. Use %load instead.")
     (return-from %make-tensor (%salloc :dtype dtype :id id)))
-  (%alloc (length shape) (%shape shape) (%stride shape order) :dtype dtype :id id :from from))
+  (%alloc (length shape) (%shape shape :dtype dtype-indexing) (%stride shape order :dtype dtype-indexing) :dtype dtype :id id :from from))
 
 (defun %index-components (x shape &key (id (gensym "IID")))
   "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"

@@ -1,4 +1,4 @@
 (defpackage :caten/api
-  (:use :cl)
+  (:use :cl :caten/ir :caten/graph)
   (:export
    ))

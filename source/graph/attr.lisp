@@ -49,7 +49,7 @@
       (dolist (superclass direct-superclasses)
 	(format out "`~a`, " superclass)))))
 
-(defmacro defnode ((class type) (&rest direct-superclasses) description &key (type-relay nil) (placeholder 0) (verify 'identity) (slots))
+(defmacro defnode ((class type) (&rest direct-superclasses) description &key (type-relay nil) (placeholder 0) (verify 'identity) (slots) (gradient))
   "
 Defines a new node.
 
@@ -66,6 +66,7 @@ Defines a new node.
 - placeholder[(unsigned-byte 32) or -1] when mutating the node in-place, the compiler consumes the placeholder-th read buffer.
 - verify[function] a function to verify the arguments.
 - slots[list of (symbol &rest slot-options)] a list of slot definitions.
+- gradient[function] optinal parameter providing a rewriting rule for gradient computation.
 "
   (declare (type keyword class type)
 	   (type string description))

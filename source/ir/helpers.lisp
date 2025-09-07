@@ -30,20 +30,20 @@
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
 
-(defun %column-major-calc-strides (shape)
+(defun %column-major-calc-strides (shape &key (dtype :int64))
   (declare (type list shape))
-  (flet ((const (n) (if (node-p n) n (%iconst n))))
+  (flet ((const (n) (if (node-p n) n (%iconst n :dtype dtype))))
     (let* ((num-dims (length shape))
-           (strides (make-list num-dims :initial-element (%iconst 1))))
+           (strides (make-list num-dims :initial-element (%iconst 1 :dtype dtype))))
       (loop for i from 1 to (- num-dims 1) do
 	(setf (nth i strides) (%mul (const (nth (- i 1) strides)) (const (nth (- i 1) shape)))))
       strides)))
 
-(defun %row-major-calc-strides (shape)
+(defun %row-major-calc-strides (shape &key (dtype :int64))
   (declare (type list shape))
-  (flet ((const (n) (if (node-p n) n (%iconst n))))
+  (flet ((const (n) (if (node-p n) n (%iconst n :dtype dtype))))
     (let* ((num-dims (length shape))
-           (strides (make-list num-dims :initial-element (%iconst 1))))
+           (strides (make-list num-dims :initial-element (%iconst 1 :dtype dtype))))
       (loop for i downfrom (- num-dims 2) to 0 do
 	(setf (nth i strides) (%mul (const (nth (+ i 1) strides)) (const (nth (+ i 1) shape)))))
       strides)))
