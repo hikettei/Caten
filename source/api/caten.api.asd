@@ -5,4 +5,5 @@
   ("trivia" "cl-ppcre" "float-features")
   :serial t
   :components ((:file "package")
-               (:file "tensor")))
+               (:file "tensor")
+               (:file "hlops")))
