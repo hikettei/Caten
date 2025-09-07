@@ -12,9 +12,33 @@
 
 (in-package :caten/runtime/bring-your-own-backend)
 
-(defmacro define-runtime (runtime-name direct-superclasses direct-slots)
-  `(defclass ,runtime-name (,@direct-superclasses caten/ir:RuntimeGraph)
-     ,direct-slots))
+(defmacro define-backend (backend-id &key runtime buffer renderer kernel)
+  `(progn
+     (defmethod caten/runtime/runtime:backend-get-runtime-cls ((id (eql ,backend-id))) ',runtime)
+     (defmethod caten/runtime/buffer:backend-get-buffer-cls ((id (eql ,backend-id))) ',buffer)
+     (defmethod caten/runtime/renderer:backend-get-renderer-cls ((id (eql ,backend-id))) ',renderer)
+     (defmethod caten/runtime/kernel:backend-get-kernel-cls ((id (eql ,backend-id))) ',kernel)))
+
+(defmacro define-runtime (runtime-name direct-superclasses direct-slots &key (open) (close))
+  (flet ((ensure-lambda (n form name)
+           (assert (listp (car form)))
+           (assert (= n (length (car form))) () "the argument ~a excepts ~a arguments, getting ~a" n name form)
+           (apply
+            #'values
+            (append
+             (loop for i upfrom 0 below n
+                   collect (nth i (car form)))
+             (list
+              (if (= 2 (length form))
+                  (cdr form)
+                  `(progn ,@(cdr form))))))))
+    `(progn
+       (defclass ,runtime-name (,@direct-superclasses caten/ir:RuntimeGraph)
+         ,direct-slots)
+       ,(multiple-value-bind (runtime-bind form) (ensure-lambda 1 open "open")
+          `(defmethod caten/runtime/runtime:open-runtime ((,runtime-bind ,runtime-name)) ,@form))
+       ,(multiple-value-bind (runtime-bind form) (ensure-lambda 1 close "close")
+          `(defmethod caten/runtime/runtime:close-runtime ((,runtime-bind ,runtime-name)) ,@form)))))
      
 (defmacro define-buffer ((buffer-name runtime-name) direct-superclasses direct-slots
                          &key (open-buffer) (close-buffer) (transfer-from-array) (transfer-into-array) (bref))

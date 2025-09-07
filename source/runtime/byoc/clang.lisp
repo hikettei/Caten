@@ -1,11 +1,20 @@
 (defpackage :caten/byoc/clang
-  (:use :cl :caten/runtime/bring-your-own-backend :caten/graph)
+  (:use
+   :cl
+   :caten/utilities/dtype
+   :caten/graph
+   :caten/runtime/buffer     
+   :caten/runtime/bring-your-own-backend
+   :caten/graph)
   (:export
    
    ))
 (in-package :caten/byoc/clang)
 
-(define-runtime ClangRuntime () nil)
+(define-runtime ClangRuntime () nil
+  :open ((runtime) runtime)
+  :close ((runtime) runtime))
+
 (define-buffer
     (ClangBuffer ClangRuntime) ()
     nil
@@ -22,7 +31,8 @@
     :bref ((buffer idx) (aref (buffer-value buffer) idx)))
 
 (define-renderer CStyle-Renderer () nil
-  (:ADD ((:ADD (x y)) -> (format nil "~a+~a" (render x) (render y)))))
+  (:ADD ((:ADD (x y)) -> (format nil "~a+~a" (render x) (render y))))
+  )
 ;  ((:PROGN (~ x)) nil))
 
 (define-kernel (ClangKernel CStyle-Renderer) () nil
@@ -30,4 +40,4 @@
                :compile nil)
 
 ;; (define-optimizer (ClangOptimizer) :allow-profile t)
-(define-backend :CLANG)
+(define-backend :CLANG :runtime ClangRuntime :buffer ClangBuffer :kernel ClangKernel :renderer CStyle-Renderer)

@@ -159,7 +159,7 @@ Inserts the given nodes (list) into the graph.
 
 Creates a FastGraph (or subclass of FastGraph) object from the given graph."
   (declare (type graph graph))
-  (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
+  ;; (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
   (let ((fast-graph (apply #'make-instance cls (append (list :output (graph-outputs graph) :seen (graph-seen graph)) args))))
     (insert-nodes fast-graph (graph-nodes graph))
     fast-graph))

@@ -1,6 +1,7 @@
 (defpackage :caten/runtime/kernel
   (:use :cl)
   (:export
+   #:backend-get-kernel-cls
    #:Kernel
    #:kernel-name
    #:kernel-program
@@ -12,6 +13,8 @@
    #:make-kernel))
 
 (in-package :caten/runtime/kernel)
+
+(defgeneric backend-get-kernel-cls (backend-id))
 
 (defclass Kernel ()
   ((name :initarg :name :reader kernel-name)
