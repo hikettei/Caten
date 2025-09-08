@@ -59,8 +59,19 @@
      ((node graph)
       ;; actually X == Y is asserted by running graph-infer-type-relay
       (multiple-value-bind (x y) (values (id->value graph (car (node-reads node))) (id->value graph (second (node-reads node))))
-        (when (and (equal (cdr (node-reads x)) (cdr (node-reads y))) (null (getattr x :from)) (null (getattr y :from)))
-          y)))))
+        (when (and x y (equal (cdr (node-reads x)) (cdr (node-reads y))) (null (getattr x :from)) (null (getattr y :from)))
+          y))))
+    ((:VIEW (~ args))
+     ->
+     ((node graph)
+      (let ((alloc (id->value graph (car args))))
+        (when (eql (node-type alloc) :ALLOCATE)
+          (let ((alloc-rel (car (relay-writes (read-type-relay alloc))))
+                (view-rel  (car (relay-writes (read-type-relay node)))))
+            (when (tensor-relay-equal alloc-rel view-rel)
+              alloc))))))
+    ;; Typical VIEW+VIEW, solution is found by polyhedral model
+    )
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))

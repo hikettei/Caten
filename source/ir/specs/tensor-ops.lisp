@@ -18,9 +18,17 @@
    (nrank :accessor tensor-relay-nrank :initarg :nrank :initform 0 :type fixnum)
    (value :accessor tensor-relay-value :initarg :value :initform nil)))
 
+(defun tensor-relay-equal (x y)
+  (declare (type TensorRelay x y))
+  (and (equal (tensor-relay-shape x) (tensor-relay-shape y))
+       (equal (tensor-relay-stride x) (tensor-relay-stride y))
+       (equal (tensor-relay-dtype x) (tensor-relay-dtype y))
+       (equal (tensor-relay-views x) (tensor-relay-views y))
+       (= (tensor-relay-nrank x) (tensor-relay-nrank y))
+       (eql (tensor-relay-value x) (tensor-relay-value y))))
+
 (defun make-tensor-relay (shape stride dtype views &key (value nil))
   (declare (type keyword dtype))
-  (when (null views) (setf views (loop for s in shape collect nil)))
   (assert (= (length shape) (length stride) (length views)))
   (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape)))
 
@@ -279,7 +287,9 @@ out = allocate(*shape, *stride)
                          (let ((args (node-reads node))
                                (nrank (getattr node :nrank)))
                            (assert (= (length (node-reads node)) (* 2 nrank)) () "Failed to verify :ALLOCATE. Invaild number of node-reads (~a)" node)
-                           (list (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype) nil)))))
+                           (list (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype)
+                                                    (loop for sz in (subseq args 0 nrank)
+                                                          collect (list 0 sz 1 nil)))))))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
