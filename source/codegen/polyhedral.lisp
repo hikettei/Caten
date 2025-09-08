@@ -216,33 +216,12 @@ During the optimization, auto scheduler tries to minimize the floating value of 
     (explore id)
     found))
 
-(defun render-default-isl-access (ctx bp idxs loops &key (scal->array t))
-  "Renders a default memory accessing expr for scalar values."
-  (declare (type cons idxs))
-  (unless scal->array
-    (return-from render-default-isl-access "0"))
-  (multiple-value-bind (visible-name graph-id) (values (car idxs) (cdr idxs))
-    (declare (ignore graph-id))
-    ;; Scalar Memory Access: Inherits the first configuration where the scalar was defined.
-    ;; [TODO] Is it valid for all case, all kernel, all schedule? how can we prove this?
-    (when (gethash visible-name (ctx-scal->access ctx))
-      (return-from render-default-isl-access (getf (gethash visible-name (ctx-scal->access ctx)) :access)))
-    (let* ((shape (loop for l in loops for size = (getf l :size) for expr = (id->value bp size) for node = (id->value bp (car (node-reads expr)))
-                        ;; Determining the loop size from graph. (TODO: Assert RANGE(SIZE, STEM) where SIZE is always EXPR, and EXPR(LOAD(Constant)) Pattern
-                        collect (progn (assert (eql (node-type node) :LOAD)) (assert (numberp (getattr node :value))) (getattr node :value))))
-           (strides (caten/codegen/helpers:row-major-calc-strides shape))
-           (access (format nil "~{~a~^+~}" (loop for s in strides for l in loops for idx = (getf l :idx) collect (format nil "~a*~(~a~)" s idx)))))
-      (setf (gethash visible-name (ctx-scal->access ctx)) (list :access access :shape shape :strides strides))
-      access)))
-;; - [ ] Remove scal->array option? or leave it for calculating parallelism? it depends on how beam should be
-;; - implemented
-;; - [ ] QuasiAffine
 (defun render-index-for-isl (ctx index blueprint)
   (declare (type ctx ctx) (type list index) (type FastGraph blueprint))
   (assert (ctx-glo ctx) () "render-index-for-isl: Cannot render index space w/o providing Global-Lex-Order")
-  (polyaref-on-global-lex-order (ctx-glo ctx) (caten/aasm:%polyaref 'tmp (subseq index 0 (/ (length index) 2)) (subseq index (/ (length index) 2))) blueprint))
+  (polyaref-on-global-lex-order (ctx-glo ctx) (caten/ir:%polyaref 'tmp (subseq index 0 (/ (length index) 2)) (subseq index (/ (length index) 2))) blueprint))
 
-(defun render-access-for-node (ctx node loops buffers index blueprint &key (scal->array t) (getlisp))
+(defun render-access-for-node (ctx node loops buffers index blueprint &key (getlisp))
   "Render access relation for a single node"
   (multiple-value-bind (visible-id graph-id) (values (car buffers) (cdr buffers))
     (declare (ignore visible-id))
@@ -251,7 +230,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
           (list (node-id node) graph-id (render-index-for-isl ctx index blueprint))
           (format nil "~a[~a] -> ~a[~a]" (node-id node) domain graph-id (render-index-for-isl ctx index blueprint))))))
 
-(defun extract-accesses (ctx blueprint &key (scal->array t) (getlisp) &aux (reads) (writes))
+(defun extract-accesses (ctx blueprint &key (getlisp) &aux (reads) (writes))
   "Extract read and write access relations from blueprint"
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) ctx
     (loop for expr in (reverse exprs) ;; found earlier -> later
@@ -267,19 +246,19 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                  (assert (= 1 (length write-region)))
                  (dolist (w write-region)
                    (let ((macc (cons (caar w) (caar w)))) ;; visible as (caar w) but internally expr.writes[0]
-                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint :scal->array scal->array :getlisp getlisp) writes)))
+                     (push (render-access-for-node ctx expr expr-domain macc (cdr w) blueprint :getlisp getlisp) writes)))
                  (dolist (r read-region)
-                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array :getlisp getlisp) reads))))
+                   (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :getlisp getlisp) reads))))
                (otherwise ;; // EXPR
                 (let ((read-region (extract-buffer-access-info (car (node-reads expr)) blueprint)))
                   (push
                    (render-access-for-node
                     ctx expr expr-domain
                     (cons (car (node-writes expr)) (car (node-writes expr))) nil blueprint
-                    :scal->array scal->array :getlisp getlisp)
+                    :getlisp getlisp)
                    writes)
                   (dolist (r read-region)
-                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :scal->array scal->array :getlisp getlisp) reads))))))
+                    (push (render-access-for-node ctx expr expr-domain (car r) (cdr r) blueprint :getlisp getlisp) reads))))))
     (if getlisp
         (cons reads writes)
         (cons
@@ -297,7 +276,7 @@ During the optimization, auto scheduler tries to minimize the floating value of 
             do (format out "~a[~{~a~^, ~}] -> [~(~a~)]" (node-id filter) idxs idx))
     (format out "}]")))
 
-(defun rewrite-blueprint-tree->schedule-tree (ctx blueprint &key (scal->array t) &aux (visited (make-hash-table)))
+(defun rewrite-blueprint-tree->schedule-tree (ctx blueprint &aux (visited (make-hash-table)))
   "Build ISL Schedule Tree directly from blueprint structure following analyze-scop pattern"
   (declare (type Graph blueprint))
   ;; ISL Schedule starts w/ domain
@@ -348,16 +327,16 @@ During the optimization, auto scheduler tries to minimize the floating value of 
                  :domain domain :strategy strategy :opt-history nil
                  :global-lex-order global-lex-order))
 
-(defun make-polyhedral-schedule-item (blueprint &key (scal->array t) (strategy) (opt-history) (global-lex-order))
+(defun make-polyhedral-schedule-item (blueprint &key (strategy) (opt-history) (global-lex-order))
   "
 - scal->array[bool]
   - If set to T, scalar values are rendered as tensor (to maximize parallelism)
   - Otherwise, scalar values are renderered as val[0] (to maximize locality, detect illegal permutation)"
-  (declare (type FastGraph blueprint) (type boolean scal->array))
+  (declare (type FastGraph blueprint))
   (let* ((ctx (make-scop-ctx-from-blueprint blueprint))
          (domain (isl:union-set-from-str (render-domains ctx blueprint)))
-         (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint :scal->array scal->array))
-         (reads/writes (extract-accesses ctx blueprint :scal->array scal->array)) (reads) (writes))
+         (schedule (rewrite-blueprint-tree->schedule-tree ctx blueprint))
+         (reads/writes (extract-accesses ctx blueprint)) (reads) (writes))
     (handler-case (setf reads (isl:union-map-from-str (car reads/writes))
                         writes (isl:union-map-from-str (cdr reads/writes)))
       (error (c) (error "Cannot dump an access relation from the following relations:~%Reads:~%~a~%Writes:~%~a

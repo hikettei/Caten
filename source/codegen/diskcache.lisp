@@ -16,7 +16,7 @@
 
 (defun make-kernel-description (graph &key (version) (cache-polyhedral nil) (getraw nil) (glo) &aux (seen))
   (let ((renderer (make-instance 'JSONStyle-Renderer :graph graph))
-        (reads/writes (when cache-polyhedral (extract-accesses (make-scop-ctx-from-blueprint graph :glo glo) graph :scal->array nil :getlisp t)))
+        (reads/writes (when cache-polyhedral (extract-accesses (make-scop-ctx-from-blueprint graph :glo glo) graph :getlisp t)))
         (reads) (writes))
     (when reads/writes (setf reads (car reads/writes) writes (cdr reads/writes)))
     (funcall

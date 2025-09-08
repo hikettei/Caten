@@ -4,12 +4,17 @@
    :caten/codegen/polyhedral
    :caten/codegen/search
    :caten/codegen/ast
-   :caten/runtime)
+   :caten/utilities/gensym)
   (:export
    #:make-schedule-graph
    #:schedule-graph-fuse))
 
 (in-package :caten/codegen/lowerer)
+
+(defun gid (nth) (intern (format nil "_GID~d" (the fixnum nth))))
+
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Grids
   "A `Grids` is the minimum scheduling unit. It corresponds to zero or one `VIEW`, and the list of nodes contained in items must satisfy the following conditions:
@@ -228,7 +233,7 @@ Creates a ScheduleGraph from the given grpah.
                          collect item)))
           (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 1)
             (let ((dims (the list (alexandria:hash-table-keys (global-lex-order-dict schedule-space)))))
-              (caten/common.logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
+              (caten/utilities/logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
           (assert (= n-scheduled (length (the list (graph-nodes graph)))))
           (setf g (apply #'make-graph g)
                 (graph-outputs g) (copy-list (graph-outputs graph)))
@@ -485,8 +490,9 @@ This may cause a significant increase in compilation time. Please check the foll
         (multiple-value-bind (bp domain schedule constraints domain-str rarefs warefs)
             (lower-into-blueprint  storage-map id->bind iterspace gids (grids-id grids) (grids-items grids) graph grid-writes grid-reads grid-write-types grid-read-types)
           ;;        (caten/codegen/blueprint:print-blueprint bp t)
-          (setf bp (caten/aasm::%simplify-ast bp))
-          (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))            (caten/codegen/blueprint:print-blueprint bp t)
+          (setf bp (caten/ir::%simplify-ast bp))
+          (let ((args (loop for item in (graph-nodes bp) if (eql (node-type item) :DEFINE-GLOBAL) collect (car (node-writes item)))))
+            ;; (caten/codegen/blueprint:print-blueprint bp t)
             (list :grid-writes grid-writes :grid-reads (loop for a in args if (null (find a grid-writes)) collect a)
                   :domain domain :schedule schedule :constraints constraints :domain-str domain-str
                   :storage-map storage-map :reduction is-memory-intensive-p
@@ -499,7 +505,7 @@ This may cause a significant increase in compilation time. Please check the foll
 ;; - [x] KVCache Scheduling
 ;; - [x] SETF Bind failing case w/ Softmax CSE
 ;; ~~ TopLevel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun schedule-item-apply-schedule (graph item &key (allow-fission nil) (keep-scop t))
+(defun schedule-item-apply-schedule (graph item &key (keep-scop t))
   (declare (type Node item))
   (assert (eql :Affine (node-type item)))
   (let ((kernels (apply-schedule (psi-theta (getattr item :polyhedron)) (getattr item :blueprint))))
@@ -511,7 +517,7 @@ This may cause a significant increase in compilation time. Please check the foll
                      collect r))
            (kernel
              (if keep-scop
-                 (caten/aasm::%simplify-ast
+                 (caten/ir::%simplify-ast
                   (ast-merge-expr-from-aref-subgraph
                    (ast-remove-extra-memloads (car kernels) singletons)))
                  (car kernels)))
@@ -525,17 +531,16 @@ This may cause a significant increase in compilation time. Please check the foll
        (getattr item :blueprint) kernel
        (getattr item :polyhedron)
        (make-polyhedral-schedule-item
-        (getattr item :blueprint) :scal->array allow-fission
-                                  :opt-history (psi-opt-history (getattr item :polyhedron))))))
+        (getattr item :blueprint) :opt-history (psi-opt-history (getattr item :polyhedron))))))
   item)
 
-(defun schedule-graph-apply-schedule (graph &key (allow-fission nil) (keep-scop t))
+(defun schedule-graph-apply-schedule (graph &key (keep-scop t))
   "Recompute (out-of-date) blueprint w/ updated schedule."
   (declare (type ScheduleGraph graph))
   ;; [TODO] use lparallel:pdotimes, this can be parallelized.
   (dolist (item (graph-nodes graph))
     (when (eql (node-type item) :Affine)
-      (schedule-item-apply-schedule graph item :allow-fission allow-fission :keep-scop t)))
+      (schedule-item-apply-schedule graph item :keep-scop t)))
   (verify-graph graph)
   graph)
 ;; ~~ Fusion Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -671,11 +676,7 @@ This may cause a significant increase in compilation time. Please check the foll
 (defun schedule-graph-search (graph)
   "BEAM Search for Affine Schedule Items"
   (declare (type ScheduleGraph graph))
-  (let ((runtime
-          (make-runtime
-           (make-graph)
-           :runtime (caten/codegen/byoc:get-runtime-type)
-           :buffer-type (caten/codegen/byoc:get-buffer-type))))
+  (let ((runtime (caten/runtime/runtime:make-runtime)))
     (flet ((v (id) (if (symbolp id) (runtime-getvar runtime id) id)))
       (dolist (item (tpsort-graph graph))
         (ecase (node-type item)
@@ -704,7 +705,7 @@ This may cause a significant increase in compilation time. Please check the foll
 ;                                                          (psi-write-union-map (getattr item :polyhedron))))
       ;(print (psi-read-union-map  (getattr item :polyhedron)))
       ;(print (psi-write-union-map  (getattr item :polyhedron)))
-      (caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
+      ;(caten/codegen/blueprint:print-blueprint (getattr item :blueprint) t)
       )))
 ;; Memo:
 ;; - [ ] ISL = Schedule and Memory Access Separation

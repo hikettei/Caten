@@ -4,7 +4,7 @@
   :version "0.2"
   :licence "MIT"
   :depends-on ("caten.utilities" "caten.isl" "caten.graph" "caten.ir" "caten.runtime"
-               "caten.api")
+               "caten.codegen" "caten.api")
   :pathname "source"
   :serial t
   :in-order-to

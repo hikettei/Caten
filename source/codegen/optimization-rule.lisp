@@ -244,10 +244,10 @@ schedule: ... <-------|
   )
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt TileGPU))
-  (when (= 1 (slot-value (psi-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
-    (loop for root in (schedule-get-roots (psi-theta poly))
-          do (print root))
-    nil))
+  ;(when (= 1 (slot-value (psi-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
+  ;  (loop for root in (schedule-get-roots (psi-theta poly))
+  ;        do (print root))
+  nil)
 
 (defmethod optrule-apply-transform-on-blueprint ((directive-id (eql :TileGPU)) bands blueprint)
   
@@ -256,11 +256,7 @@ schedule: ... <-------|
 (defclass Parallel (OptimizationRule) nil)
 
 (defmethod optrule-generate-search-space (poly (id (eql :Parallel)))
-  (when (> (slot-value (psi-strategy poly) 'caten/codegen/byoc::ptile-max-rank) 1)
-    (loop for root in (schedule-get-roots (psi-theta poly)) do
-      (print root)
-          )
-    nil))
+  )
 
 (defmethod optrule-apply-transform-on-polyhedral (poly (opt Parallel))
 

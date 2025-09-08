@@ -7,7 +7,7 @@
   (graph graph :type TensorGraph)
   (id id :type symbol)
   (buffer nil :type (or caten/runtime/buffer:AbstractBuffer null)))
-;; ~~ TensorOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ TensorOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun tensor-simplify (tensor)
   (declare (type Tensor tensor))
   ;; 99% of computation time consist of optimize-aasm
@@ -48,7 +48,7 @@
   (declare (type Tensor tensor))
   (tensor-relay-views (tensor-type tensor)))
 
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod print-object ((tensor Tensor) stream)
   (print-unreadable-object (tensor stream :type t)
     (format stream "{Tensor~a[~(~a~)] :shape ~a :id ~a
@@ -134,7 +134,7 @@
                 ;; Primitive Binary Operation (Private)
                 (defun ,lisp-name3 (x y &key (reduction nil))
                   (declare (type Tensor x y) (type boolean reduction))
-                  (multiple-value-bind (x y) (broadcast-elwise x y)
+                  (multiple-value-bind (x y) (values x y);(broadcast-elwise x y)
                     (apply-tir (x y) (out) (out (,ir-name (tensor-node x) (tensor-node y) :reduction reduction)))))
                 (declaim (ftype (function (t t &key (:reduction boolean)) (values Tensor)) ,lisp-name2))
                 (defun ,lisp-name2 (x y &key (reduction nil))
@@ -149,12 +149,11 @@
   (def nil   !move primitive/move-binary %move)
   (def nil   !maximum primitive/maximum-binary %max)
   (def nil   !minimum primitive/minimum-binary %min))
-  
 
 (defun !contiguous (x)
   (declare (type tensor x))
   (!move (make-tensor (tensor-shape x) :dtype (tensor-dtype x)) x))
-;; ~~ MovementOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ MovementOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun !reshape (x &rest shape)
   (declare (type Tensor x) (type list shape))
   ;; [TODO] Check total count matches
@@ -282,7 +281,15 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
           (map 'list (alexandria:compose #'tensor-node #'viewrange-by) views)
           (map 'list #'viewrange-broadcast views)
           (tensor-stride x))))))
-
+;; - [ ] Shape Checkとかをちゃんと作る
+;; - [ ] VIEW Compose, How to implement them?
+;;   - [ ] Option1: Bring Back Shape Tracker
+;;   - [ ] Option2: Polyhedral Fusion
+;;     - [ ] Solve ILP
+;;     - [ ] maximize proximity(v1, v2) s.t.: deps
+;;     - [ ] MOVE(X, VIEW(X:Contiguous, *)) = VIEW(x, alpha)
+;;   - [ ] SimplifyViewsは必要
+;;   - [ ] Always Singleton Optimization: TensorGraphを*CTX*にする
 (defun !sum (x))
 (defun !matmul (x y))
 (defun tensor-realize (tensor)

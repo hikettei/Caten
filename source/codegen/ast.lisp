@@ -34,7 +34,7 @@ Returns:
     (set-option "ast_build_allow_or" 0))
   (let* ((schedule (isl:copy schedule))
          (rank
-           (caten/codegen/search/schedule:schedule-node-count-bands
+           (caten/codegen/schedule:schedule-node-count-bands
             (schedule-get-root schedule)))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
          (ast-build
@@ -281,7 +281,7 @@ Returns:
                 (node-reads node) (map 'list #'e (node-reads node)))
           (emit node)
           (setf (gethash (node-id node) (pctx-expr2args ctx))
-                (loop for arg in args collect (cons arg (caten/aasm::ast-make-subgraph *ctx* (car (node-writes arg))))))
+                (loop for arg in args collect (cons arg (caten/ir::ast-make-subgraph *ctx* (car (node-writes arg))))))
           node)))))
 ;; ~~ AST Generation (Caten/AASM Level) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Mostly following function deals w/ extra buffer allocation caused by Loop Fission
@@ -324,7 +324,7 @@ Returns:
             (dolist (usr (id->users kernel (car (node-writes user))))
               (setf (node-reads usr) (map 'list #'(lambda (x) (if (eql (car (node-writes user)) x) (getattr user :value) x)) (node-reads usr))))
             (multiple-value-bind (dtype pointer-p) (id->tensor-info (getattr user :value))
-              (insert-nodes kernel (list (%global (getattr user :value) dtype pointer-p))))))))))
+              (insert-nodes kernel (list (%global (getattr user :value) (getattr user :value) dtype pointer-p))))))))))
 
 (defun bp-rewrite-scalar->buffer (parse-ctx ctx kernels scal-ids &aux (extra-allocs))
   (declare (type list scal-ids))
@@ -335,7 +335,7 @@ Returns:
            (loop for ctx in contexts for kernel in kernels
                  append
                  (loop for expr in (reverse (ctx-exprs ctx))
-                       collect (cons expr (caten/aasm::ast-expr-graph kernel expr))))))
+                       collect (cons expr (caten/ir::ast-expr-graph kernel expr))))))
     (dolist (scal-id scal-ids)
       (labels ((lookup (node)
                  (loop for ctx in contexts
@@ -383,7 +383,7 @@ Returns:
           (dolist (blueprint kernels)
             (let* ((rewrite-context (gethash scal-id (ctx-scal->access ctx)))
                    (shape (getf rewrite-context :shape)) (stride (getf rewrite-context :strides))
-                   (argname (swpid scal-id "tmp")) (defglobal (%global argname dtype t)) (count 0))
+                   (argname (swpid scal-id "tmp")) (defglobal (%global argname argname dtype t)) (count 0))
               (assert rewrite-context)
               (push (%alloc (length shape) shape stride :dtype dtype :id argname) extra-allocs)
               ;; Rewrite the definition of scal-id if it exists in current blueprint
@@ -417,7 +417,7 @@ Returns:
 (defun verify-ast-with-context (parse-ctx ctx blueprint &aux (new-ctx (make-scop-ctx-from-blueprint blueprint)))
   ;; If there's any, rewrite val_2 -> val_2[_gid0 + gid1]
   (with-slots ((node-to-loops node-to-loops) (exprs exprs)) new-ctx
-    (let ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/aasm::ast-expr-graph blueprint expr)))))
+    (let ((expr-subgraphs (loop for expr in (reverse exprs) collect (cons expr (caten/ir::ast-expr-graph blueprint expr)))))
       (labels ((lookup (node) (reverse (gethash (node-id node) node-to-loops)))
                (find-expr-from-user (user)
                  (loop for expr in expr-subgraphs
@@ -508,7 +508,7 @@ Returns:
     (maphash
      #'(lambda (band-id bands)
          (let ((new-bp
-                 (caten/codegen/search/optimization-rule:optrule-apply-transform-on-blueprint
+                 (caten/codegen/optimization-rule:optrule-apply-transform-on-blueprint
                   (intern (directive-type (getattr (car bands) :directive)) "KEYWORD")
                   (reverse bands) blueprint)))
            (assert (graph-p new-bp) () "optrule-apply-transform-on-blueprint must return a Graph, when processing ~a, ~a" (getattr (car bands) :directive) band-id)
@@ -522,7 +522,7 @@ Returns:
   (multiple-value-bind (new-bp extra-allocs)
       (verify-ast-with-context ;; Compare the scope of all scalar variables w/ context, if theres some changes, add them as tmp buffer.
        parse-ctx (pctx-scop-ctx parse-ctx)
-       (caten/aasm::ast-simplify-expr-subgraph (caten/aasm::%simplify-ast blueprint)))
+       (caten/ir::ast-simplify-expr-subgraph (caten/ir::%simplify-ast blueprint)))
     (values (ast-concrete-sequence (ast-apply-cse (ast-concrete-sequence (apply-directives new-bp)))) extra-allocs)))
 
 (defun apply-schedule (schedule blueprint &key (ctx (make-scop-ctx-from-blueprint blueprint)))
@@ -589,9 +589,9 @@ Return (value (list kernels) tmp-buffer-allocations)
           (setf str (subseq str 0 (- (length str) 2))) ;; remove newline
           (setf str (format nil "~a{ ~{~a~^, ~} = ~a(~{~a~^, ~}) };"
                             (subseq str (length name))
-                            (caten/codegen/search/schedule:umap-get-set-list-on-id write-umap name)
+                            (caten/codegen/schedule:umap-get-set-list-on-id write-umap name)
                             name
-                            (caten/codegen/search/schedule:umap-get-set-list-on-id read-umap name)))
+                            (caten/codegen/schedule:umap-get-set-list-on-id read-umap name)))
           (isl::%isl-ast-node-set-annotation ast-node (isl::identifier-handle (isl::make-id-from-str str))))
         ast-node)))
 
