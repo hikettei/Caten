@@ -150,12 +150,6 @@
       value
       (make-scalar value :dtype *default-indexing-dtype*)))
 
-;; things to handle (when dealing (!add Tensor[3 3] Tensor[3 3]))
-;; 1. Shape Error
-;; 2. Cannot Change Facet Error
-;; 3. Broadcasting Error
-;; BinaryOps
-;; ShapeTracker?
 (macrolet ((def (lisp-name1 lisp-name2 lisp-name3 ir-name)
              `(progn
                 (declaim (ftype (function (Tensor Tensor &key (:reduction boolean)) (values Tensor)) ,lisp-name3))
@@ -252,7 +246,7 @@ Transposes the last two axes of the tensor
 Transposes `dim0` and `dim1`.
 "
   (declare (type tensor tensor))
-  (let* ((range (range 0 (tensor-relay-nrank tensor)))
+  (let* ((range (range 0 (tensor-nrank tensor)))
 	 (tmp (nth1 dim0 range)))
     (setf (nth1 dim0 range) (nth1 dim1 range)
 	  (nth1 dim1 range) tmp)
@@ -344,6 +338,11 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
           (map 'list (alexandria:compose #'tensor->id #'viewrange-by) views)
           (map 'list #'viewrange-broadcast views)
           (map 'list #'tensor->id (tensor-stride x)))))))
+;; [TODO]
+;; - [ ] ShapeError
+;; - [ ] View Compose
+;; - [ ] Renderer Bring Back, Codegen
+
 ;; - [ ] Shape Checkとかをちゃんと作る
 ;; - [ ] VIEW Compose, How to implement them?
 ;;   - [ ] Option1: Bring Back Shape Tracker
@@ -353,6 +352,12 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;;     - [ ] MOVE(X, VIEW(X:Contiguous, *)) = VIEW(x, alpha)
 ;;   - [ ] SimplifyViewsは必要
 ;;   - [ ] Always Singleton Optimization: TensorGraphを*CTX*にする
+;; things to handle (when dealing (!add Tensor[3 3] Tensor[3 3]))
+;; 1. Shape Error
+;; 2. Cannot Change Facet Error
+;; 3. Broadcasting Error
+;; BinaryOps
+;; ShapeTracker?
 (defun tensor-realize (tensor)
   (tensor-graph tensor)
   ;; lower-hlops
