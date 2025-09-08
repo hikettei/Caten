@@ -1,12 +1,11 @@
 (in-package :caten/api)
-
+;; ~~ NumpySemantic Broadcast ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun align-left (shapes)
   (let ((max-dim (reduce #'max (map 'list #'length shapes))))
     (values
      max-dim
      (loop for shape in shapes
-           collect
-           (append (make-list (- max-dim (length shape)) :initial-element 1) shape)))))
+           collect (append (make-list (- max-dim (length shape)) :initial-element 1) shape)))))
 
 (defun broadcast-shape (shapes)
   (multiple-value-bind (max-dim shapes) (align-left shapes)
@@ -22,7 +21,7 @@
     (T
      (let ((broadcasted (broadcast-shape (list (tensor-shape a) (tensor-shape b)))))
        (values (!expand a broadcasted) (!expand b broadcasted))))))
-
+;; ~~ View Parser ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftype axis-t () `(or number symbol Tensor))
 (defstruct (ViewRange
 	    (:constructor make-vrange (from to by broadcast size subscript
@@ -51,3 +50,20 @@
        (make-vrange (normalize from) (normalize to) 1 nil size subscript)) ;; A[from:to]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)) (guard by (typep to 'axis-t)))
        (make-vrange (normalize from) (normalize to) by nil size subscript))))) ;; A[from:to:by]
+;; ~~ Early View Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defsimplifier
+    (%graph-simplify-views :speed 0)
+    ;; Extra !contiguous
+    ((:MOVE ((:ALLOCATE (~ _)) (:ALLOCATE (~ _))) :reduction (guard r (null r)))
+     ->
+     ((node graph)
+      ;; actually X == Y is asserted by running graph-infer-type-relay
+      (multiple-value-bind (x y) (values (id->value graph (car (node-reads node))) (id->value graph (second (node-reads node))))
+        (when (and (equal (cdr (node-reads x)) (cdr (node-reads y))) (null (getattr x :from)) (null (getattr y :from)))
+          y)))))
+
+(defun graph-simplify-views (graph)
+  (declare (type TensorGraph graph))
+  (graph-infer-type-relay graph)
+  (%graph-simplify-views graph)
+  graph)

@@ -13,6 +13,7 @@
   ;; 99% of computation time consist of optimize-aasm
   ;; we have to optimize it
   (setf (tensor-graph tensor) (optimize-aasm (tensor-graph tensor) :heavy-opt-threshold 0))
+  (graph-simplify-views (tensor-graph tensor))
   tensor)
 
 (defun tensor-verify (tensor)
@@ -134,7 +135,7 @@
                 ;; Primitive Binary Operation (Private)
                 (defun ,lisp-name3 (x y &key (reduction nil))
                   (declare (type Tensor x y) (type boolean reduction))
-                  (multiple-value-bind (x y) (values x y);(broadcast-elwise x y)
+                  (multiple-value-bind (x y) (broadcast-elwise x y)
                     (apply-tir (x y) (out) (out (,ir-name (tensor-node x) (tensor-node y) :reduction reduction)))))
                 (declaim (ftype (function (t t &key (:reduction boolean)) (values Tensor)) ,lisp-name2))
                 (defun ,lisp-name2 (x y &key (reduction nil))
@@ -152,13 +153,15 @@
 
 (defun !contiguous (x)
   (declare (type tensor x))
-  (!move (make-tensor (tensor-shape x) :dtype (tensor-dtype x)) x))
+  (let ((dst (make-tensor (tensor-shape x) :dtype (tensor-dtype x))))
+    (apply-tir (x dst) (out) (out (%move (tensor-node dst) (tensor-node x))))))
 ;; ~~ MovementOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun !reshape (x &rest shape)
   (declare (type Tensor x) (type list shape))
   ;; [TODO] Check total count matches
   (let* ((shapes (the list (alexandria:flatten shape)))
-         (shape (loop for i in shapes if (tensor-p i) collect (tensor-node i) else collect i)))
+         (shape (loop for i in shapes if (tensor-p i) collect (tensor-node i) else collect i))
+         (x (!contiguous x)))
     (apply-tir (x shapes) (reshaped)
                (reshaped
                 (%view (tensor-node x) (%shape shape :dtype *default-indexing-dtype*)
@@ -170,7 +173,8 @@
 
 (defun permute-list (order list) (loop for nth in order collect (nth nth list)))
 (defun !permute (x &rest order)
-  (let ((order (alexandria:flatten order)))
+  (let ((order (alexandria:flatten order))
+        (x (!contiguous x)))
     (flet ((views (n views default)
              (loop for i upfrom 0 below (length views)
                    collect (or (nth n (nth i views)) (if (numberp default) default (nth i default))))))
@@ -267,7 +271,8 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 
 (defun !view (x &rest subscripts)
   (declare (type list subscripts) (type tensor x))
-  (let* ((views (map 'list #'parse-view-subscript (tensor-shape x) subscripts))
+  (let* ((x (!contiguous x))
+         (views (map 'list #'parse-view-subscript (tensor-shape x) subscripts))
          (sizes (map 'list #'vrange-size views)))
     (apply-tir
         (x (map 'list #'viewrange-from views) (map 'list #'viewrange-to views) (map 'list #'viewrange-by views) sizes)
