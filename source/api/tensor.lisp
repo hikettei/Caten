@@ -278,8 +278,8 @@ Returns a tensor with the shape of `x` broadcasted by `repeats`.
 Returns a tensor that is expanded to the shape that is specified. Expand can also increase the number of dimensions that a tensor has.
 "
   (multiple-value-bind (view-index reshape-to) (apply #'values (pad-left (tensor-shape x) shape))
-    (let ((x (if (= (tensor-nrank x) (length shape)) x (!reshape x reshape-to))))
-      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,y))) view-index reshape-to)))))
+    (let* ((x (if (= (tensor-nrank x) (length shape)) x (!reshape x reshape-to))))
+      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t (if (eql x 1) `(:~ ,y) t))) view-index reshape-to)))))
 
 (defun !squeeze (a &rest axis)
   (declare (type Tensor a))
