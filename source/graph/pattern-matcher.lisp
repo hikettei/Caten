@@ -33,6 +33,8 @@
       ((<>Node type args attrs)
        (let ((args (match args
 		     ((list (symbol-eq "~") x) `(list* ,x))
+                     ((list* (symbol-eq "list*") _)
+                      `(list* ,@(map 'list #'replace-form (cdr args))))
 		     (_ `(list ,@(map 'list #'replace-form args))))))
 	 (if recursive
 	     ;; [opt memo] fewer calls of id->value, no worth to consider optimizing it.

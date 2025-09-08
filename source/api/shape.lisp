@@ -80,6 +80,10 @@
   `(defun ,name (,@lambda-list)
      ,@body))
 ;; ~~ Early View Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun compose-view (x y)
+
+  )
+
 (defsimplifier
     (%graph-simplify-views :speed 0)
     ;; Extra !contiguous
@@ -100,8 +104,28 @@
                 (view-rel  (car (relay-writes (read-type-relay node)))))
             (when (tensor-relay-equal alloc-rel view-rel)
               alloc))))))
-    ;; Typical VIEW+VIEW, solution is found by polyhedral model
-    )
+    ;; Remove away extra contiguous
+    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) root) :reduction (guard r (null r))) rest))
+     ->
+     ((view graph)
+      ;; [TODO]
+      ;; Copyなしで直接Viewが合法かを検査する
+      (let ((root (id->value graph root)))
+        (when root
+          (let ((root-type (car (relay-writes (read-type-relay root)))))
+            (print root-type)
+            ;; UnionMapApplyRange(X, Y^-1)
+            nil)))))
+    ;; Merge two views into a single one
+    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
+     ->
+     ((view-x graph)
+      (let ((view-y (id->value graph y)))
+        (when (and view-y (eql :VIEW (node-type view-y)))
+          (print "VIEW FUSION")
+          (print view-x)
+          (print view-y)
+          nil)))))
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))
