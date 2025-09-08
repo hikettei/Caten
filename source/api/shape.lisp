@@ -24,12 +24,7 @@
 ;; ~~ View Parser ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftype axis-t () `(or number symbol Tensor))
 (defstruct (ViewRange
-	    (:constructor make-vrange (from to by broadcast size subscript
-				       &aux
-					 (from (->size from))
-					 (to (->size to))
-					 (by (->size by))
-					 (size (->size size)))))
+	    (:constructor make-vrange (from to by broadcast size subscript)))
   (from from :type Tensor) (to to :type Tensor)
   (by by :type Tensor) (broadcast broadcast :type boolean)
   (size size :type Tensor) (subscript subscript))
@@ -38,26 +33,18 @@
   (declare (type ViewRange vrange))
   (!idiv (!sub (viewrange-to vrange) (viewrange-from vrange)) (viewrange-by vrange)))
 
-(defun parse-view-subscript (g size subscript)
-  (declare (type TensorGraph g) (type axis-t size))
-  (labels ((->size1 (value)
-             (if (tensor-p value)
-                 value
-                 (if (id->value g value)
-                     (%%make-tensor g value)
-                     (if (numberp value)
-                         value
-                         (->size value)))))
-           (normalize (x) (if (and (numberp x) (< x 0)) (!add (->size1 size) (->size1 x)) (->size1 x)))
-	   (1p (x) (if (tensor-p x) (!add x (->size1 1)) (!add (->size1 x) (->size1 1)))))
+(defun parse-view-subscript (size subscript)
+  (declare (type axis-t size))
+  (flet ((normalize (x) (if (and (numberp x) (< x 0)) (!add (->size size) (->size x)) (->size x)))
+	 (1p (x) (if (tensor-p x) (!add x (->size 1)) (!add (->size x) (->size 1)))))
     (ematch subscript
-      ((list :~ n) (make-vrange 0 (normalize n) 1 t size subscript));; broadcasting (:~ N)
-      ((eql t)  (make-vrange 0 (->size1 size) 1 nil size subscript)) ;; nothing
-      ((guard x (typep x 'axis-t)) (make-vrange (normalize x) (1p (normalize x)) 1 nil (->size1 size) subscript)) ;; A[i]
+      ((list :~ n) (make-vrange (->size 0) (normalize n) (->size 1) t (->size size) subscript)) ;; broadcasting (:~ N)
+      ((eql t)  (make-vrange (->size 0) (->size size) (->size 1) nil (->size size) subscript)) ;; nothing
+      ((guard x (typep x 'axis-t)) (make-vrange (normalize x) (1p (normalize x)) (->size 1) nil (->size size) subscript)) ;; A[i]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)))
-       (make-vrange (normalize from) (normalize to) 1 nil (->size1 size) subscript)) ;; A[from:to]
+       (make-vrange (normalize from) (normalize to) (->size 1) nil (->size size) subscript)) ;; A[from:to]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)) (guard by (typep to 'axis-t)))
-       (make-vrange (normalize from) (normalize to) by nil (->size1 size) subscript))))) ;; A[from:to:by]
+       (make-vrange (normalize from) (normalize to) (->size by) nil (->size size) subscript))))) ;; A[from:to:by]
 ;; ~~ Reduction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun parse-reduce-axes (x lst)
   (declare (type tensor x))

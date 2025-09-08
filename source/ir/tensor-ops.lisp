@@ -74,12 +74,15 @@ If i is a tensor, %load fills the visible area of i with value."
 
 (defun %uconst (value &key (dtype *default-uint*))
   "Creates an unsigned integer"
+  (declare (type (or number symbol) value))
   (%load (%salloc :dtype dtype) value))
 (defun %iconst (value &key (dtype *default-int*))
   "Creates a signed integer"
+  (declare (type (or number symbol) value))
   (%load (%salloc :dtype dtype) value))
 (defun %fconst (value &key (dtype *default-float*))
   "Creates a float const"
+  (declare (type (or number symbol) value))
   (%load (%salloc :dtype dtype) value))
 
 (defun %stride (shape order &key (dtype :int64))
@@ -93,7 +96,10 @@ If i is a tensor, %load fills the visible area of i with value."
 (defun %shape (shape &key (dtype :int64))
   "Initialize the shape."
   (declare (type list shape) (type dtype-t dtype))
-  (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
+  (flet ((const (n) (if (node-p n) n
+                        (progn
+                          (assert (or (numberp n) (symbolp n)) () "%shape: ~a is not a size." n)
+                          (%load (%salloc :dtype dtype) n)))))
     (map 'list #'const shape)))
 
 (defun %make-tensor (shape &key (dtype-indexing *default-int*) (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (from nil))
