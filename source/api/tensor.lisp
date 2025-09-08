@@ -325,7 +325,6 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;;     - [ ] MOVE(X, VIEW(X:Contiguous, *)) = VIEW(x, alpha)
 ;;   - [ ] SimplifyViewsは必要
 ;;   - [ ] Always Singleton Optimization: TensorGraphを*CTX*にする
-
 (defun tensor-realize (tensor)
   (tensor-graph tensor)
   ;; lower-hlops

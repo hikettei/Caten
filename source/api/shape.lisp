@@ -71,7 +71,20 @@
 	 (setf (nth axis shape-after) 1
 	       (nth axis view-after) `(:~ ,(nth axis (tensor-shape x)))))
        (values shape-after view-after axes)))))
-;; ~~ Early View Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ ShapeError Handling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *restart-point* nil)
+(defclass Restart-Point nil nil)
+;; [TODO] Prefer @caten.trace reader macro!
+;; [TODO] caten/lang
+;; - [ ] Different Symbols will never intersect (i.e: N and M = empty)
+;; - [ ] Use UnionMap to identity two symbolics
+;; - [ ] TensorGraph.equalities (A, B)
+;; - [ ] define-compiler-macro
+;; - [ ] (defun x (a) (declare (type (Tensor ~ M N) a)))
+(defmacro %internal-caten/defun (name lambda-list &body body)
+  `(defun ,name (,@lambda-list)
+     ,@body))
+;; ~~ Early View Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defsimplifier
     (%graph-simplify-views :speed 0)
     ;; Extra !contiguous

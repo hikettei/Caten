@@ -18,6 +18,35 @@
    (nrank :accessor tensor-relay-nrank :initarg :nrank :initform 0 :type fixnum)
    (value :accessor tensor-relay-value :initarg :value :initform nil)))
 
+(define-condition Relay-Shape-Error ()
+  ((node :initarg :node :type Node)
+   (msg  :initarg :msg  :type string)
+   (concise :initarg :concise :type string)
+   (read-types :initarg :read-types :type list)
+   (pos  :initarg :pos  :type fixnum))
+  (:report
+   (lambda (c s)
+     (with-slots ((node node) (msg msg) (concise concise) (pos pos) (read-types read-types)) c
+       (princ
+        (with-output-to-string (out)
+          (format out "~a~%" msg)
+          (let ((offset 0))
+            (let ((content (format nil "  ~a(" (node-type node))))
+              (incf offset (length content))
+              (format out "~a" content))
+            (loop with lst = (1- (length read-types))
+                  for rt in read-types for r in (node-reads node) for nth upfrom 0
+                  for content = (format nil "~(~a~)[~{~a~^, ~}]~a" r (tensor-relay-shape rt) (if (= nth lst) "" ", "))
+                  if (< nth pos) do (incf offset (length content))
+                    do (format out "~a" content))
+            ;; [TODO]
+            ;; - [ ] Use render-node to debug symbolic
+            ;; - [ ] Use polyhedral model
+            (format out ")~%")
+            (dotimes (i offset) (princ " " out))
+            (format out "^ ~a~%" concise)))
+        s)))))
+
 (defun tensor-relay-equal (x y)
   (declare (type TensorRelay x y))
   (and (equal (tensor-relay-shape x) (tensor-relay-shape y))
@@ -27,6 +56,15 @@
        (= (tensor-relay-nrank x) (tensor-relay-nrank y))
        (eql (tensor-relay-value x) (tensor-relay-value y))))
 
+(defun tensor-relay-compare-shape-diff (x y &key (full nil))
+  "Enumerates distinct point comparing x and y shapes. If :full is set to T, uses polyhedral model to
+identify two symbolic shapes"
+  (declare (type TensorRelay x y))
+  (assert (null full) () "tensor-relay-compare-shape-diff: Not implemented yet.")
+  (assert (= (tensor-relay-nrank x) (tensor-relay-nrank y)) () "tensor-relay-compare-shape-diff: Rank mismatch.")
+  (loop for s1 in (tensor-relay-shape x) for s2 in (tensor-relay-shape y)
+        unless (eql s1 s2) collect (cons s1 s2)))
+
 (defun make-tensor-relay (shape stride dtype views &key (value nil))
   (declare (type keyword dtype))
   (assert (= (length shape) (length stride) (length views)))
@@ -34,8 +72,7 @@
 
 (defun copy-tensor-relay (relay)
   (declare (type TensorRelay relay))
-  (make-tensor-relay (copy-list (tensor-relay-shape relay)) (copy-list (tensor-relay-stride relay)) (tensor-relay-dtype relay)
-                     (copy-list (tensor-relay-views relay)) :value (tensor-relay-value relay)))
+  (make-tensor-relay (copy-list (tensor-relay-shape relay)) (copy-list (tensor-relay-stride relay)) (tensor-relay-dtype relay) (copy-list (tensor-relay-views relay)) :value (tensor-relay-value relay)))
 
 (defun assert-verify-tensor-relay (id->type node &key (assert-scalar nil) (nthcdr 0))
   (mapc
@@ -64,12 +101,27 @@ out <- f(x)
       (assert type () "The variable ~a is not defined in the graph?" (nth n (node-reads node)))
       (assert-verify-tensor-relay id->type node)
       (when check-shape
-        (let ((space (gethash (car (node-reads node)) id->type)))
-          (assert space)
-          (loop for id in (cdr (node-reads node))
+        (let ((space (gethash (car (node-reads node)) id->type))
+              (read-types (loop for id in (node-reads node) collect (gethash id id->type))))
+          (assert (every #'identity read-types))
+          (loop for id in (cdr (node-reads node)) for pos upfrom 1
                 for sp1 = (gethash id id->type) do
-                  (assert sp1)
-                  (assert (equal (tensor-relay-shape space) (tensor-relay-shape sp1))))))
+                  (assert sp1 () "Could not infer the type of ~a" id)
+                  (when (not (= (tensor-relay-nrank space) (tensor-relay-nrank sp1)))
+                    (error 'Relay-Shape-Error
+                           :pos pos
+                           :node node
+                           :read-types read-types
+                           :concise (format nil "Expected rank ~D to match, but got rank ~D." (tensor-relay-nrank space) (tensor-relay-nrank sp1))
+                           :msg (format nil "Rank mismatch at argument ~a." id)))
+                  (let ((diff (tensor-relay-compare-shape-diff space sp1)))
+                    (when diff
+                      (error 'Relay-Shape-Error
+                             :pos pos
+                             :node node
+                             :read-types read-types
+                             :concise (format nil "Shape Mismatch")
+                             :msg (format nil "ShapeTracker cannot prove equality for the following symbolic variables.~%(mismatch: ~{~a~^, ~})" (map 'list #'(lambda (x) (format nil "~a=~a" (car x) (cdr x))) diff))))))))
       (list
        (make-tensor-relay (copy-list (tensor-relay-shape type)) (copy-list (tensor-relay-stride type))
                           (tensor-relay-dtype type) (copy-list (tensor-relay-views type))
