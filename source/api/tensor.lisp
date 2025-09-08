@@ -107,11 +107,12 @@
 (defmacro apply-tir ((&rest variables) (&rest out-binds) &rest program)
   `(apply-tensor-graph (list ,@variables) (with-inlined-tir (,@out-binds) ,@program)))
 ;; ~~ APIS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-tensor (shape &key (dtype *default-float*) (requires-grad nil) (from nil))
+(defun make-tensor (shape &key (dtype *default-float*) (requires-grad nil) (initial-element nil) (from nil))
   (tensor-from-graph
    (with-inlined-tir
        (out)
-       (out (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from)))))
+       (x (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from))
+       (out (if initial-element (%load x initial-element) x)))))
 
 (defun make-scalar (value &key (dtype *default-float*))
   (declare (type (or symbol number) value))
@@ -150,6 +151,17 @@
   (def nil   !move primitive/move-binary %move)
   (def nil   !maximum primitive/maximum-binary %max)
   (def nil   !minimum primitive/minimum-binary %min))
+
+(macrolet ((def (lisp-name ir-name)
+             `(progn
+                (declaim (ftype (function (T) (values Tensor)) ,lisp-name))
+                (defun ,lisp-name (x)
+                  ,(format nil "[TODO] Docs here")
+                  (let ((x (change-facet x :Tensor)))
+                    (apply-tir (x) (out) (out (,ir-name (tensor-node x)))))))))
+  (def !sin %sin)
+
+  )
 
 (defun !contiguous (x)
   (declare (type tensor x))
@@ -295,8 +307,7 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;;     - [ ] MOVE(X, VIEW(X:Contiguous, *)) = VIEW(x, alpha)
 ;;   - [ ] SimplifyViewsは必要
 ;;   - [ ] Always Singleton Optimization: TensorGraphを*CTX*にする
-(defun !sum (x))
-(defun !matmul (x y))
+
 (defun tensor-realize (tensor)
   (tensor-graph tensor)
   ;; lower-hlops
