@@ -281,6 +281,24 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
     (let ((x (if (= (tensor-nrank x) (length shape)) x (!reshape x reshape-to))))
       (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,y))) view-index reshape-to)))))
 
+(defun !squeeze (a &rest axis)
+  (declare (type Tensor a))
+  (let ((axes (normalize-axes a (alexandria:flatten axis))))
+    (prog1
+        (!reshape a (loop for dim upfrom 0 for size in (tensor-shape a)
+                          if (find dim axes) do
+                            (progn
+                              (assert (eql size 1) () "!squeeze: Cannot squeeze dim size ~a" size)
+                              (setf axes (remove dim axes)))
+                          else
+                            collect size))
+      (assert (null axes) () "!squeeze: Cannot squeeze dims ~a" axes))))
+
+(defun !unsqueeze (a axis)
+  (declare (type Tensor a) (type fixnum axis))
+  (let ((axis (normalize-axis a axis :extra t)))
+    (!reshape a (append (subseq (tensor-shape a) 0 axis) (list 1) (subseq (tensor-shape a) axis)))))
+
 (defun !view (x &rest subscripts)
   (declare (type list subscripts) (type tensor x))
   (let* ((x (!contiguous x))

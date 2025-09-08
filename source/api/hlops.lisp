@@ -8,7 +8,8 @@
   (multiple-value-bind (new-shape new-view dims) (parse-reduce-axes x axis)
     (let* ((out (make-tensor new-shape :dtype (tensor-dtype x) :initial-element 0.0))
 	   (out (apply #'!view out new-view))
-	   (out (!add out x :reduction t)))
+	   (out (!add out x :reduction t))
+           (out (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view))))
       (if keepdims
-          (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view))
-          (!drop-dims out dims)))))
+          out
+          (!squeeze out dims)))))

@@ -16,12 +16,13 @@
 		 (+ (length list) nth))))
     (setf (nth idx list) value)))
 
-(defun normalize-axis (x n)
+(defun normalize-axis (x n &key (extra nil))
   (declare (type tensor x))
   (assert (integerp n) () "axes should be designed as a number, but got ~A" n)
-  (if (< n 0) (+ (tensor-nrank x) n) n))
+  (if (< n 0) (+ (if extra 1 0) (tensor-nrank x) n) n))
 
 (defun normalize-axes (x axes)
+  (declare (type tensor x))
   (if (listp axes) (map 'list #'(lambda (n) (normalize-axis x n)) axes) (list (normalize-axis x axes))))
 
 (defun pad-left (&rest shape)
