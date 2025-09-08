@@ -1,6 +1,6 @@
 (defpackage :caten/runtime/bring-your-own-backend
   (:documentation "Provides a useful macro for defining a new accelerator")
-  (:use :cl)
+  (:use :cl :caten/graph)
   (:export
    #:define-runtime
    #:define-buffer
@@ -8,6 +8,7 @@
    #:define-kernel
    #:define-backend
    #:render
+   #:const
    ))
 
 (in-package :caten/runtime/bring-your-own-backend)
@@ -73,6 +74,7 @@
           `(defmethod caten/runtime/buffer:bref ((,buffer ,buffer-name) ,index) ,@form)))))
 
 (defun render (x) (declare (ignore x)) (error "(render id) is only binded by define-renderer"))
+(defun const (x type) (declare (ignore x type)) (error "(const id type) is only binded by define-renderer"))
 (defmacro define-renderer (renderer-name direct-superclasses direct-slots &rest patterns)
   (alexandria:with-gensyms (renderer node)
     `(prog1
@@ -81,7 +83,8 @@
                do (assert (and (listp pattern) (keywordp (car pattern))) () "define-renderer: pattern := `(,node_id ,@(pattern_match_rules))")
                collect
                `(defmethod caten/runtime/renderer:%render-node ((,renderer ,renderer-name) (node-id (eql ,(car pattern))) ,node)
-                  (flet ((render (id) (caten/runtime/renderer:render-node ,renderer id)))
+                  (flet ((render (id) (caten/runtime/renderer:render-node ,renderer id))
+                         (const (id dtype) (caten/runtime/renderer:%render-const ,renderer id dtype)))
                     (caten/graph:node-ematch ,node ,@(cdr pattern))))))))
 
 (defmacro define-kernel ((kernel-name renderer-name) direct-superclasses direct-slots &key (launch) (compile))
@@ -97,3 +100,50 @@
      (defmethod caten/runtime/kernel:kernel-launch ((kernel ,kernel-name) runtime)
 
        )))
+;; ~~ Default Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(define-renderer Default-Renderer () nil
+  (:LOAD ((:LOAD (_) :value x) -> ((node graph) (const x (caten/ir:tensor-relay-dtype (car (relay-writes (read-type-relay node))))))))
+  (:RANGE ((:RANGE (~ _) :idx idx :dtype dtype) -> (const idx dtype)))
+  (:ADD ((:ADD (lhs rhs)) -> (format nil "~a+~a" (render lhs) (render rhs))))
+  (:MUL ((:MUL (lhs rhs)) -> (format nil "~a*~a" (render lhs) (render rhs))))
+  (:MOD ((:MOD (lhs rhs)) -> (format nil "~a%~a" (render lhs) (render rhs))))
+  (:IDIV ((:IDIV (lhs rhs)) -> (format nil "~a/~a" (render lhs) (render rhs))))
+  (:AND ((:AND (lhs rhs)) -> (format nil "~a and ~a" (render lhs) (render rhs))))
+  (:OR ((:OR (lhs rhs)) -> (format nil "~a or ~a" (render lhs) (render rhs))))
+  (:XOR ((:XOR (lhs rhs)) -> (format nil "~a xor ~a" (render lhs) (render rhs))))
+  (:MAX ((:MAX  (lhs rhs)) -> (format nil "max(~a, ~a)" (render lhs) (render rhs))))
+  (:NEG ((:NEG (x)) -> (format nil "-(~a)" (render x))))
+  (:NOT ((:NOT (x)) -> (format nil "!(~a)" (render x))))
+  (:SIN ((:SIN (x)) -> (format nil "sin(~a)" (render x))))
+  (:LOG2 ((:LOG2 (x)) -> (format nil "log2(~a)" (render x))))
+  (:EXP2 ((:EXP2 (x)) -> (format nil "exp2(~a)" (render x))))
+  (:RECIP ((:RECIP (x)) -> (format nil "1/(~a)" (render x))))
+  (:SQRT ((:SQRT (x)) -> (format nil "sqrt(~a)" (render x))))
+  (:!= ((:!= (_ x y)) -> (format nil "(~a!=~a)" (render x) (render y))))
+  (:< ((:< (_ x y)) -> (format nil "(~a<~a)" (render x) (render y))))
+  (:DEFINE-GLOBAL ((:DEFINE-GLOBAL () :name name :dtype dtype) -> ((node graph) (const name dtype))))
+  (:AREF ((:AREF (name idx)) -> (format nil "~a[~a]" (render name) (render idx))))
+  ;; (:PolyAref ((:PolyAref (name idx)) -> (format nil "~a[~a]" (render name) (render idx))))
+  (:MOVE ((:MOVE (_ y)) -> (render y)))
+  (:BIND ((:BIND (_) :value x) -> (const x :float32))) ;; [TODO] Determine the type of BIND
+  (:SETF ((:SETF (x y)) -> (format nil "~a = ~a" (render x) (render y))))
+  (:CAST ((:CAST (_ y) :dtype dtype) -> (format nil "(~(~a~))~a" dtype (render y))))
+  (:WHERE ((:WHERE (x y z)) -> (format nil "~a ? ~a : ~a" (render x) (render y) (render z))))
+  (:EXPR ((:EXPR (x)) -> ((node graph) (const x (caten/ir:tensor-relay-dtype (car (relay-writes (read-type-relay (id->value graph x)))))))))
+
+  ;; :PROGN
+  ;; :FOR
+  ;; :IF
+  )
+
+(defmethod caten/runtime/renderer:%render-const ((renderer Default-Renderer) obj dtype)
+  (case (if (numberp obj)
+            (uiop:symbol-call :caten/api :float-type-of obj)
+            t)
+    (:inf "_infinity")
+    (:-inf "_negative_infinity")
+    (:nan "_nan")
+    (otherwise
+     (if (eql dtype :float64)
+         (format nil "~,15f" obj)
+         (format nil "~(~a~)" obj)))))

@@ -231,8 +231,8 @@
 
 Transposes the last two axes of the tensor
 "
-  (let ((range (range 0 (tensor-relay-nrank tensor)))
-	(n (tensor-relay-nrank tensor)))
+  (let ((range (range 0 (tensor-nrank tensor)))
+	(n (tensor-nrank tensor)))
     (setf (nth (- n 2) range) (nth (- n 1) range)
 	  (nth (- n 1) range) (1- (nth (- n 2) range)))
     (!permute tensor range)))
@@ -402,3 +402,81 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;; 3. seen, reshape
 ;; POW, SIGMOIDとかはdefnode+rewriting ruleでautodiffできそう。
 ;; VIEWが無理そうだったら，!reshapeで代用
+
+(defun inf (&key (dtype *default-float*))
+  "
+```
+(inf &key (dtype *default-float*))
+```
+Returns positive infinity of the dtype for the current Common Lisp implementation.
+
+This feature is supported by [float-features](https://shinmera.github.io/float-features/)
+"
+  (ecase dtype
+    (:float64 float-features:double-float-positive-infinity)
+    (:float32 float-features:single-float-positive-infinity)
+    (:float16 (error "Not ready (TODO)"))
+    (:bfloat16 (error "Not ready (TODO)"))))
+
+(defun -inf (&key (dtype *default-float*))
+  "
+```
+(-inf &key (dtype *default-float*))
+```
+
+Returns negative infinity of the dtype for the current Common Lisp implementation.
+
+This feature is supported by [float-features](https://shinmera.github.io/float-features/)
+"
+  (ecase dtype
+    (:float64 float-features:double-float-negative-infinity)
+    (:float32 float-features:single-float-negative-infinity)
+    (:float16 (error "Not ready (TODO)"))
+    (:bfloat16 (error "Not ready (TODO)"))))
+
+(defun nan (&key (dtype *default-float*))
+  "
+```
+(nan &key (dtype *default-float*))
+```
+
+Returns NaN of the dtype for the current Common Lisp implementation.
+
+This feature is supported by [float-features](https://shinmera.github.io/float-features/)
+"
+  (ecase dtype
+    (:float64 float-features:double-float-nan)
+    (:float32 float-features:single-float-nan)
+    (:float16 (error "Not ready (TODO)"))
+    (:bfloat16 (error "Not ready (TODO)"))))
+
+(defun float-infinity-p (x)
+  (declare (type (or symbol number) x))
+  (typecase x
+    (float
+     (float-features:float-infinity-p x))
+    (t
+     nil)))
+
+(defun float-nan-p (x)
+  (declare (type (or symbol number) x))
+  (typecase x
+    (float (eql x (nan)))
+    (t
+     nil)))
+
+(declaim (ftype (function ((or symbol number)) (member :inf :-inf :nan t)) float-type-of))
+(defun float-type-of (x)
+  "
+```
+(float-type-of x)
+```
+
+Returns `:INF` if the number is negative infinity, `:-INF` if the number is negative infinity, `:nan` if the number is NaN, or T otherwise.
+"
+  (declare (type (or symbol number) x))
+  (cond
+    ((float-infinity-p x)
+     (if (> x 0) :inf :-inf))
+    ((float-nan-p x) :nan)
+    (t t)))

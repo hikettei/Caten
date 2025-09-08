@@ -7,6 +7,7 @@
    #:Global-Lex-Order-Session-Id
    #:global-lex-order-dim
    #:polyaref-on-global-lex-order
+   #:relay-on-global-lex-order
    #:*+inf*
    #:Polyhedral-Schedule-Item
    #:theta #:psi-theta
@@ -64,7 +65,7 @@ indices.
   (declare (type Global-Lex-Order global-lex-order) (type node polyaref))
   (assert (eql (node-type polyaref) :PolyAref))
   (let ((rank (getattr polyaref :nrank))
-        (renderer (make-instance 'Default-Renderer :graph graph :render-expr->expr t))
+        (renderer (make-instance 'Default-Renderer :graph graph))
         (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0))))
     (loop for i upfrom 0 below rank
           for dim = (nth (1+ i) (node-reads polyaref))
@@ -75,6 +76,40 @@ indices.
     (flet ((r (items)
              (format nil "~{~a~^+~}" (map 'list #'(lambda (x) (render-node renderer x)) items))))
       (format nil "~{~a~^, ~}" (map 'list #'r schedule-dims)))))
+
+(defun relay-on-global-lex-order (global-lex-order node relay)
+  (declare (type Global-Lex-Order global-lex-order) (type node node))
+  (let (;(renderer (make-instance 'Default-Renderer :graph graph))
+        (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0)))
+        (domain)
+        (quasiaffine))
+      ;; stride*(gid_n*by+upfrom)
+    (loop for size in (caten/ir:tensor-relay-shape relay)
+          for view in (caten/ir:tensor-relay-views relay)
+          for stride in (caten/ir:tensor-relay-stride relay)
+          for upfrom = (nth 0 view)
+          for by = (nth 2 view)
+          for broadcast = (if (nth 3 view) 0 1)
+          for nth upfrom 0
+          for gid = (format nil "_gid~a" nth)
+          for plc = (gethash stride (global-lex-order-dict global-lex-order)) do
+            (assert plc () "view-on-lex-order: The dimension ~a is not exist in scheduling space: ~a" stride (alexandria:hash-table-keys (global-lex-order-dict global-lex-order)))
+            (when (symbolp by) ;; failed
+              (return-from relay-on-global-lex-order))
+            (when (symbolp size) (push size quasiaffine))
+            (when (symbolp upfrom) (push upfrom quasiaffine))
+            (push (cons gid size) domain)
+            (push (format nil "~a*~(~a~)*~a+~(~a~)" gid by broadcast upfrom) (nth plc schedule-dims)))
+    (flet ((r (items) (format nil "~{~a~^+~}" items))
+           (s (item) (format nil "0 <= ~a <= ~(~a~)" (car item) (cdr item))))
+      (isl:union-map-from-str
+       (format nil "[~{~(~a~)~^, ~}] -> { ~a[~{~a~^, ~}] -> ~(~a~)[~{~a~^, ~}] : ~{~a~^ and ~} }"
+               (remove-duplicates quasiaffine)
+               (node-id node)
+               (reverse (map 'list #'car domain))
+               "X";(car (node-writes node))
+               (map 'list #'r schedule-dims)
+               (reverse (map 'list #'s domain)))))))
 
 (defparameter *+inf* (coerce (expt 2 32) 'double-float))
 (defclass Polyhedral-Schedule-Item ()

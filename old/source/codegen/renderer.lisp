@@ -231,16 +231,10 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :SETF)) node)
   (format nil "~a = ~a" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
 
-(defmethod %render-node ((renderer Default-Renderer) (id (eql :STORE)) node)
-  (format nil "~a" (render-node renderer (second (node-reads node)))))
-
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Allocate)) node) (format nil "0"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :CAST)) node)
   (format nil "(~(~a~))~a" (getattr node :dtype) (render-node renderer (second (node-reads node)))))
-
-(defmethod %render-node ((renderer Default-Renderer) (id (eql :INDEX-COMPONENTS)) node)
-  (render-expr 'Default-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :WHERE)) node)
   (format nil "~a ? ~a : ~a"

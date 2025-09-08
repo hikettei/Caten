@@ -673,6 +673,11 @@
 (define-isl-function map-affine-hull %isl-map-affine-hull
   (:give basic-map)
   (:take map))
+
+(define-isl-function union-map-is-single-valued %isl-union-map-is-single-valued
+  (:give boolean)
+  (:keep union-map))
+
 ;; Preimage
 (define-isl-function union-map-preimage-range-multi-aff %isl-union-map-preimage-range-multi-aff
   (:give union-map)

@@ -80,6 +80,16 @@
   `(defun ,name (,@lambda-list)
      ,@body))
 ;; ~~ Early View Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun create-glo-from-relays (&rest relays)
+  (declare (type list relays))
+  (let* ((strides (remove-duplicates (reduce #'append (map 'list #'tensor-relay-stride relays))))
+         (glo (caten/codegen/polyhedral:make-global-lex-order :session-id (gensym "SESSION")))
+         (dict (caten/codegen/polyhedral:global-lex-order-dict glo)))
+    (loop for nth upfrom 0 for stride in strides do
+      (setf (gethash stride dict) nth))
+    ;; [TODO] Quasiaffine    
+    glo))
+
 (defun compose-view (x y)
 
   )
@@ -104,27 +114,37 @@
                 (view-rel  (car (relay-writes (read-type-relay node)))))
             (when (tensor-relay-equal alloc-rel view-rel)
               alloc))))))
-    ;; Remove away extra contiguous
-    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) root) :reduction (guard r (null r))) rest))
+    ;; is_contiguous detection. Remove away extra !contiguous
+    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) root-id) :reduction (guard r (null r))) rest))
      ->
      ((view graph)
-      ;; [TODO]
-      ;; Copyなしで直接Viewが合法かを検査する
-      (let ((root (id->value graph root)))
+      (let ((root (id->value graph root-id)))
         (when root
-          (let ((root-type (car (relay-writes (read-type-relay root)))))
-            (print root-type)
-            ;; UnionMapApplyRange(X, Y^-1)
-            nil)))))
+          (let* ((root-type (car (relay-writes (read-type-relay root))))
+                 (child-type (car (relay-writes (read-type-relay view))))
+                 (glo (create-glo-from-relays root-type child-type))
+                 (child-access (caten/codegen/polyhedral:relay-on-global-lex-order glo root root-type))
+                 (view-access (caten/codegen/polyhedral:relay-on-global-lex-order glo view child-type)))
+            (when (and child-access view-access)
+              (let* ((F (isl:union-map-apply-range view-access (isl:union-map-reverse child-access)))
+                     (Mergeable (and
+                                 (isl:union-map-is-single-valued F)
+                                 (isl:union-set-equalp (isl:union-map-domain F) (isl:union-map-domain view-access)))))
+                (when Mergeable
+                  (let ((view (copy-node view)))
+                    (setf (node-id view) (gensym "NID")
+                          (car (node-reads view)) root-id)
+                    (print "SimplifyContiguous")
+                    view)))))))))
     ;; Merge two views into a single one
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
       (let ((view-y (id->value graph y)))
         (when (and view-y (eql :VIEW (node-type view-y)))
-          (print "VIEW FUSION")
-          (print view-x)
-          (print view-y)
+          ;(print "VIEW FUSION")
+          ;(print view-x)
+          ;(print view-y)
           nil)))))
 
 (defun graph-simplify-views (graph)
