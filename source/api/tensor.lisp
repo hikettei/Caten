@@ -29,26 +29,33 @@
   (declare (type Tensor tensor))
   (car (relay-writes (read-type-relay (tensor-node tensor)))))
 
-(defun tensor-shape (tensor)
+(defun tensor-shape (tensor &key (node))
   (declare (type Tensor tensor))
-  (tensor-relay-shape (tensor-type tensor)))
+  (if node
+      (map 'list #'(lambda (x) (or (id->value (tensor-graph tensor) x) x)) (tensor-relay-shape (tensor-type tensor)))
+      (tensor-relay-shape (tensor-type tensor))))
 
 (defun tensor-nrank (tensor)
   (declare (type Tensor tensor))
   (tensor-relay-nrank (tensor-type tensor)))
 
-(defun tensor-stride (tensor)
+(defun tensor-stride (tensor &key (node))
   (declare (type Tensor tensor))
-  (tensor-relay-stride (tensor-type tensor)))
+  (if node
+      (map 'list #'(lambda (x) (or (id->value (tensor-graph tensor) x) x)) (tensor-relay-stride (tensor-type tensor)))
+      (tensor-relay-stride (tensor-type tensor))))
 
 (defun tensor-dtype (tensor)
   (declare (type Tensor tensor))
   (tensor-relay-dtype (tensor-type tensor)))
 
-(defun tensor-views (tensor)
+(defun tensor-views (tensor &key (node))
   (declare (type Tensor tensor))
-  (tensor-relay-views (tensor-type tensor)))
-
+  (flet ((ensure-node (id) (or (id->value (tensor-graph tensor) id) id)))
+    (if node
+        (loop for view in (tensor-relay-views (tensor-type tensor))
+              collect (map 'list #'ensure-node view))
+        (tensor-relay-views (tensor-type tensor)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod print-object ((tensor Tensor) stream)
   (print-unreadable-object (tensor stream :type t)
@@ -107,12 +114,12 @@
 (defmacro apply-tir ((&rest variables) (&rest out-binds) &rest program)
   `(apply-tensor-graph (list ,@variables) (with-inlined-tir (,@out-binds) ,@program)))
 ;; ~~ APIS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-tensor (shape &key (dtype *default-float*) (requires-grad nil) (initial-element nil) (from nil))
-  (tensor-from-graph
-   (with-inlined-tir
-       (out)
-       (x (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from))
-       (out (if initial-element (%load x initial-element) x)))))
+(defun make-tensor (shape &key (dtype *default-float*) (requires-grad nil) (initial-element nil) (from nil) (parent nil))
+  (apply-tir
+      (parent shape)
+      (out)
+      (x (%make-tensor shape :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from))
+      (out (if initial-element (%load x initial-element) x))))
 
 (defun make-scalar (value &key (dtype *default-float*))
   (declare (type (or symbol number) value))
@@ -148,6 +155,7 @@
   (def !-    !sub primitive/sub-binary %sub)
   (def !*    !mul primitive/mul-binary %mul)
   (def !/    !div primitive/div-binary %div)
+  (def nil   !idiv primitive/idiv-binary %idiv)
   (def nil   !move primitive/move-binary %move)
   (def nil   !maximum primitive/maximum-binary %max)
   (def nil   !minimum primitive/minimum-binary %min))
@@ -165,14 +173,16 @@
 
 (defun !contiguous (x)
   (declare (type tensor x))
-  (let ((dst (make-tensor (tensor-shape x) :dtype (tensor-dtype x))))
+  (let ((dst (make-tensor (tensor-shape x :node t) :dtype (tensor-dtype x) :parent x)))
     (apply-tir (x dst) (out) (out (%move (tensor-node dst) (tensor-node x))))))
 ;; ~~ MovementOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun !reshape (x &rest shape)
   (declare (type Tensor x) (type list shape))
   ;; [TODO] Check total count matches
   (let* ((shapes (the list (alexandria:flatten shape)))
-         (shape (loop for i in shapes if (tensor-p i) collect (tensor-node i) else collect i))
+         (shape (loop for i in shapes
+                      if (tensor-p i)
+                        collect (tensor-node i) else collect (or (id->value (tensor-graph x) i) i)))
          (x (!contiguous x)))
     (apply-tir (x shapes) (reshaped)
                (reshaped
@@ -194,12 +204,12 @@
           (permuted)
           (permuted
            (%view (tensor-node x)
-                  (%shape (permute-list order (tensor-shape x)) :dtype *default-indexing-dtype*)
-                  (%shape (permute-list order (views 0 (tensor-views x) 0)) :dtype *default-indexing-dtype*)
-                  (%shape (permute-list order (views 1 (tensor-views x) (tensor-shape x))) :dtype *default-indexing-dtype*)
-                  (%shape (permute-list order (views 2 (tensor-views x) 1)) :dtype *default-indexing-dtype*)
-                  (views 3 (tensor-views x) nil)
-                  (%shape (permute-list order (tensor-stride x)) :dtype *default-indexing-dtype*)))))))
+                  (%shape (permute-list order (tensor-shape x :node t)) :dtype *default-indexing-dtype*)
+                  (%shape (permute-list order (views 0 (tensor-views x :node t) 0)) :dtype *default-indexing-dtype*)
+                  (%shape (permute-list order (views 1 (tensor-views x :node t) (tensor-shape x :node t))) :dtype *default-indexing-dtype*)
+                  (%shape (permute-list order (views 2 (tensor-views x :node t) 1)) :dtype *default-indexing-dtype*)
+                  (views 3 (tensor-views x :node t) nil)
+                  (%shape (permute-list order (tensor-stride x :node t)) :dtype *default-indexing-dtype*)))))))
 
 (defun !t (tensor)
   "
@@ -302,7 +312,7 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 (defun !view (x &rest subscripts)
   (declare (type list subscripts) (type tensor x))
   (let* ((x (!contiguous x))
-         (views (map 'list #'parse-view-subscript (tensor-shape x) subscripts))
+         (views (map 'list #'(lambda (a b) (parse-view-subscript (tensor-graph x) a b)) (tensor-shape x) subscripts))
          (sizes (map 'list #'vrange-size views)))
     (apply-tir
         (x (map 'list #'viewrange-from views) (map 'list #'viewrange-to views) (map 'list #'viewrange-by views) sizes)
@@ -315,7 +325,7 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
           (map 'list (alexandria:compose #'tensor-node #'viewrange-to) views)
           (map 'list (alexandria:compose #'tensor-node #'viewrange-by) views)
           (map 'list #'viewrange-broadcast views)
-          (tensor-stride x))))))
+          (tensor-stride x :node t))))))
 ;; - [ ] Shape Checkとかをちゃんと作る
 ;; - [ ] VIEW Compose, How to implement them?
 ;;   - [ ] Option1: Bring Back Shape Tracker
