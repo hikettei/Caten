@@ -134,7 +134,6 @@
                   (let ((view (copy-node view)))
                     (setf (node-id view) (gensym "NID")
                           (car (node-reads view)) root-id)
-                    (print "SimplifyContiguous")
                     view)))))))))
     ;; Merge two views into a single one
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
@@ -142,10 +141,21 @@
      ((view-x graph)
       (let ((view-y (id->value graph y)))
         (when (and view-y (eql :VIEW (node-type view-y)))
-          ;(print "VIEW FUSION")
-          ;(print view-x)
-          ;(print view-y)
-          nil)))))
+          (let* ((xt (car (relay-writes (read-type-relay view-x))))
+                 (yt (car (relay-writes (read-type-relay view-y))))
+                 (glo (create-glo-from-relays xt yt))
+                 (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
+                 (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo view-y yt)))
+            (when (and Xa Ya) ;; Y -> X
+              (print "CASE")
+              (print view-y)
+              (print (node-id view-y))
+              (print view-x)
+              (print ya)
+              (print xa)
+              (print (isl:union-map-coalesce (isl:union-map-detect-equalities
+                                              (isl:union-map-product xa (isl:union-map-reverse ya)))))
+              nil)))))))
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))

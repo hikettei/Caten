@@ -5,6 +5,7 @@
    #:dtype-t
    #:dtype->lisp
    #:dtype/cast)
+  (:import-from :caten/utilities/gensym #:lgensym)
   ;; from attrs.lisp
   (:export
    #:JITAble)

@@ -22,7 +22,7 @@ TensorGraph[seen=~a, outputs=~a] {
 (defun size-p (x) (or (integerp x) (node-p x)))
 (defun node->id1 (x) (if (or (symbolp x) (integerp x)) x (node->id x)))
 
-(defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")) (from nil))
+(defun %alloc (nrank shape stride &key (dtype *default-float*) (id (lgensym "ALLOC_")) (from nil))
   "Equivalent to `dtype i[shape];`
 From can be either of nil or Buffer, if buffer is specified, it loads the content of buffer instead of allocating it."
   (declare (type fixnum nrank)
@@ -41,13 +41,13 @@ stride=~a" nrank shape stride)
        (map 'list #'node->id1 stride))
     (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype :from from))))
 
-(defun %salloc (&key (dtype *default-float*) (id (gensym "SID")))
+(defun %salloc (&key (dtype *default-float*) (id (lgensym "ALLOC_")))
   "Equivalent to: `dtype i;` but nrank=0"
   (declare (type dtype-t dtype)
 	   (type symbol id))
   (emit (make-node :Buffer :Allocate (list id) nil :nrank 0 :dtype dtype)))
 
-(defun %load (node value &key (id (gensym "LID")))
+(defun %load (node value &key (id (lgensym "LOAD_")))
   "Equivalent to: `i = initial_value;` where i is a scalar of tensor.
 If i is a tensor, %load fills the visible area of i with value."
   (declare (type Node node))
@@ -102,7 +102,7 @@ If i is a tensor, %load fills the visible area of i with value."
                           (%load (%salloc :dtype dtype) n)))))
     (map 'list #'const shape)))
 
-(defun %make-tensor (shape &key (dtype-indexing *default-int*) (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (from nil))
+(defun %make-tensor (shape &key (dtype-indexing *default-int*) (dtype *default-float*) (order *default-order*) (id (lgensym "ALLOC_")) (from nil))
   (declare (type list shape)
 	   (type dtype-t dtype)
 	   (type (member :row :column) order))
@@ -114,13 +114,13 @@ If i is a tensor, %load fills the visible area of i with value."
     (return-from %make-tensor (%salloc :dtype dtype :id id)))
   (%alloc (length shape) (%shape shape :dtype dtype-indexing) (%stride shape order :dtype dtype-indexing) :dtype dtype :id id :from from))
 
-(defun %index-components (x shape &key (id (gensym "IID")))
+(defun %index-components (x shape &key (id (lgensym "IC_")))
   "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"
   (declare (type node x) (type list shape))
   (emit (make-node :Indexing :Index-Components (list id) `(,(node->id x) ,@(map 'list #'node->id (%stride shape :row))))))
 
 (macrolet ((def (fname opname)
-	     `(defun ,fname (x &key (id (gensym "UID")))
+	     `(defun ,fname (x &key (id (lgensym "ID_")))
 		(declare (type (or number symbol node) x))
 		(emit (make-node :UnaryOps ,opname (list id) (list (node->id1 x)))))))
   (def %neg   :NEG)
@@ -131,7 +131,7 @@ If i is a tensor, %load fills the visible area of i with value."
   (def %sqrt  :SQRT)
   (def %not   :NOT))
 ;; x <- cast(y)
-(defun %cast (x y dtype &key (id (gensym "CID")))
+(defun %cast (x y dtype &key (id (lgensym "ID_")))
   (declare (type node x y) (type dtype-t dtype))
   (emit (make-node :UnaryOps :CAST (list id) (list (node->id x) (node->id y)) :dtype dtype)))
 ;; BinaryOps := [MOVE, Add, Mul, NEQ, LT, AND, OR, MAX, GCD]
@@ -139,7 +139,7 @@ If i is a tensor, %load fills the visible area of i with value."
 ;; reduction = t   -> | a += b
 (defparameter *wrap-around-mode* nil)
 (macrolet ((def (fname opname &optional possibly-overflow)
-	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil) (wrap-around ,(if possibly-overflow '*wrap-around-mode* nil)))
+	     `(defun ,fname (x y &key (id (lgensym "ID_")) (reduction nil) (wrap-around ,(if possibly-overflow '*wrap-around-mode* nil)))
 		"If wrap-around=t -> (mod (op x y) (max_value_of (dtype x)))"
 		(declare (type (or number symbol node) x y))
 		(when (and (null ,possibly-overflow) wrap-around)
@@ -155,13 +155,13 @@ If i is a tensor, %load fills the visible area of i with value."
   (def %max :MAX)
   (def %mod :MOD))
 
-(defun %min (x y &key (id (gensym "BID")) (reduction nil)) (%neg (%max (%neg x) (%neg y) :reduction reduction) :id id))
-(defun %sub (x y &key (reduction nil) (id (gensym "BID"))) (%add x (%neg y) :reduction reduction :id id))
-(defun %div (x y &key (reduction nil) (id (gensym "BID"))) (%mul x (%recip y) :reduction reduction :id id))
+(defun %min (x y &key (id (lgensym "ID_")) (reduction nil)) (%neg (%max (%neg x) (%neg y) :reduction reduction) :id id))
+(defun %sub (x y &key (reduction nil) (id (lgensym "ID_"))) (%add x (%neg y) :reduction reduction :id id))
+(defun %div (x y &key (reduction nil) (id (lgensym "ID_"))) (%mul x (%recip y) :reduction reduction :id id))
 
 ;; CompareOps: map <- [map{bool}, x, y]
 (macrolet ((def (fname opname)
-	     `(defun ,fname (shape order x y &key (id (gensym "BID")) (out nil))
+	     `(defun ,fname (shape order x y &key (id (lgensym "ID_")) (out nil))
 		(declare (type (or number symbol node) x y))
 		(let ((out (or
 			    out
@@ -172,12 +172,12 @@ If i is a tensor, %load fills the visible area of i with value."
   (def %!= :!=)
   (def %< :<))
 
-(defun %= (shape order x y &key out (id (gensym "BID")))  (%not (%!= shape order x y :out out) :id id))
-(defun %<= (shape order x y &key out (id (gensym "BID"))) (%or (%< shape order x y :out out) (%= shape order x y :out out) :id id))
-(defun %>  (shape order x y &key out (id (gensym "BID"))) (%not (%<= shape order x y :out out) :id id))
-(defun %>= (shape order x y &key out (id (gensym "BID"))) (%or (%> shape order x y :out out) (%= shape order x y :out out) :id id))
+(defun %= (shape order x y &key out (id (lgensym "ID_")))  (%not (%!= shape order x y :out out) :id id))
+(defun %<= (shape order x y &key out (id (lgensym "ID_"))) (%or (%< shape order x y :out out) (%= shape order x y :out out) :id id))
+(defun %>  (shape order x y &key out (id (lgensym "ID_"))) (%not (%<= shape order x y :out out) :id id))
+(defun %>= (shape order x y &key out (id (lgensym "ID_"))) (%or (%> shape order x y :out out) (%= shape order x y :out out) :id id))
 
-(defun %where (condition x y &key (id (gensym "WID")))
+(defun %where (condition x y &key (id (lgensym "ID_")))
   "id = where(condition, x{true-then}, y{false-then})"
   (declare (type node condition x y))
   (emit (make-node :TernaryOps :WHERE (list id) (list (node->id condition) (node->id x) (node->id y)))))
@@ -250,7 +250,7 @@ If i is a tensor, %load fills the visible area of i with value."
 ;;	       id nrank shape dtype view-from view-to view-by broadcast stride)
 	))))
 
-(defun %view (base shape from to by broadcast stride &key (id (gensym "VID")))
+(defun %view (base shape from to by broadcast stride &key (id (lgensym "ID_")))
   "Creates a view against base. (views are only created against the original buffer)
 Permute is an optional parameter and does nothing, but MUST required to enable Polyhedral Compiler, to inference an index of iteration by type-relay.lisp"
   ;; Allocation w/o allocation
