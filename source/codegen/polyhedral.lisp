@@ -98,7 +98,7 @@ indices.
             (when (symbolp size) (push size quasiaffine))
             (when (symbolp upfrom) (push upfrom quasiaffine))
             (push (cons gid size) domain)
-            (push (format nil "~a*~(~a~)+~(~a~)" gid by upfrom) (nth plc schedule-dims)))
+            (push (format nil "~(~a~)*~a+~(~a~)" gid by upfrom) (nth plc schedule-dims)))
     (flet ((r (items) (format nil "~{~a~^+~}" items))
            (s (item) (format nil "0 <= ~a <= ~(~a~)" (car item) (cdr item))))
       (isl:union-map-from-str

@@ -678,6 +678,9 @@
   (:give boolean)
   (:keep union-map))
 
+(define-isl-function union-map-params %isl-union-map-params
+  (:give set)
+  (:take union-map))
 ;; Preimage
 (define-isl-function union-map-preimage-range-multi-aff %isl-union-map-preimage-range-multi-aff
   (:give union-map)
