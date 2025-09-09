@@ -114,6 +114,15 @@
                 (view-rel  (car (relay-writes (read-type-relay node)))))
             (when (tensor-relay-equal alloc-rel view-rel)
               alloc))))))
+    ((:VIEW (list* (:VIEW (~ _)) _))
+     ->
+     ((node graph)
+      (let ((val (id->value graph (car (node-reads node)))))
+        (assert val)
+        (let ((node (copy-node node)))
+          (setf (node-id node) (gensym "NID")
+                (car (node-reads node)) (car (node-reads val)))
+          node))))
     ;; is_contiguous detection. Remove away extra !contiguous
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) root-id) :reduction (guard r (null r))) rest))
      ->
@@ -147,14 +156,24 @@
                  (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
                  (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo view-y yt)))
             (when (and Xa Ya) ;; Y -> X
+              ;; MOVE Toplevel:
+              ;; A -> CONTIGUOUS -> B
+              ;; A(CONTIGUOUS(B, i))はB(i)のどこに相当するかを考える
+              ;; 1 30 20
+              ;;     | Broadcast, but it is doable w/o applying contiguous
+              ;; 600 30 20
               (print "CASE")
               (print view-y)
               (print (node-id view-y))
               (print view-x)
               (print ya)
               (print xa)
-              (print (isl:union-map-coalesce (isl:union-map-detect-equalities
-                                              (isl:union-map-product xa (isl:union-map-reverse ya)))))
+              ;; ;; VIEW: (0 0 1) removal
+              (let ((F (isl:union-map-reverse (isl:union-map-apply-range ya (isl:union-map-reverse xa)))))
+                (print "Merged")
+                (print F)
+                ;; VIEW_YをFに従ってRemappingすればFusion?
+                )
               nil)))))))
 
 (defun graph-simplify-views (graph)

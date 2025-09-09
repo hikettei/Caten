@@ -199,9 +199,7 @@
                (reshaped
                 (%view (tensor-node x) (%shape shape :dtype *default-indexing-dtype*)
                        (loop for i upfrom 0 below (length shape) collect (%iconst 0 :dtype *default-indexing-dtype*))
-                       (loop for i in shape collect (%iconst 0 :dtype *default-indexing-dtype*))
                        (loop for i upfrom 0 below (length shape) collect (%iconst 1 :dtype *default-indexing-dtype*))
-                       (loop for i upfrom 0 below (length shape) collect nil)
                        (%stride shape (ctx:getenv :DEFAULT_ORDER) :dtype *default-indexing-dtype*))))))
 
 (defun permute-list (order list) (loop for nth in order collect (nth nth list)))
@@ -210,7 +208,7 @@
         (x (!contiguous x)))
     (flet ((views (n views default)
              (loop for i upfrom 0 below (length views)
-                   collect (or (nth n (nth i views)) (if (numberp default) default (nth i default)))))
+                   collect (or (nth n (nth i views)) default)))
            (ids (lst) (map 'list #'tensor->id lst)))
       (apply-tir (x)
           (permuted)
@@ -218,9 +216,7 @@
            (%view (tensor-node x)
                   (%shape (ids (permute-list order (tensor-shape x))) :dtype *default-indexing-dtype*)
                   (%shape (ids (permute-list order (views 0 (tensor-views x) 0))) :dtype *default-indexing-dtype*)
-                  (%shape (ids (permute-list order (views 1 (tensor-views x) (tensor-shape x)))) :dtype *default-indexing-dtype*)
-                  (%shape (ids (permute-list order (views 2 (tensor-views x) 1))) :dtype *default-indexing-dtype*)
-                  (views 3 (tensor-views x) nil)
+                  (%shape (ids (permute-list order (views 1 (tensor-views x) 1))) :dtype *default-indexing-dtype*)
                   (%shape (ids (permute-list order (tensor-stride x))) :dtype *default-indexing-dtype*)))))))
 
 (defun !t (tensor)
@@ -334,10 +330,10 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
           (tensor-node x)
           (map 'list #'tensor->id sizes)
           (map 'list (alexandria:compose #'tensor->id #'viewrange-from) views)
-          (map 'list (alexandria:compose #'tensor->id #'viewrange-to) views)
           (map 'list (alexandria:compose #'tensor->id #'viewrange-by) views)
-          (map 'list #'viewrange-broadcast views)
-          (map 'list #'tensor->id (tensor-stride x)))))))
+          (loop for bc in (map 'list #'viewrange-broadcast views)
+                for st in (map 'list #'tensor->id (tensor-stride x))
+                if bc collect (%iconst 0 :dtype *default-indexing-dtype*) else collect st))))))
 ;; [TODO]
 ;; - [ ] ShapeError
 ;; - [ ] View Compose

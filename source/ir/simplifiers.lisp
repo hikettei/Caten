@@ -20,7 +20,7 @@
 	  (with-context-nodes (m1 (%salloc :dtype dtype :id id)))
 	  (with-context-nodes
 	    (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
-	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
+	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) stride :id (node->id node)) m1)))))))
 
 ;; [TODO] Cache by hash-table
 (defun symbol-lexiographical-idx (symbol &aux (total 0) (inc 100))
@@ -101,7 +101,7 @@
           (node-writes node) new-shape
           :nrank nrank :dtype dtype :from from))))))
 
-(defun sfold-view (ss node graph nrank broadcast)
+(defun sfold-view (ss node graph nrank)
   (declare (type list ss) (type node node) (type graph graph) (optimize (speed 3)))
   (when ss
     (let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
@@ -118,7 +118,7 @@
 	   (make-node
 	    :Buffer :View
 	    (node-writes node) new-views
-	    :nrank nrank :broadcast broadcast)))))))
+	    :nrank nrank)))))))
 
 (defun c1pmc2p=mc1c2p (dtype1 dtype2 m c1 c2 p) (when (eql dtype1 dtype2) (with-context-nodes (out (%add M (%mul (%load (%salloc :dtype dtype1) (+ c1 c2)) P))))))
 ;; [TODO] Logical AND/XOR/OR for threefry2x32
@@ -290,9 +290,9 @@
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype :from from)
      ->
      ((node graph) (sfold-allocate ss node graph nrank dtype from)))
-    ((:View (~ ss) :broadcast broadcast :nrank nrank)
+    ((:View (~ ss) :nrank nrank)
      ->
-     ((node graph) (sfold-view ss node graph nrank broadcast))))
+     ((node graph) (sfold-view ss node graph nrank))))
 
 (defun fold-constant (graph &key (debug-opt nil))
   (apply-fold-constant graph :debug-opt debug-opt)

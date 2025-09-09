@@ -341,7 +341,7 @@ out = allocate(*shape, *stride)
                            (assert (= (length (node-reads node)) (* 2 nrank)) () "Failed to verify :ALLOCATE. Invaild number of node-reads (~a)" node)
                            (list (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype)
                                                     (loop for sz in (subseq args 0 nrank)
-                                                          collect (list 0 sz 1 nil)))))))
+                                                          collect (list 0 1)))))))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
@@ -359,15 +359,14 @@ out = x;
 	 "Creates a view object of the tensor in a first read.
 `View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
 ```
-out = view(x, *shape-new, *upfrom, *below, *by, *stride-new)
+out = view(x, *shape-new, *upfrom, *by, *stride-new)
 ```
 upfrom and below describes the multi-dimensional offset of the tensor. Caten applies an operation to out in the range of `[upfrom, below)`. by indicates the step of stride. the out tensor is reinitialized with `shape-new` and stride-new`.
 View has an attribute `broadcast[list]`, this indicates the stride of thecorresponding axis is recognised as 0 if set to T.
 
 - nrank[(unsigned-byte 32)] the rank of viewed tensor.
-- broadcast[list] broadcasting order.
 "
-	 :slots ((nrank :type (unsigned-byte 32)) (broadcast :type list))
+	 :slots ((nrank :type (unsigned-byte 32)))
          :type-relay #'(lambda (id->type node)
                          (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
                          (macrolet ((nsubseq (x y z) `(subseq ,x (1+ ,y) (1+ ,z))))
@@ -375,15 +374,13 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
                                   (nrank (getattr node :nrank))
                                   (shape (nsubseq args 0 nrank))
                                   (upfrom (nsubseq args nrank (* 2 nrank)))
-                                  (below (nsubseq args (* 2 nrank) (* 3 nrank)))
-                                  (by (nsubseq args (* 3 nrank) (* 4 nrank)))
-                                  (stride (nsubseq args (* 4 nrank) (* 5 nrank)))
-                                  (bc (getattr node :broadcast))
+                                  (by (nsubseq args (* 2 nrank) (* 3 nrank)))
+                                  (stride (nsubseq args (* 3 nrank) (* 4 nrank)))
                                   (base (gethash (car (node-reads node)) id->type)))
                              (assert base ())
-                             (assert (= (length (node-reads node)) (+ 1 (* 5 nrank))) () "Failed to verify :VIEW~%Invaild number of node-reads (~a)" node)
+                             (assert (= (length (node-reads node)) (+ 1 (* 4 nrank))) () "Failed to verify :VIEW~%Invaild number of node-reads (~a)" node)
                              (list
-                              (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i below) (nth i by) (nth i bc)))))))))
+                              (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i by)))))))))
 
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)

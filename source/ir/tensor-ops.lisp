@@ -212,13 +212,11 @@ If i is a tensor, %load fills the visible area of i with value."
 			       (broadcast1 (getattr node :broadcast))
 			       (shape1     (subseq1p (node-reads node) 0 nrank1))
 			       (view-from1 (subseq1p (node-reads node) nrank1 (+ nrank1 nrank1)))
-			       (view-to1   (subseq1p (node-reads node) (+ nrank1 nrank1) (* 3 nrank1)))
-			       (view-by1   (subseq1p (node-reads node) (* 3 nrank1) (* 4 nrank1)))
-			       (stride1    (subseq1p (node-reads node) (* 4 nrank1) (* 5 nrank1))))			       
+			       (view-by1   (subseq1p (node-reads node) (+ nrank1 nrank1) (* 3 nrank1)))
+			       (stride1   (subseq1p (node-reads node) (* 3 nrank1) (* 4 nrank1))))
 			  (update nrank nrank1)
 			  (update broadcast broadcast1)
 			  (update view-from view-from1)
-			  (update view-to view-to1)
 			  (update view-by view-by1)
 			  (when (not (some #'identity1 shape1))
 			    (update shape shape1))
@@ -250,42 +248,38 @@ If i is a tensor, %load fills the visible area of i with value."
 ;;	       id nrank shape dtype view-from view-to view-by broadcast stride)
 	))))
 
-(defun %view (base shape from to by broadcast stride &key (id (lgensym "ID_")))
+(defun %view (base shape from by stride &key (id (lgensym "ID_")))
   "Creates a view against base. (views are only created against the original buffer)
 Permute is an optional parameter and does nothing, but MUST required to enable Polyhedral Compiler, to inference an index of iteration by type-relay.lisp"
   ;; Allocation w/o allocation
   (declare (type node base)
-	   (type list from to by broadcast shape stride))
+	   (type list from by shape stride))
   (flet ((->const (x)
 	   (if (node-p x)
 	       x
 	       (%iconst x))))
     (setf from   (map 'list #'->const from)
-	  to     (map 'list #'->const to)
 	  by     (map 'list #'->const by)
 	  shape  (map 'list #'->const shape)
 	  stride (map 'list #'->const stride)))
-  (assert (and (every #'size-p to) (every #'size-p by) (every #'size-p from))
+  (assert (and (every #'size-p by) (every #'size-p from))
 	  ()
 	  "Assertion Failed: from/to/by must be a list of Node or integer.")
-  (assert (= (length from) (length to) (length by) (length broadcast) (length shape) (length stride))
+  (assert (= (length from) (length by) (length shape) (length stride))
 	  ()
 	  "Assertion Failed: the rank must be determined before the compilation.
 nrank=~a
-shape=~a
-stride=~a
-broadcast=~a"
-	  from to by broadcast)
+stride=~a"
+	  from by)
   (let ((nrank (length from)))
     (emit (make-node :Buffer :View
 		     (list id)
 		     (append (list (node->id1 base))
 			     (map 'list #'node->id1 shape)
 			     (map 'list #'node->id1 from)
-			     (map 'list #'node->id1 to)
 			     (map 'list #'node->id1 by)
 			     (map 'list #'node->id1 stride))
-		     :nrank nrank :broadcast broadcast))))
+		     :nrank nrank))))
 
 (defmethod print-node ((node Node) (id (eql :View)))
   (let ((nrank (getattr node :nrank)))
@@ -297,9 +291,7 @@ broadcast=~a"
 		(car (node-reads node))
 		(render-list (subseq1p (node-reads node) 0 nrank))
 		(let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
-		      (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
-		      (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
-		      (bc (getattr node :broadcast)))
+		      (by (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank))))
 		  (render-list
-		   (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-		(render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))))
+		   (map 'list #'(lambda (x y) (format nil "(~a)" (render-list (list x y)))) upfrom by)))
+		(render-list (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank))))))))

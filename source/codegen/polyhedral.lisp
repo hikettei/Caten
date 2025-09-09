@@ -88,8 +88,7 @@ indices.
           for view in (caten/ir:tensor-relay-views relay)
           for stride in (caten/ir:tensor-relay-stride relay)
           for upfrom = (nth 0 view)
-          for by = (nth 2 view)
-          for broadcast = (if (nth 3 view) 0 1)
+          for by = (nth 1 view)
           for nth upfrom 0
           for gid = (format nil "_gid~a" nth)
           for plc = (gethash stride (global-lex-order-dict global-lex-order)) do
@@ -99,7 +98,7 @@ indices.
             (when (symbolp size) (push size quasiaffine))
             (when (symbolp upfrom) (push upfrom quasiaffine))
             (push (cons gid size) domain)
-            (push (format nil "~a*~(~a~)*~a+~(~a~)" gid by broadcast upfrom) (nth plc schedule-dims)))
+            (push (format nil "~a*~(~a~)+~(~a~)" gid by upfrom) (nth plc schedule-dims)))
     (flet ((r (items) (format nil "~{~a~^+~}" items))
            (s (item) (format nil "0 <= ~a <= ~(~a~)" (car item) (cdr item))))
       (isl:union-map-from-str

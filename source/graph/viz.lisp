@@ -89,21 +89,16 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                         (with-output-to-string (out)
                           (format
                            out
-                           "{VIEW|shape=[~a]~a|masks=[~a]~a~a}"
+                           "{VIEW|shape=[~a]~a|masks=[~a]~a}"
                            (subseq1p (node-reads node) 0 nrank)
                            (if (every #'numberp (subseq1p (node-reads node) 0 nrank))
                                (format nil ", size=(~a)" (apply #'* (subseq1p (node-reads node) 0 nrank)))
                                "")
 	                   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
-	                         (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
-                                 (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
-                                 (bc (getattr node :broadcast)))
+                                 (by (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank))))
 		             (render-list
-		              (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-                           (format nil "|stride=~a" (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
-                           (if (getattr node :permute)
-                               (format nil "|permute=~a" (getattr node :permute))
-                               "")))))
+		              (map 'list #'(lambda (x y) (format nil "(~a)" (render-list (list x y)))) upfrom by)))
+                           (format nil "|stride=~a" (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))))))
                     (helper/color :node) "filled, solid"))
              (otherwise
               (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :input) "filled, solid"))))

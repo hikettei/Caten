@@ -310,14 +310,11 @@ This may cause a significant increase in compilation time. Please check the foll
                    (map 'list #'(lambda (x) (guard-scalar x :allow-raw t)) (tensor-relay-stride relay))
                    (loop for nth upfrom 0 below (tensor-relay-nrank relay)
                          for v = (nth nth (tensor-relay-views relay))
-                         for gid = (nth nth gids) ;; (upfrom below by broadcast)
-                         if (fourth v) ;; broadcasted
-                           collect (guard-scalar 0)
-                         else
-                           collect
-                           (if (null v)
-                               gid
-                               (%add (guard-scalar (car v)) (%mul (guard-scalar (third v)) gid))))))
+                         for gid = (nth nth gids) ;; (upfrom by)
+                         collect
+                         (if (null v)
+                             gid
+                             (%add (guard-scalar (car v)) (%mul (guard-scalar (second v)) gid))))))
                 (%insert-item (item)
                   ;; Output/Reduction
                   (loop for w in (node-writes item)
