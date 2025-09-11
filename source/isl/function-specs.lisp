@@ -500,6 +500,10 @@
 (defun set-get-dim-id (set type pos)
   (%make-identifier (%isl-set-get-dim-id (set-handle set) type pos)))
 
+(export 'set-get-dim-name)
+(defun set-get-dim-name (set type pos)
+  (%isl-set-get-dim-name (set-handle set) type pos))
+
 (define-isl-function set-get-tuple-id %isl-set-get-tuple-id
   (:give identifier)
   (:keep set))
@@ -674,6 +678,10 @@
   (:give basic-map)
   (:take map))
 
+(define-isl-function set-affine-hull %isl-set-affine-hull
+  (:give basic-set)
+  (:take set))
+
 (define-isl-function union-map-is-single-valued %isl-union-map-is-single-valued
   (:give boolean)
   (:keep union-map))
@@ -769,6 +777,7 @@
 (export 'map-is-equal)
 (defun map-is-equal (m1 m2)
   (eql :bool-true (%isl-map-is-equal (map-handle m1) (map-handle m2))))
+
 (define-isl-function map-wrap %isl-map-wrap
   (:give set)
   (:take map))
@@ -1781,3 +1790,20 @@
 (define-isl-function isl-printer-to-str %isl-printer-to-str
   (:give isl-printer)
   (:parm context *context*))
+;;;; Matrix
+(export 'basic-map-equalities-matrix)
+(defun basic-map-equalities-matrix (bmap &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+  (assert (= 5 (length order)))
+  (%make-mat (apply #'%isl-basic-map-equalities-matrix (basic-map-handle bmap) order)))
+(export 'basic-mat-inequalities-matrix)
+(defun basic-mat-inequalities-matrix (bmap &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+  (assert (= 5 (length order)))
+  (%make-mat (apply #'%isl-basic-map-inequalities-matrix (basic-map-handle bmap) order)))
+(export 'basic-set-equalities-matrix)
+(defun basic-set-equalities-matrix (bset &key (order (list :dim-cst :dim-param :dim-set :dim-div)))
+  (assert (= 4 (length order)))
+  (%make-mat (apply #'%isl-basic-set-equalities-matrix (basic-set-handle bset) order)))
+(export 'basic-set-inequalities-matrix)
+(defun basic-set-inequalities-matrix (bset &key (order (list :dim-cst :dim-param :dim-set :dim-div)))
+  (assert (= 4 (length order)))
+  (%make-mat (apply #'%isl-basic-set-inequalities-matrix (basic-set-handle bset) order)))

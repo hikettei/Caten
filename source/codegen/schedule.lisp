@@ -45,6 +45,7 @@
    #:umap-get-set-list-on-id
    #:%foreach-map
    #:%foreach-set
+   #:%foreach-bset
    #:align-params/umap
    #:align-params/uset
    #:schedule-detect-coalesce
@@ -1158,6 +1159,20 @@ If DOMAIN-NAME is provided, only maps whose domain tuple name equals it are used
       (isl::%isl-union-set-foreach-set
        (isl::union-set-handle uset)
        (cffi:callback %each-set-cb)
+       (cffi:null-pointer)))))
+
+(progn ;; foreach-bset
+  (defparameter *%foreach-bset-fn* nil)  ; dynamic: (map) -> nil
+  (cffi:defcallback %each-bset-cb :int ((bs :pointer) (user :pointer))
+    (declare (ignore user))
+    (when *%foreach-bset-fn* (funcall *%foreach-bset-fn* (isl::%make-basic-set bs)))
+    0)
+  (defun %foreach-bset (set fn)
+    (declare (type isl::set set))
+    (let ((*%foreach-bset-fn* fn))
+      (isl::%isl-set-foreach-basic-set
+       (isl::set-handle set)
+       (cffi:callback %each-bset-cb)
        (cffi:null-pointer)))))
 
 (progn ;; foreach-pwa

@@ -396,3 +396,17 @@
   (def schedule-node-error))
 ;;;; printer
 (define-isl-object isl-printer :free %isl-printer-free)
+;;;; matrix
+(define-isl-object mat
+  :free %isl-mat-free
+  :copy %isl-mat-copy)
+
+(defmethod print-object ((mat mat) stream)
+  (print-unreadable-object (mat stream :type t)
+    (format stream ":rows ~a :cols ~a~%~a" (%isl-mat-rows (mat-handle mat)) (%isl-mat-cols (mat-handle mat))
+            (with-output-to-string (out)
+              (dotimes (i (%isl-mat-rows (mat-handle mat)))
+                (format out "    ")
+                (dotimes (j (%isl-mat-cols (mat-handle mat)))
+                  (format out "~a " (%isl-val-to-str (value-handle (%make-value (%isl-mat-get-element-val (mat-handle mat) i j))))))
+                (format out "~%"))))))

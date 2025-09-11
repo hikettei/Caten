@@ -107,6 +107,14 @@
                     (isl:schedule-node-first-child sched)
                     (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
     (isl:schedule-node-get-schedule sched)))
+;; [todo] move to schedule.lisp?
+(defun compute-coefficient-matrix (writes reads)
+  (let* ((deps (isl:union-map-apply-range writes (isl:union-map-reverse reads)))
+         (bset (isl:basic-map-wrap (isl:map-affine-hull (isl:map-from-union-map deps)))))
+    (print bset)
+    (print (isl:basic-set-equalities-matrix bset))
+    nil))
+                    
 
 (defsimplifier
     (%graph-simplify-views :speed 0)
@@ -180,10 +188,11 @@
               ;; If it is fusible, Transform(TY) is a new view object because it is simplified so
               (let* ((dom-src (schedule-from-umap Ma))
                      (dom-dst (schedule-from-umap Xa))
+                     (mat (compute-coefficient-matrix Ma (isl:union-map-union Xa Ya)))
                      (theta (isl:schedule-sequence dom-src dom-dst))
                      (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta)))
                 (print (isl:schedule-get-root theta))
-                (print deps)
+                (print mat)
                 ;; depsから以下の行列が取得できるはず
                 ;; [ 1 0 0 ]
                 ;; [ 0 0 1 ]

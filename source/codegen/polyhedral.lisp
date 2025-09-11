@@ -77,8 +77,8 @@ indices.
              (format nil "~{~a~^+~}" (map 'list #'(lambda (x) (render-node renderer x)) items))))
       (format nil "~{~a~^, ~}" (map 'list #'r schedule-dims)))))
 
-(defun relay-on-global-lex-order (global-lex-order node relay)
-  (declare (type Global-Lex-Order global-lex-order) (type node node))
+(defun relay-on-global-lex-order (global-lex-order relay &key (domid "domid") (varid "varid"))
+  (declare (type Global-Lex-Order global-lex-order) (type string domid varid))
   (let (;(renderer (make-instance 'Default-Renderer :graph graph))
         (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0)))
         (domain)
@@ -104,9 +104,9 @@ indices.
       (isl:union-map-from-str
        (format nil "[~{~(~a~)~^, ~}] -> { ~a[~{~a~^, ~}] -> ~(~a~)[~{~a~^, ~}] : ~{~a~^ and ~} }"
                (remove-duplicates quasiaffine)
-               (node-id node)
+               domid
                (reverse (map 'list #'car domain))
-               "X";(car (node-writes node))
+               varid
                (map 'list #'r schedule-dims)
                (reverse (map 'list #'s domain)))))))
 
