@@ -124,6 +124,7 @@
                 (car (node-reads node)) (car (node-reads val)))
           node))))
     ;; is_contiguous detection. Remove away extra !contiguous
+    #|
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) root-id) :reduction (guard r (null r))) rest))
      ->
      ((view graph)
@@ -143,42 +144,42 @@
                   (let ((view (copy-node view)))
                     (setf (node-id view) (gensym "NID")
                           (car (node-reads view)) root-id)
-                    view)))))))))
-    ;; Merge two views into a single one
+        view)))))))))
+    |#
+    ;; Remove MOVE
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
       (let ((view-y (id->value graph y))
             (move (id->value graph (car (node-reads view-x)))))
-        (when (and view-y move (eql :VIEW (node-type view-y)))
-          (let* ((xt (car (relay-writes (read-type-relay view-x))))
-                 (yt (car (relay-writes (read-type-relay view-y))))
-                 (mt (car (relay-reads (read-type-relay move))))
-                 (glo (create-glo-from-relays xt yt mt))
-                 (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
-                 (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo view-y yt))
-                 (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo move mt)))
-            ;; Domain wo 5zigen ni padding sita houga ii?
-            (when (and Xa Ya Ma) ;; Y -> M -> X
-              (print "CASE")
-              (print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
-              (print view-y)
-              (print move)
-              (print view-x)
-              (print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
-              (print xa) (print ya) (print ma)
-              ;; RaW
-              (let* (;(Y->M (isl:union-map-apply-range Ya (isl:union-map-reverse Ma)))
-                     ;(M->X (isl:union-map-apply-range Ma (isl:union-map-reverse Xa)))
-                     (Y->M (isl:union-map-from-domain-and-range (isl:union-map-range Ya) (isl:union-map-range Ma)))
-                     (M->X (isl:union-map-from-domain-and-range (isl:union-map-range Ma) (isl:union-map-range Xa))))
-                     
-                (print "RESULT")
-                (print Y->M)
-                (print M->X)
-                (print (isl:union-map-range (isl:union-map-apply-range Y->M M->X)))
-                )
-              nil)))))))
+        (let* ((xt (car (relay-writes (read-type-relay view-x))))
+               (yt (car (relay-writes (read-type-relay view-y))))
+               (mt (car (relay-reads (read-type-relay move))))
+               (glo (create-glo-from-relays xt yt mt))
+               (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
+               (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo view-y yt))
+               (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo move mt)))
+          ;; Domain wo 5zigen ni padding sita houga ii?
+          (when (and Xa Ya Ma) ;; Y -> M -> X
+            (print "CASE")
+            (print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
+            (print view-y)
+            (print move)
+            (print view-x)
+            (print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
+            (print xa) (print ya) (print ma)
+            ;; RaW
+            (let* (;(Y->M (isl:union-map-apply-range Ya (isl:union-map-reverse Ma)))
+                   ;(M->X (isl:union-map-apply-range Ma (isl:union-map-reverse Xa)))
+                   (Y->M (isl:union-map-from-domain-and-range (isl:union-map-range Ya) (isl:union-map-range Ma)))
+                   (M->X (isl:union-map-from-domain-and-range (isl:union-map-range Ma) (isl:union-map-range Xa))))
+              ;; Loop Fusionだと考えるとわかりやすい
+              ;; for i in RANGE_FROM_VIEW(YT, MT):
+              ;;   m[...] = y[...]             |
+              ;; for j in RANGE_FROM_VIEW(XT): | Relocate
+              ;;   o[...] = m[...]           <--
+              )
+            nil))))))
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))
