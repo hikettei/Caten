@@ -2,6 +2,7 @@
     (defparameter *test-components*
       (list
        :graph/test-rewrite
+       :api/test-shape
        ))
     (defun generate-components () (loop for component in *test-components* collect `(:file ,(princ-to-string component))))
     `(asdf:defsystem "caten.test-suite"

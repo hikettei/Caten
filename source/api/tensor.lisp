@@ -135,11 +135,15 @@
   `(apply-tensor-graph (list ,@variables) (with-inlined-tir (,@out-binds) ,@program)))
 ;; ~~ APIS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-tensor (shape &key (dtype *default-float*) (requires-grad nil) (initial-element nil) (from nil) (parent nil))
-  (apply-tir
-      (parent shape)
-      (out)
-      (x (%make-tensor (map 'list #'tensor->id shape) :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from))
-      (out (if initial-element (%load x initial-element) x))))
+  (declare (type (or number symbol list) shape))
+  (typecase shape
+    ((or number symbol) (make-scalar shape :dtype dtype))
+    (otherwise
+     (apply-tir
+         (parent shape)
+         (out)
+         (x (%make-tensor (map 'list #'tensor->id shape) :dtype-indexing *default-indexing-dtype* :dtype dtype :order (ctx:getenv :DEFAULT_ORDER) :from from))
+         (out (if initial-element (%load x initial-element) x))))))
 
 (defun make-scalar (value &key (dtype *default-float*))
   (declare (type (or symbol number) value))

@@ -123,30 +123,29 @@
           (setf (node-id node) (gensym "NID")
                 (car (node-reads node)) (car (node-reads val)))
           node))))
-    ;; is_contiguous detection. Remove away extra !contiguous
-    #|
-    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) root-id) :reduction (guard r (null r))) rest))
+    ;; VIEW->Unary*N->VIEW === Unary->VIEW (VIEW is supercede)
+    ((:VIEW (list* unary-op _))
      ->
-     ((view graph)
-      (let ((root (id->value graph root-id)))
-        (when root
-          (let* ((root-type (car (relay-writes (read-type-relay root))))
-                 (child-type (car (relay-writes (read-type-relay view))))
-                 (glo (create-glo-from-relays root-type child-type))
-                 (child-access (caten/codegen/polyhedral:relay-on-global-lex-order glo root root-type))
-                 (view-access (caten/codegen/polyhedral:relay-on-global-lex-order glo view child-type)))
-            (when (and child-access view-access)
-              (let* ((F (isl:union-map-apply-range view-access (isl:union-map-reverse child-access)))
-                     (Mergeable (and
-                                 (isl:union-map-is-single-valued F)
-                                 (isl:union-set-equalp (isl:union-map-domain F) (isl:union-map-domain view-access)))))
-                (when Mergeable
-                  (let ((view (copy-node view)))
-                    (setf (node-id view) (gensym "NID")
-                          (car (node-reads view)) root-id)
-        view)))))))))
-    |#
-    ;; Remove MOVE
+     ((node graph)
+      (let ((node (id->value graph unary-op)))
+        (loop while node
+              for next-node = (id->value graph (car (node-reads node))) do
+                (when (and next-node (eql (node-type next-node) :VIEW)) (return))
+                (if (and next-node (and (eql (node-class next-node) :UnaryOps) (= 1 (length (node-reads node)))))
+                    (setf node next-node)
+                    (setf node nil)))
+        (when node
+          (print "Found")
+          (print node)
+          nil))))
+    ;; [TODO] Solve as a typical loop fusion problem
+    ;; ((:VIEW (list* binary-op _))
+    ;;  ->
+    ;;  ((view graph)
+    ;;   (let ((binary-op (id->value graph binary-op)))
+    ;;     (when binary-op
+            
+    ;; Pre-Loop Fusion
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
@@ -161,13 +160,13 @@
                (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo move mt)))
           ;; Domain wo 5zigen ni padding sita houga ii?
           (when (and Xa Ya Ma) ;; Y -> M -> X
-            (print "CASE")
-            (print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
-            (print view-y)
-            (print move)
-            (print view-x)
-            (print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
-            (print xa) (print ya) (print ma)
+            ;(print "CASE")
+            ;(print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
+            ;(print view-y)
+            ;(print move)
+            ;(print view-x)
+            ;(print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
+            ;(print xa) (print ya) (print ma)
             ;; RaW
             (let* (;(Y->M (isl:union-map-apply-range Ya (isl:union-map-reverse Ma)))
                    ;(M->X (isl:union-map-apply-range Ma (isl:union-map-reverse Xa)))
@@ -179,7 +178,8 @@
               ;; for j in RANGE_FROM_VIEW(XT): | Relocate
               ;;   o[...] = m[...]           <--
               )
-            nil))))))
+            nil)))))
+    )
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))
