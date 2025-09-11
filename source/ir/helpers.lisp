@@ -57,8 +57,7 @@
   (let ((attrs (dump-into-list (node-attr node) :allow-unbound nil)))
     (if attrs
 	(with-output-to-string (out)
-	  (format out " where")
 	  (dolist (k (getattrs node))
 	    (when (and k (null (find k except-for)))
-	      (format out " :~(~a~)=~a" k (getattr node k)))))
+	      (format out ", ~(~a~)=~a" k (getattr node k)))))
 	"")))

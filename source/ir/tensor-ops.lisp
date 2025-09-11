@@ -3,16 +3,65 @@
 (defclass TensorGraph (FastGraph) nil)
 
 (defmethod print-object ((graph TensorGraph) stream)
-  (format stream "
-TensorGraph[seen=~a, outputs=~a] {
-~a}
-"
-	  (graph-seen graph)
-	  (graph-outputs graph)
-	  (with-output-to-string (out)
-	    (dolist (node (graph-nodes (->graph-with-tpsort graph)))
-              (loop for line in (cl-ppcre:split "\\n" (print-object node nil))
-                    do (format out "    ~a~%" line))))))
+  (print-unreadable-object (graph stream)
+    (format stream "TensorGraph{
+  tir::function (~(~a~)) {
+~a    return ~(~a~); // graph-outputs
+  }
+}"
+	    (render-list (graph-seen graph))
+            (let ((offset 0) (nodes (graph-nodes (->graph-with-tpsort graph))))
+              (dolist (node nodes)
+                (setf offset (max offset (length (render-list (list (car (node-writes node))))))))
+              (flet ((indent (node)
+                       (with-output-to-string (offsets)
+                         (dotimes (i (1+ (max 0 (- offset (length (render-list (list (car (node-writes node)))))))))
+                           (princ " " offsets))))
+                     (render-type-relay (node)
+                       (if (node-type-relay node)
+                           (with-output-to-string (typ)
+                             (format typ " // ")
+                             (loop for wt in (relay-writes (read-type-relay node))
+                                   if wt
+                                     do (format typ "~(~a~)(~a) " (tensor-relay-dtype wt) (render-list (tensor-relay-shape wt))))
+                             (when (every #'identity (relay-reads (read-type-relay node)))
+                               (format typ "<- "))
+                             (loop for rt in (relay-reads (read-type-relay node))
+                                   if rt
+                                     do (format typ "~(~a~)(~a) " (tensor-relay-dtype rt) (render-list (tensor-relay-shape rt)))))
+                           "")))
+	        (with-output-to-string (out)
+	          (dolist (node nodes)
+                    (case (node-type node)
+                      (:ALLOCATE
+                       (let ((nrank (getattr node :nrank)))
+                         (format out "    ~(~a~)~a= allocate(shape=(~(~a~)), stride=(~(~a~)), dtype=~(~a~));~a~%"
+                                 (render-list (node-writes node))
+                                 (indent node)
+                                 (render-list (subseq (node-reads node) 0 nrank))
+                                 (render-list (subseq (node-reads node) nrank (* 2 nrank)))
+                                 (getattr node :dtype)
+                                 (render-type-relay node))))
+                      (:VIEW
+                       (let ((nrank (getattr node :nrank)))
+                         (format out "    ~(~a~)~a= view(~(~a~), shape=(~(~a~)), β=(~(~a~)), α=(~(~a~)), stride=(~(~a~)));~a~%"
+                                 (render-list (node-writes node))
+                                 (indent node)
+                                 (car (node-reads node))
+                                 (render-list (subseq (node-reads node) 1 (1+ nrank)))
+                                 (render-list (subseq (node-reads node) (1+ nrank) (1+ (* 2 nrank))))
+                                 (render-list (subseq (node-reads node) (1+ (* 2 nrank)) (1+ (* 3 nrank))))
+                                 (render-list (subseq (node-reads node) (1+ (* 3 nrank)) (1+ (* 4 nrank))))
+                                 (render-type-relay node))))
+                      (otherwise
+                       (format out "    ~(~a~)~a= ~(~a~)(~(~a~)~a);~a~%"
+                               (render-list (node-writes node))
+                               (indent node)
+                               (node-type node)
+                               (render-list (node-reads node))
+                               (render-attrs node :except-for `(:from :pool))
+                               (render-type-relay node))))))))
+            (render-list (graph-outputs graph)))))
 
 (defparameter *default-order* (ctx:getenv :DEFAULT_ORDER))
 (defparameter *default-float* (ctx:getenv :DEFAULT_FLOAT))
