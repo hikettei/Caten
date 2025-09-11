@@ -356,13 +356,13 @@ out = x;
          :type-relay (make-type-relay 0))
 
 (defnode (:Buffer :VIEW) (BufferOps JITAble)
-	 "Creates a view object of the tensor in a first read.
-`View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
+	 "`VIEW` creates a zero-copy, affine view over an existing tensor.
+It returns a tensor whose shape is overridden to shape_new, with element access computed by applying per-dimension offsets and coeffs (dilation) and by using the provided stride_new for address calculation. No data is allocated or moved—only index math changes.
+
 ```
 out = view(x, *shape-new, *offsets, *coeffs, *stride-new)
 ```
-
-each `_gid_n` is mapped by linear function where each parameters are specified by offsets and coeffs. i.e.: VIEW generates a loop corresponding to:
+To put it bluntly, the view above corresponds to the following code snippet:
 ```
 for _gid1 in shape_new[1]:
   _gid1' = coeffs[1]*_gid1 + offsets[1]
@@ -372,8 +372,8 @@ for _gid1 in shape_new[1]:
     AREF(X, _gid1*stride_new[1] + _gid2*stride_new[2] + ...);
 ```
 
-- nrank[(unsigned-byte 32)] the rank of viewed tensor.
-"
+View is the only node which can change the layout of tensors.
+- nrank[(unsigned-byte 32)] the rank of viewed tensor."
 	 :slots ((nrank :type (unsigned-byte 32)))
          :type-relay #'(lambda (id->type node)
                          (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
