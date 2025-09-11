@@ -123,62 +123,62 @@
           (setf (node-id node) (gensym "NID")
                 (car (node-reads node)) (car (node-reads val)))
           node))))
-    ;; VIEW->Unary*N->VIEW === Unary->VIEW (VIEW is supercede)
-    ((:VIEW (list* unary-op _))
+    ;; [TODO]
+    ;; (tensor-graph (!sin (!reshape (!sin (!sin (make-tensor `(3 3)))) `(3 3))))
+    ;; Obvious case for !contiguous is rebundant: MOVE(CONTIGUOUS, CONTIGUOUS)
+    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) maybe-contiguous) :reduction (guard r (null r))) _))
      ->
      ((node graph)
-      (let ((node (id->value graph unary-op)))
-        (loop while node
-              for next-node = (id->value graph (car (node-reads node))) do
-                (when (and next-node (eql (node-type next-node) :VIEW)) (return))
-                (if (and next-node (and (eql (node-class next-node) :UnaryOps) (= 1 (length (node-reads node)))))
-                    (setf node next-node)
-                    (setf node nil)))
-        (when node
-          (print "Found")
-          (print node)
-          nil))))
-    ;; [TODO] Solve as a typical loop fusion problem
-    ;; ((:VIEW (list* binary-op _))
-    ;;  ->
-    ;;  ((view graph)
-    ;;   (let ((binary-op (id->value graph binary-op)))
-    ;;     (when binary-op
-            
-    ;; Pre-Loop Fusion
+      (let ((allocate (id->value graph maybe-contiguous)))
+        (when (and allocate (or (eql (node-type allocate) :ALLOCATE) (eql (node-class allocate) :UnaryOps)))
+          (loop until (eql (node-type allocate) :ALLOCATE)
+                for parent = (id->value graph (car (node-reads allocate))) do
+                  (if (eql (node-class parent) :UnaryOps)
+                      (setf allocate parent)
+                      (return)))
+          (when (eql (node-type allocate) :ALLOCATE)
+            (print "FOUND")
+            (print allocate)
+            nil
+            )))))
+    ;; Remove extra Allocation by !contiguous: VIEW(MOVE(ALLOCATE, _))
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
-      (let ((view-y (id->value graph y))
+      ;; Y -> M -> X
+      (let ((Y (id->value graph y))
             (move (id->value graph (car (node-reads view-x)))))
-        (let* ((xt (car (relay-writes (read-type-relay view-x))))
-               (yt (car (relay-writes (read-type-relay view-y))))
-               (mt (car (relay-reads (read-type-relay move))))
-               (glo (create-glo-from-relays xt yt mt))
-               (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
-               (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo view-y yt))
-               (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo move mt)))
-          ;; Domain wo 5zigen ni padding sita houga ii?
-          (when (and Xa Ya Ma) ;; Y -> M -> X
-            ;(print "CASE")
-            ;(print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
-            ;(print view-y)
-            ;(print move)
-            ;(print view-x)
-            ;(print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
-            ;(print xa) (print ya) (print ma)
-            ;; RaW
-            (let* (;(Y->M (isl:union-map-apply-range Ya (isl:union-map-reverse Ma)))
-                   ;(M->X (isl:union-map-apply-range Ma (isl:union-map-reverse Xa)))
-                   (Y->M (isl:union-map-from-domain-and-range (isl:union-map-range Ya) (isl:union-map-range Ma)))
-                   (M->X (isl:union-map-from-domain-and-range (isl:union-map-range Ma) (isl:union-map-range Xa))))
-              ;; Loop Fusionだと考えるとわかりやすい
-              ;; for i in RANGE_FROM_VIEW(YT, MT):
-              ;;   m[...] = y[...]             |
-              ;; for j in RANGE_FROM_VIEW(XT): | Relocate
-              ;;   o[...] = m[...]           <--
-              )
-            nil)))))
+        (when (and Y move)
+          (let* ((xt (car (relay-writes (read-type-relay view-x))))
+                 (yt (car (relay-writes (read-type-relay Y))))
+                 (mt (car (relay-reads (read-type-relay move))))
+                 (glo (create-glo-from-relays xt yt mt))
+                 (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
+                 (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo Y yt))
+                 (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo move mt)))
+            ;; Domain wo 5zigen ni padding sita houga ii?
+            (when (and Xa Ya Ma) ;; Y -> M -> X
+              ;; Domain SizeをXに固定，YをXに移動
+              ;; Xにした操作がX_New
+                                       ;;(print "CASE")
+                                       ;;(print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
+                                       ;;(print view-y)
+                                       ;;(print move)
+                                       ;;(print view-x)
+                                       ;;(print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
+                                       ;;(print xa) (print ya) (print ma)
+              ;; RaW
+              (let* (;(Y->M (isl:union-map-apply-range Ya (isl:union-map-reverse Ma)))
+                                        ;(M->X (isl:union-map-apply-range Ma (isl:union-map-reverse Xa)))
+                     (Y->M (isl:union-map-from-domain-and-range (isl:union-map-range Ya) (isl:union-map-range Ma)))
+                     (M->X (isl:union-map-from-domain-and-range (isl:union-map-range Ma) (isl:union-map-range Xa))))
+                ;; Loop Fusionだと考えるとわかりやすい
+                ;; for i in RANGE_FROM_VIEW(YT, MT):
+                ;;   m[...] = y[...]             |
+                ;; for j in RANGE_FROM_VIEW(XT): | Relocate
+                ;;   o[...] = m[...]           <--
+                )
+              nil))))))
     )
 
 (defun graph-simplify-views (graph)
