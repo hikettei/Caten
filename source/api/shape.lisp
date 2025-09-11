@@ -94,6 +94,20 @@
 
   )
 
+(defun schedule-from-umap (umap)
+  (declare (type isl::union-map umap))
+  (let* ((sched (isl:schedule-get-root (isl:schedule-from-domain (isl:union-map-domain umap))))
+         (domain (isl:set-from-union-set (isl:union-map-domain umap)))
+         (dims (loop for dim upfrom 0 below (isl:set-dim domain :dim-set)
+                     collect (isl:set-get-dim-name domain :dim-set dim))))
+    (loop with dom-name = (isl:set-get-tuple-name domain)
+          for dim in dims
+          do (setf sched
+                   (isl:schedule-node-insert-partial-schedule
+                    (isl:schedule-node-first-child sched)
+                    (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
+    (isl:schedule-node-get-schedule sched)))
+
 (defsimplifier
     (%graph-simplify-views :speed 0)
     ;; Extra !contiguous
@@ -153,32 +167,43 @@
                  (yt (car (relay-writes (read-type-relay Y))))
                  (mt (car (relay-reads (read-type-relay move))))
                  (glo (create-glo-from-relays xt yt mt))
-                 (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo view-x xt))
-                 (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo Y yt))
-                 (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo move mt)))
-            ;; Domain wo 5zigen ni padding sita houga ii?
+                 (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo xt :domid "DST" :varid "Y"))
+                 (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo yt :domid "SRC" :varid "X"))
+                 (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo mt :domid "SRC" :varid "Y")))
             (when (and Xa Ya Ma) ;; Y -> M -> X
-              ;; Domain SizeをXに固定，YをXに移動
-              ;; Xにした操作がX_New
-                                       ;;(print "CASE")
-                                       ;;(print (alexandria:hash-table-keys (caten/codegen/polyhedral:global-lex-order-dict glo)))
-                                       ;;(print view-y)
-                                       ;;(print move)
-                                       ;;(print view-x)
-                                       ;;(print (node-id view-y)) (print (node-id move)) (print (node-id view-x))
-                                       ;;(print xa) (print ya) (print ma)
-              ;; RaW
-              (let* (;(Y->M (isl:union-map-apply-range Ya (isl:union-map-reverse Ma)))
-                                        ;(M->X (isl:union-map-apply-range Ma (isl:union-map-reverse Xa)))
-                     (Y->M (isl:union-map-from-domain-and-range (isl:union-map-range Ya) (isl:union-map-range Ma)))
-                     (M->X (isl:union-map-from-domain-and-range (isl:union-map-range Ma) (isl:union-map-range Xa))))
-                ;; Loop Fusionだと考えるとわかりやすい
-                ;; for i in RANGE_FROM_VIEW(YT, MT):
-                ;;   m[...] = y[...]             |
-                ;; for j in RANGE_FROM_VIEW(XT): | Relocate
-                ;;   o[...] = m[...]           <--
-                )
-              nil))))))
+              ;; [src]
+              ;; for i in schedule_from_domain(M and YT)
+              ;;  M = Transform(YT)
+              ;; [dst]
+              ;; for i in schedule_from_domain(XT)
+              ;;  read(M)
+              ;; If it is fusible, Transform(TY) is a new view object because it is simplified so
+              (let* ((dom-src (schedule-from-umap Ma))
+                     (dom-dst (schedule-from-umap Xa))
+                     (theta (isl:schedule-sequence dom-src dom-dst))
+                     (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta)))
+                (print (isl:schedule-get-root theta))
+                (print deps)
+                ;; depsから以下の行列が取得できるはず
+                ;; [ 1 0 0 ]
+                ;; [ 0 0 1 ]
+                ;; [ 0 1 0 ]
+                ;; dom_src_new = apply(dom_src, WaR.coefficient_matrix)
+                ;; - dom_src_new and dom_dst deps are corresponding one-by-one
+                ;; - and node dependency was broken
+                ;; ==> dom_src_new == dom_dst and dom_dst is the only read
+                ;; thus view is replaceable with only single dom_src_new
+                
+                ;; Use ILP API?
+                ;; - apply_transformation(dom-src, theta) minimize proximity
+                ;; theta is a matrix
+                ;; cost function proximity?
+                ;; - this is doable by me
+                ;; - use common lisp ilp solver?
+                ;; schedule_preimage?
+                ;; [TODO] THIS IS DOABLE!
+                ;; TODO: Cache, Use Affine API, if this approach works
+                nil)))))))
     )
 
 (defun graph-simplify-views (graph)
