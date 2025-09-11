@@ -75,12 +75,22 @@
   (flet ((ensure-node (id) (ensure-node-is-tensor (or (id->value (tensor-graph tensor) id) id) (tensor-graph tensor))))
     (loop for view in (tensor-relay-views (tensor-type tensor))
           collect (map 'list #'ensure-node view))))
+
+(defun tensor-is-symbolic-p (tensor)
+  (declare (type Tensor tensor))
+  (and (null (tensor-shape tensor)) ;; if it is a scalar graph
+       (flet ((is-scalar-p (rel) (or (null rel) (= 0 (tensor-relay-nrank rel)))))
+         (every #'(lambda (node)
+                    (and (node-type-relay node)
+                         (every #'is-scalar-p (relay-reads (read-type-relay node)))
+                         (every #'is-scalar-p (relay-writes (read-type-relay node)))))
+                (graph-nodes (tensor-graph tensor))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod print-object ((tensor Tensor) stream)
   ;; [TODO] PrintObject: Render Scalar Directly
   (print-unreadable-object (tensor stream)
     (format stream "{Tensor~a[~(~a~)] :shape ~a :id ~a
-~a
+~a~a
   :node ~a
   :requires-grad nil}"
             (if (tensor-buffer tensor)
@@ -89,6 +99,12 @@
 	    (tensor-dtype tensor)
             (tensor-shape tensor)
 	    (tensor-id tensor)
+            (if (tensor-is-symbolic-p tensor)
+                (format nil "  <~a>~%"
+                        (caten/runtime/renderer:render-node
+                         (make-instance 'caten/runtime/byoc:Default-Renderer :graph (tensor-graph tensor))
+                         (tensor-id tensor)))
+                "")
 	    (if (tensor-buffer tensor)
 	        (caten/runtime/buffer:pprint-buffer (tensor-buffer tensor) :indent 2)
 	        "  :buffer nil")

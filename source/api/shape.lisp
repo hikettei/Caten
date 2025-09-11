@@ -104,16 +104,42 @@
                     (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
     (isl:schedule-node-get-schedule sched)))
 ;; [todo] move to schedule.lisp?
-(defun compute-coefficient-matrix (writes reads)
+(defun compute-equalities-matrix (writes reads)
   (let* ((deps (isl:union-map-apply-range writes (isl:union-map-reverse reads)))
          (map  (isl:map-compute-divs (isl:map-from-union-map deps)))
          (bmap (isl:map-affine-hull map))
          (E (isl:basic-map-equalities-matrix bmap))
-         (I (isl:basic-map-inequalities-matrix bmap)))
-    ;; cols = [ constant | dim_in | dim_out ]
-    ;; [TODO] I.rows == (0)
-    ;; Eから直接VIEWを作成でもいい
-    E))
+         (I (isl:basic-map-inequalities-matrix bmap))
+         (cols
+           (append
+            (list 1) ;; dim_cst
+            (loop for type in `(:dim-param :dim-in :dim-out)
+                  append
+                  (loop for i upfrom 0 below (isl:basic-map-dim bmap type)
+                        for suffix = (case type (:dim-in "_in") (:dim-out "_out") (otherwise ""))
+                        collect (intern (format nil "~a~a" (isl:basic-map-get-dim-name bmap type i) suffix)))))))
+    ;; cols = [dim_cst | dim_param | dim_in | dim_out | dim_divs]
+    (assert (= (isl:mat-cols E) (isl:mat-cols I) (length cols)))
+    (assert (= 0 (isl:map-dim map :dim-div)))
+    (values E cols)))
+
+(defun %view-from-equalities-matrix (view-base E cols)
+  (declare (type node view-base) (type isl::mat E) (type list cols))
+  (loop for i upfrom 0 below (isl:mat-rows E)
+        for affs = (with-inlined-tir
+                       (out)
+                       (affs
+                        (reduce
+                         #'%add
+                         (loop for j upfrom 0 below (isl:mat-cols E)
+                               for col in cols
+                               for coeff = (isl:mat-ref E i j)
+                               collect
+                               (%mul (%iconst col) (%iconst coeff)))))
+                       (out affs))
+        do (print (tensor-from-graph affs))
+           (print affs)))
+
 
 (defsimplifier
     (%graph-simplify-views :speed 0)
@@ -187,32 +213,21 @@
               ;; If it is fusible, Transform(TY) is a new view object because it is simplified so
               (let* ((dom-src (schedule-from-umap Ma))
                      (dom-dst (schedule-from-umap Xa))
-                     (mat (compute-coefficient-matrix Ma (isl:union-map-union Xa Ya)))
                      (theta (isl:schedule-sequence dom-src dom-dst))
                      (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta)))
-                (print (isl:schedule-get-root theta))
-                (print mat)
-                ;; depsから以下の行列が取得できるはず
-                ;; [ 1 0 0 ]
-                ;; [ 0 0 1 ]
-                ;; [ 0 1 0 ]
+                (multiple-value-bind (E cols) (compute-equalities-matrix Ma (isl:union-map-union Xa Ya))
+                  (print (isl:schedule-get-root theta))
+                  (print E)
+                  (print cols)
+                  
                 ;; dom_src_new = apply(dom_src, WaR.coefficient_matrix)
                 ;; - dom_src_new and dom_dst deps are corresponding one-by-one
                 ;; - and node dependency was broken
                 ;; ==> dom_src_new == dom_dst and dom_dst is the only read
                 ;; thus view is replaceable with only single dom_src_new
-                
-                ;; Use ILP API?
-                ;; - apply_transformation(dom-src, theta) minimize proximity
-                ;; theta is a matrix
-                ;; cost function proximity?
-                ;; - this is doable by me
-                ;; - use common lisp ilp solver?
-                ;; schedule_preimage?
-                ;; [TODO] THIS IS DOABLE!
-                ;; TODO: Cache, Use Affine API, if this approach works
-                nil)))))))
-    )
+                  (let ((view (%view-from-equalities-matrix view-x E cols)))
+                    (print view)))
+                nil))))))))
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))

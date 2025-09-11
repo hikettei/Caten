@@ -388,6 +388,10 @@
 (defun map-get-dim-name (map type pos)
   (%isl-map-get-dim-name (map-handle map) type pos))
 
+(define-isl-function map-params %isl-map-params
+  (:give set)
+  (:take map))
+
 (export 'basic-set-drop-constraints-involving-dims)
 (defun basic-set-drop-constraints-involving-dims (basic-set type first n)
   (%make-basic-set
@@ -1824,3 +1828,8 @@
   (assert (< col (%isl-mat-cols (mat-handle mat))))
   (let ((val (%isl-mat-get-element-val (mat-handle mat) row col)))
     (prog1 (%isl-val-get-num-si val) (%isl-val-free val))))
+
+(export 'mat-rows)
+(defun mat-rows (mat) (%isl-mat-rows (mat-handle mat)))
+(export 'mat-cols)
+(defun mat-cols (mat) (%isl-mat-cols (mat-handle mat)))

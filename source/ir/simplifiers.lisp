@@ -130,22 +130,22 @@
     (apply-fold-constant :speed 1)
     ;; A*2 -> 2*A
     ((:Mul ((Var x dtype1) (Const y dtype2))) ->
-     ((node graph) (when (and (symbolp x)) (with-context-nodes (out (%mul y x))))))
+     ((node graph) (when (and (symbolp x)) (with-context-nodes (out (apply #'%mul (reverse (node-reads node))))))))
     ;; (2*B)+(2*A) -> (2*A)+(2*B)
     ((:Add ((Term c1 v1 order1) (Term c2 v2 order2)))
      -> ((node graph)
          (when (> order1 order2)
            (with-context-nodes (out (apply #'%add (reverse (node-reads node))))))))
     ;; A+(B+C)
-    ((:Add ((Term c1 v1 order1) (:Add ((Term c2 v2 order2) (Term c3 v3 order3)))))
-     ->
-     ((node graph)
-      (when (not (< order1 order2 order3))
-        (let* ((a (car (node-reads node)))
-               (bc (id->value graph (second (node-reads node))))
-               (b (car (node-reads bc)))
-               (c (second (node-reads bc))))
-          (with-context-nodes (out (reduce #'%add (map 'list #'car (sort (map 'list #'cons `(,a ,b ,c) `(,order1 ,order2, order3)) #'< :key #'cdr)))))))))
+;    ((:Add ((Term c1 v1 order1) (:Add ((Term c2 v2 order2) (Term c3 v3 order3)))))
+;     ->
+;     ((node graph)
+;      (when (not (< order1 order2 order3))
+;        (let* ((a (car (node-reads node)))
+;               (bc (id->value graph (second (node-reads node))))
+;               (b (car (node-reads bc)))
+;               (c (second (node-reads bc))))
+;          (with-context-nodes (out (reduce #'%add (map 'list #'car (sort (map 'list #'cons `(,a ,b ,c) `(,order1 ,order2, order3)) #'< :key #'cdr)))))))))
     ;; (-(a)+(a+c)) -> c
     ((:Add ((:Neg ((Var x dtype1))) (:Add ((Var y dtype2) (Var z dtype3)))))
      ->

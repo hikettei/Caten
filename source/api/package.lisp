@@ -11,6 +11,7 @@
    #:tensor-simplify
    #:tensor-verify
    #:tensor-node
+   #:tensor-is-symbolic-p
    #:tensor->id
    #:tensor-type
    #:node->tensor

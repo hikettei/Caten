@@ -1,6 +1,7 @@
 (defpackage :caten/runtime/bring-your-own-backend
   (:documentation "Provides a useful macro for defining a new accelerator")
   (:use :cl :caten/graph)
+  (:nicknames :caten/runtime/byoc)
   (:export
    #:define-runtime
    #:define-buffer
@@ -9,6 +10,7 @@
    #:define-backend
    #:render
    #:const
+   #:default-renderer
    ))
 
 (in-package :caten/runtime/bring-your-own-backend)
