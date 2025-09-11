@@ -408,5 +408,5 @@
               (dotimes (i (%isl-mat-rows (mat-handle mat)))
                 (format out "    ")
                 (dotimes (j (%isl-mat-cols (mat-handle mat)))
-                  (format out "~a " (%isl-val-to-str (value-handle (%make-value (%isl-mat-get-element-val (mat-handle mat) i j))))))
+                  (format out "~a " (mat-ref mat i j)))
                 (format out "~%"))))))

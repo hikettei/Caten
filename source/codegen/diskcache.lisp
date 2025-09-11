@@ -66,7 +66,7 @@
                              (format out "{\"expr_store\":~a}" (e (car (node-reads node))))
                              (let ((type (car (relay-writes (read-type-relay node)))))
                                (format out "{\"expr\":{\"id\":~a,\"sym\":~a,\"value\":"
-                                       (caten/codegen/renderer::->cdtype (caten/aasm:tensor-relay-dtype type))
+                                       (caten/runtime/renderer::->cdtype (caten/ir:tensor-relay-dtype type))
                                        (jr-gensym renderer (car (node-writes node))))
                                (format out "~a" (e (car (node-reads node))))
                                (format out "}}")))))

@@ -90,10 +90,6 @@
     ;; [TODO] Quasiaffine    
     glo))
 
-(defun compose-view (x y)
-
-  )
-
 (defun schedule-from-umap (umap)
   (declare (type isl::union-map umap))
   (let* ((sched (isl:schedule-get-root (isl:schedule-from-domain (isl:union-map-domain umap))))
@@ -110,11 +106,14 @@
 ;; [todo] move to schedule.lisp?
 (defun compute-coefficient-matrix (writes reads)
   (let* ((deps (isl:union-map-apply-range writes (isl:union-map-reverse reads)))
-         (bset (isl:basic-map-wrap (isl:map-affine-hull (isl:map-from-union-map deps)))))
-    (print bset)
-    (print (isl:basic-set-equalities-matrix bset))
-    nil))
-                    
+         (map  (isl:map-compute-divs (isl:map-from-union-map deps)))
+         (bmap (isl:map-affine-hull map))
+         (E (isl:basic-map-equalities-matrix bmap))
+         (I (isl:basic-map-inequalities-matrix bmap)))
+    ;; cols = [ constant | dim_in | dim_out ]
+    ;; [TODO] I.rows == (0)
+    ;; Eから直接VIEWを作成でもいい
+    E))
 
 (defsimplifier
     (%graph-simplify-views :speed 0)

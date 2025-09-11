@@ -297,36 +297,37 @@ If i is a tensor, %load fills the visible area of i with value."
 ;;	       id nrank shape dtype view-from view-to view-by broadcast stride)
 	))))
 
-(defun %view (base shape from by stride &key (id (lgensym "ID_")))
+(defun %view (base shape offsets coeffs stride &key (id (lgensym "ID_")))
   "Creates a view against base. (views are only created against the original buffer)
-Permute is an optional parameter and does nothing, but MUST required to enable Polyhedral Compiler, to inference an index of iteration by type-relay.lisp"
+Each dimension grid_id is mapped by linear function specified by offsets and coeffs.
+i.e.: _gid_n = _gid_n'*coeffs[n]+offsets[n]"
   ;; Allocation w/o allocation
   (declare (type node base)
-	   (type list from by shape stride))
+	   (type list offsets coeffs shape stride))
   (flet ((->const (x)
 	   (if (node-p x)
 	       x
 	       (%iconst x))))
-    (setf from   (map 'list #'->const from)
-	  by     (map 'list #'->const by)
-	  shape  (map 'list #'->const shape)
-	  stride (map 'list #'->const stride)))
-  (assert (and (every #'size-p by) (every #'size-p from))
+    (setf offsets (map 'list #'->const offsets)
+	  coeffs  (map 'list #'->const coeffs)
+	  shape   (map 'list #'->const shape)
+	  stride  (map 'list #'->const stride)))
+  (assert (and (every #'size-p coeffs) (every #'size-p offsets))
 	  ()
-	  "Assertion Failed: from/to/by must be a list of Node or integer.")
-  (assert (= (length from) (length by) (length shape) (length stride))
+	  "Assertion Failed: offsets/coeffs must be a list of Node or integer.")
+  (assert (= (length offsets) (length coeffs) (length shape) (length stride))
 	  ()
 	  "Assertion Failed: the rank must be determined before the compilation.
 nrank=~a
 stride=~a"
-	  from by)
-  (let ((nrank (length from)))
+	  offsets coeffs)
+  (let ((nrank (length offsets)))
     (emit (make-node :Buffer :View
 		     (list id)
 		     (append (list (node->id1 base))
 			     (map 'list #'node->id1 shape)
-			     (map 'list #'node->id1 from)
-			     (map 'list #'node->id1 by)
+			     (map 'list #'node->id1 offsets)
+			     (map 'list #'node->id1 coeffs)
 			     (map 'list #'node->id1 stride))
 		     :nrank nrank))))
 
