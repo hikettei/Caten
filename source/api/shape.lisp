@@ -157,7 +157,12 @@
           (setf (node-id node) (gensym "NID")
                 (car (node-reads node)) (car (node-reads val)))
           node))))
-    ;; Remove extra Allocation by !contiguous: VIEW(MOVE(ALLOCATE, _))
+    ;; VIEW(CONTIGUOUS(VIEW(x))) is directly view-able?
+    ;; ALLOC VIEW
+    ;;    \   /             VIEW
+    ;;     MOVE    =====>     |        ==> VIEW
+    ;;      |             MERGED_VIEW
+    ;;     VIEW
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
@@ -172,9 +177,11 @@
                  (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo xt :domid "DST" :varid "Y"))
                  (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo yt :domid "SRC" :varid "X"))
                  (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo mt :domid "SRC" :varid "Y")))
-            ;; [TODO] M is always contiguous, can't we implement common way to express Intermidate M?
-            ;; Symbolic -> Introduce a large prime number???
             (when (and Xa Ya Ma) ;; Y -> M -> X
+              ;; [TODO] decompose strides to lcm
+              (print (tensor-relay-nrank xt))
+              (print (tensor-relay-nrank yt))
+              (print (tensor-relay-nrank mt))
               ;; [src]
               ;; for i in schedule_from_domain(M and YT)
               ;;  M = Transform(YT)
@@ -182,9 +189,7 @@
               ;; for i in schedule_from_domain(XT)
               ;;  read(M)
               ;; If it is fusible, Transform(TY) is a new view object because it is simplified so
-              ;(print "Solving Fusion")
-              ;(print Y)
-              ;(print view-x)
+              ;; Special Notation for Reshape?
               ;; Reshape Semantic Review
               ;; - [ ] Produce Shape Error
               ;; - [ ] Reshape Unravel is doable from given strides (add max/min)
@@ -196,11 +201,11 @@
                      (theta (isl:schedule-sequence dom-src dom-dst))
                      (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta))
                      (cst (caten/codegen/schedule:compute-schedule-constraints (isl:union-set-union (isl:union-map-domain Ma) (isl:union-map-domain Xa)) deps)))
-                ;(print (isl:union-map-union Xa Ya))
-                ;(print Ma)
+                (print (isl:union-map-union Xa Ya))
+                (print Ma)
                 (let ((fused (isl:schedule-constraints-compute-schedule cst)))
                   ;(print (isl:schedule-get-root fused))
-                  ;(print (caten/codegen/ast::ast->str (caten/codegen/ast:compute-ast-from-schedule fused)))
+                  (print (caten/codegen/ast::ast->str (caten/codegen/ast:compute-ast-from-schedule fused)))
                   )
                 ;; dom_src_new = apply(dom_src, WaR.coefficient_matrix)
                 ;; - dom_src_new and dom_dst deps are corresponding one-by-one
