@@ -3,7 +3,8 @@
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/graph :caten/ir :caten/isl :caten/codegen/polyhedral :caten/codegen/directive)
   (:export
-   #:apply-schedule))
+   #:apply-schedule
+   #:compute-ast-from-schedule))
 (in-package :caten/codegen/ast)
 ;; ~~ ISL AST Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun gid (n) (intern (format nil "_gid_p~a" n)))

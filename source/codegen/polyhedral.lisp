@@ -91,7 +91,8 @@ indices.
           for by = (nth 1 view)
           for nth upfrom 0
           for gid = (format nil "_gid~a" nth)
-          for plc = (gethash stride (global-lex-order-dict global-lex-order)) do
+          for plc = (gethash stride (global-lex-order-dict global-lex-order))
+          if (not (eql stride 0)) do ;; unless broadcasted
             (assert plc () "view-on-lex-order: The dimension ~a is not exist in scheduling space: ~a" stride (alexandria:hash-table-keys (global-lex-order-dict global-lex-order)))
             (when (symbolp by) ;; failed
               (return-from relay-on-global-lex-order))
@@ -100,7 +101,7 @@ indices.
             (push (cons gid size) domain)
             (push (format nil "~(~a~)*~a+~(~a~)" gid by upfrom) (nth plc schedule-dims)))
     (flet ((r (items) (format nil "~{~a~^+~}" items))
-           (s (item) (format nil "0 <= ~a <= ~(~a~)" (car item) (cdr item))))
+           (s (item) (format nil "0 <= ~a < ~(~a~)" (car item) (cdr item))))
       (isl:union-map-from-str
        (format nil "[~{~(~a~)~^, ~}] -> { ~a[~{~a~^, ~}] -> ~(~a~)[~{~a~^, ~}] : ~{~a~^ and ~} }"
                (remove-duplicates quasiaffine)

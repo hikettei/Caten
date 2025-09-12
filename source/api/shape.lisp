@@ -103,44 +103,10 @@
                     (isl:schedule-node-first-child sched)
                     (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
     (isl:schedule-node-get-schedule sched)))
-;; [todo] move to schedule.lisp?
-(defun compute-equalities-matrix (writes reads)
-  (let* ((deps (isl:union-map-apply-range writes (isl:union-map-reverse reads)))
-         (map  (isl:map-compute-divs (isl:map-from-union-map deps)))
-         (bmap (isl:map-affine-hull map))
-         (E (isl:basic-map-equalities-matrix bmap))
-         (I (isl:basic-map-inequalities-matrix bmap))
-         (cols
-           (append
-            (list 1) ;; dim_cst
-            (loop for type in `(:dim-param :dim-in :dim-out)
-                  append
-                  (loop for i upfrom 0 below (isl:basic-map-dim bmap type)
-                        for suffix = (case type (:dim-in "_in") (:dim-out "_out") (otherwise ""))
-                        collect (intern (format nil "~a~a" (isl:basic-map-get-dim-name bmap type i) suffix)))))))
-    ;; cols = [dim_cst | dim_param | dim_in | dim_out | dim_divs]
-    (assert (= (isl:mat-cols E) (isl:mat-cols I) (length cols)))
-    (assert (= 0 (isl:map-dim map :dim-div)))
-    (values E cols)))
 
-(defun %view-from-equalities-matrix (view-base E cols)
-  (declare (type node view-base) (type isl::mat E) (type list cols))
-  (loop for i upfrom 0 below (isl:mat-rows E)
-        for affs = (with-inlined-tir
-                       (out)
-                       (affs
-                        (reduce
-                         #'%add
-                         (loop for j upfrom 0 below (isl:mat-cols E)
-                               for col in cols
-                               for coeff = (isl:mat-ref E i j)
-                               collect
-                               (%mul (%iconst col) (%iconst coeff)))))
-                       (out affs))
-        do (print (tensor-from-graph affs))
-           (print affs)))
-
-
+;; Problem1: (9) -> (3, 3) Reshape is not doable.
+;; Problem2: Symbolic
+;; TODO: Unravel
 (defsimplifier
     (%graph-simplify-views :speed 0)
     ;; Extra !contiguous
@@ -151,6 +117,26 @@
       (multiple-value-bind (x y) (values (id->value graph (car (node-reads node))) (id->value graph (second (node-reads node))))
         (when (and x y (equal (cdr (node-reads x)) (cdr (node-reads y))) (null (getattr x :from)) (null (getattr y :from)))
           y))))
+    ;; ALLOC CONTIGUOUS_PATH
+    ;;    \   /                 CONTIGUOUS_PATH
+    ;;     MOVE          =====>        |
+    ;;      |                        VIEW
+    ;;     VIEW
+    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
+     ->
+     ((node graph)
+      (let* ((top (id->value graph y)) (removable-p t))
+        (when (and top (not (eql (node-type top) :VIEW)))
+          (loop while top for parent = (id->value graph (get-output-to top)) do
+            (setf top parent)
+            (when (and top (eql (node-type top) :VIEW))
+              (setf removable-p nil)
+              (return)))
+          (when removable-p
+            (let ((node (copy-node node)))
+              (setf (node-id node) (gensym "NID")
+                    (car (node-reads node)) y)
+              node))))))
     ;; A case for view is creating identity view from contiguous.
     ((:VIEW (~ args))
      ->
@@ -161,6 +147,7 @@
                 (view-rel  (car (relay-writes (read-type-relay node)))))
             (when (tensor-relay-equal alloc-rel view-rel)
               alloc))))))
+    ;; VIEW(VIEW(x)) is the first VIEW.
     ((:VIEW (list* (:VIEW (~ _)) _))
      ->
      ((node graph)
@@ -170,24 +157,6 @@
           (setf (node-id node) (gensym "NID")
                 (car (node-reads node)) (car (node-reads val)))
           node))))
-    ;; [TODO]
-    ;; (tensor-graph (!sin (!reshape (!sin (!sin (make-tensor `(3 3)))) `(3 3))))
-    ;; Obvious case for !contiguous is rebundant: MOVE(CONTIGUOUS, CONTIGUOUS)
-    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) maybe-contiguous) :reduction (guard r (null r))) _))
-     ->
-     ((node graph)
-      (let ((allocate (id->value graph maybe-contiguous)))
-        (when (and allocate (or (eql (node-type allocate) :ALLOCATE) (eql (node-class allocate) :UnaryOps)))
-          (loop until (eql (node-type allocate) :ALLOCATE)
-                for parent = (id->value graph (car (node-reads allocate))) do
-                  (if (eql (node-class parent) :UnaryOps)
-                      (setf allocate parent)
-                      (return)))
-          (when (eql (node-type allocate) :ALLOCATE)
-            (print "FOUND")
-            (print allocate)
-            nil
-            )))))
     ;; Remove extra Allocation by !contiguous: VIEW(MOVE(ALLOCATE, _))
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
@@ -203,6 +172,8 @@
                  (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo xt :domid "DST" :varid "Y"))
                  (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo yt :domid "SRC" :varid "X"))
                  (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo mt :domid "SRC" :varid "Y")))
+            ;; [TODO] M is always contiguous, can't we implement common way to express Intermidate M?
+            ;; Symbolic -> Introduce a large prime number???
             (when (and Xa Ya Ma) ;; Y -> M -> X
               ;; [src]
               ;; for i in schedule_from_domain(M and YT)
@@ -211,22 +182,31 @@
               ;; for i in schedule_from_domain(XT)
               ;;  read(M)
               ;; If it is fusible, Transform(TY) is a new view object because it is simplified so
+              ;(print "Solving Fusion")
+              ;(print Y)
+              ;(print view-x)
+              ;; Reshape Semantic Review
+              ;; - [ ] Produce Shape Error
+              ;; - [ ] Reshape Unravel is doable from given strides (add max/min)
+              ;; - [ ] (!reshape (!t (make-tensor `(3 3))) `(3 3))
+              ;;  - [ ] Normalize first
+              ;; AST Simplify
               (let* ((dom-src (schedule-from-umap Ma))
                      (dom-dst (schedule-from-umap Xa))
                      (theta (isl:schedule-sequence dom-src dom-dst))
-                     (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta)))
-                (multiple-value-bind (E cols) (compute-equalities-matrix Ma (isl:union-map-union Xa Ya))
-                  (print (isl:schedule-get-root theta))
-                  (print E)
-                  (print cols)
-                  
+                     (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta))
+                     (cst (caten/codegen/schedule:compute-schedule-constraints (isl:union-set-union (isl:union-map-domain Ma) (isl:union-map-domain Xa)) deps)))
+                ;(print (isl:union-map-union Xa Ya))
+                ;(print Ma)
+                (let ((fused (isl:schedule-constraints-compute-schedule cst)))
+                  ;(print (isl:schedule-get-root fused))
+                  ;(print (caten/codegen/ast::ast->str (caten/codegen/ast:compute-ast-from-schedule fused)))
+                  )
                 ;; dom_src_new = apply(dom_src, WaR.coefficient_matrix)
                 ;; - dom_src_new and dom_dst deps are corresponding one-by-one
                 ;; - and node dependency was broken
                 ;; ==> dom_src_new == dom_dst and dom_dst is the only read
                 ;; thus view is replaceable with only single dom_src_new
-                  (let ((view (%view-from-equalities-matrix view-x E cols)))
-                    (print view)))
                 nil))))))))
 
 (defun graph-simplify-views (graph)

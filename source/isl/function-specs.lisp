@@ -704,6 +704,16 @@
   (:take union-map)
   (:take multi-aff))
 
+(define-isl-function union-map-preimage-range-pw-multi-aff %isl-union-map-preimage-range-pw-multi-aff
+  (:give union-map)
+  (:take union-map)
+  (:take pw-multi-aff))
+
+(define-isl-function union-map-preimage-domain-pw-multi-aff %isl-union-map-preimage-domain-pw-multi-aff
+  (:give union-map)
+  (:take union-map)
+  (:take pw-multi-aff))
+
 (define-isl-function union-set-preimage-multi-aff %isl-union-set-preimage-multi-aff
   (:give union-set)
   (:take union-set)
@@ -718,6 +728,16 @@
   (:give map)
   (:take map)
   (:take multi-aff))
+
+(define-isl-function map-preimage-range-pw-multi-aff %isl-map-preimage-range-pw-multi-aff
+  (:give map)
+  (:take map)
+  (:take pw-multi-aff))
+
+(define-isl-function map-preimage-domain-pw-multi-aff %isl-map-preimage-domain-pw-multi-aff
+  (:give map)
+  (:take map)
+  (:take pw-multi-aff))
 
 (define-isl-function set-preimage-multi-aff %isl-set-preimage-multi-aff
   (:give set)
@@ -827,6 +847,11 @@
 (define-isl-function map-reverse %isl-map-reverse
   (:give map)
   (:take map))
+
+(define-isl-function map-reset-tuple-id %isl-map-reset-tuple-id
+  (:give map)
+  (:take map)
+  (:take dim-type))
 
 (define-isl-function map-apply-range %isl-map-apply-range
   (:give map)
@@ -1082,6 +1107,14 @@
   (:give aff)
   (:take multi-aff)
   (:take fixnum))
+
+(define-isl-function pw-multi-aff-from-map %isl-pw-multi-aff-from-map
+  (:give pw-multi-aff)
+  (:take map))
+
+(define-isl-function pw-multi-aff-get-space %isl-pw-multi-aff-get-space
+  (:give space)
+  (:keep pw-multi-aff))
 
 (define-isl-function union-pw-multi-aff-empty %isl-union-pw-multi-aff-empty
   (:give union-pw-multi-aff)

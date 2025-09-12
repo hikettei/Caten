@@ -176,7 +176,7 @@
                 ;; Primitive Binary Operation (Private)
                 (defun ,lisp-name3 (x y &key (reduction nil))
                   (declare (type Tensor x y) (type boolean reduction))
-                  (multiple-value-bind (x y) (broadcast-elwise x y)
+                  (multiple-value-bind (x y) (if reduction (values x y) (broadcast-elwise x y))
                     (apply-tir (x y) (out) (out (,ir-name (tensor-node x) (tensor-node y) :reduction reduction)))))
                 (declaim (ftype (function (t t &key (:reduction boolean)) (values Tensor)) ,lisp-name2))
                 (defun ,lisp-name2 (x y &key (reduction nil))

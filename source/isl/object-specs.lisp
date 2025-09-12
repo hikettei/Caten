@@ -242,6 +242,10 @@
 (defmethod print-object ((value union-pw-multi-aff) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-union-pw-multi-aff-to-str (union-pw-multi-aff-handle value)) stream)))
+
+(defmethod print-object ((value pw-multi-aff) stream)
+  (print-unreadable-object (value stream :type t)
+    (write-string (%isl-pw-multi-aff-to-str (pw-multi-aff-handle value)) stream)))
 ;;;; astexpr
 (define-isl-object ast-expr
   :free %isl-ast-expr-free
