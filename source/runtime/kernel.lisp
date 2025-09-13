@@ -34,8 +34,7 @@
 (defgeneric kernel-launch (kernel runtime &rest args))
 
 (defmethod kernel-launch :around ((kernel Kernel) runtime &rest args)
-  ;; [TODO] Run type check (implement later)
-  ;; (%check-kernel-args kernel args)
+  ;; [TODO] Dtype check
   (call-next-method))
 ;; Kernel-level rendering (top-level ASTGraph ops like :PROGN, :FOR, :IF)
 (defgeneric %render-kernel-op (renderer node-id node))

@@ -33,36 +33,7 @@
 ;; Inherit default expression rendering so all ops like :ADD/:MUL/:SIN work out of the box.
 (define-renderer CStyle-Renderer (Default-Renderer) nil)
 
-(define-kernel (ClangKernel CStyle-Renderer) () nil
-  :specs
-  ((:PROGN ((:PROGN (~ _))
-            ->
-            ((node graph)
-             (format nil "{~%~{~a~^~%~}~%}"
-                     (map 'list #'(lambda (id) (render-kernel id)) (node-reads node))))))
-   (:IF ((:IF (cond body))
-         ->
-         ((node graph)
-          (format nil "if (~a) {~%~a~%}"
-                  (render (car (node-reads (id->value graph cond))))
-                  (render-kernel body)))))
-   (:FOR ((:FOR (range body))
-          ->
-          ((node graph)
-           (let* ((range (id->value graph range))
-                  (bind (getattr range :idx))
-                  (size (first (node-reads range)))
-                  (step (second (node-reads range)))
-                  (size-str (if (symbolp size) (render (car (node-reads (id->value graph size)))) (format nil "~a" size)))
-                  (step-str (if (symbolp step) (render (car (node-reads (id->value graph step)))) (format nil "~a" step))))
-             (format nil "for (int ~(~a~)=0; ~(~a~)<~a; ~(~a~)+=~a) {~%~a~%}"
-                     bind bind size-str bind step-str (render-kernel body))))))
-   (:EXPR ((:EXPR (x))
-           ->
-           ((node graph)
-            (format nil "~a;" (render x))))))
-  :launch nil
-  :compile nil)
+(define-kernel (ClangKernel CStyle-Renderer) () nil)
 
 ;; (define-optimizer (ClangOptimizer) :allow-profile t)
 (define-backend :CLANG :runtime ClangRuntime :buffer ClangBuffer :kernel ClangKernel :renderer CStyle-Renderer)

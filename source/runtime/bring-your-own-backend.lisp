@@ -112,7 +112,7 @@
            (let ((renderer (make-instance ',renderer-name :graph blueprint)))
              ;; Derive argument names and types from :DEFINE-GLOBAL nodes
              (let* ((globals (remove-if-not #'(lambda (n) (eql (node-type n) :DEFINE-GLOBAL)) (graph-nodes blueprint)))
-                    (argnames (map 'list #'(lambda (n) (car (node-writes n))) globals))
+                    (argnames (map 'list #'(lambda (n) (getattr n :name)) globals))
                     (argtypes (map 'list #'(lambda (n) (cons (getattr n :dtype) (getattr n :pointer-p))) globals))
                     (program (caten/runtime/kernel:render-kernel renderer blueprint)))
                (setf (caten/runtime/kernel:kernel-args kernel) argnames
@@ -185,38 +185,61 @@
 (defparameter *indent* 0)
 ;; Default C-style Kernel printer using Default-Renderer for expressions
 (defun indent () (make-string *indent* :initial-element #\Space))
-(define-kernel (Default-Kernel Default-Renderer) () nil
-  :specs
-  ((:PROGN ((:PROGN (~ _))
+(define-kernel
+    (Default-Kernel Default-Renderer) () nil
+    :specs
+    ((:FUNCTION ((:FUNCTION (body) :name fname)
+                 ->
+                 ((node graph)
+                  (let* ((globals (loop for node in (graph-nodes graph)
+                                        if (eql (node-type node) :DEFINE-GLOBAL)
+                                          collect node))
+                         (params (with-output-to-string (o)
+                                   (loop for g in globals
+                                         for dtype = (getattr g :dtype)
+                                         for ptrp  = (getattr g :pointer-p)
+                                         for mode  = (getattr g :mode)
+                                         for name  = (getattr g :name)
+                                         for i upfrom 0 do
+                                           (format o "~a~a~a ~(~a~)~a"
+                                                   (if (eql mode :read) "const " "")
+                                                   dtype
+                                                   (if ptrp "*" "")
+                                                   name
+                                                   (if (< i (1- (length globals))) ", " "")))))
+                         (head (indent))
+                         (body-str (render-kernel body)))
+                    (format nil "~avoid ~(~a~)(~a)~%~a" head fname params body-str)))))
+     (:PROGN ((:PROGN (~ _))
+              ->
+              ((node graph)
+               (let ((head (indent)) (*indent* (+ 2 *indent*)))
+                 (let ((body (map 'list #'render-kernel (node-reads node))))
+                   (format nil "~a{~%~{~a~^~%~}~%~a}" head body head))))))
+     (:IF ((:IF ((:EXPR (cond)) body))
+           ->
+           ((node graph)
+            (let ((head (indent)) (*indent* (+ 2 *indent*)))
+              (let* ((cond-str (render cond)) (body (render-kernel body)))
+                (format nil "~aif (~a)~%~a" head cond-str body))))))
+     (:FOR ((:FOR ((:RANGE ((:EXPR (size)) (:EXPR (step))) :dtype dtype :idx idx) body))
             ->
             ((node graph)
              (let ((head (indent)) (*indent* (+ 2 *indent*)))
-               (let ((body (map 'list #'render-kernel (node-reads node))))
-                 (format nil "~a{~%~{~a~^~%~}~%~a}" head body head))))))
-   (:IF ((:IF ((:EXPR (cond)) body))
-         ->
-         ((node graph)
-          (let ((head (indent)) (*indent* (+ 2 *indent*)))
-            (let* ((cond-str (render cond)) (body (render-kernel body)))
-              (format nil "~aif (~a)~%~a" head cond-str body))))))
-   (:FOR ((:FOR ((:RANGE ((:EXPR (size)) (:EXPR (step))) :dtype dtype :idx idx) body))
-          ->
-          ((node graph)
-           (let ((head (indent)) (*indent* (+ 2 *indent*)))
-             (let* ((size (render size)) (step (render step))
-                    (body (render-kernel body)))
-               (format nil "~afor (~(~a~) ~(~a~)=0; ~(~a~)<~a; ~(~a~)+=~a)~%~a"
-                       head dtype idx idx size idx step body))))))
-   (:EXPR ((:EXPR ((:SETF (_ _))))
-           ->
-           ((node graph)
-            (format nil "~a~a; // EXPR(STORE) {ID: ~a}" (indent) (render (car (node-reads node))) (node-id node))))
-          ((:EXPR (_))
-           ->
-           ((node graph)
-            (format nil "~a~(~a~) ~(~a~) = ~a; // expr {ID: ~a}"
-                    (indent) (caten/ir:tensor-relay-dtype (car (relay-writes (read-type-relay node))))
-                    (car (node-writes node))
-                    (render (car (node-reads node)))
-                    (node-id node))))))
-  :compile nil :launch nil)
+               (let* ((size (render size)) (step (render step))
+                      (body (render-kernel body)))
+                 (format nil "~afor (~(~a~) ~(~a~)=0; ~(~a~)<~a; ~(~a~)+=~a)~%~a"
+                         head dtype idx idx size idx step body))))))
+     (:EXPR ((:EXPR ((:SETF (_ _))))
+             ->
+             ((node graph)
+              (format nil "~a~a; // EXPR(STORE) {ID: ~a}" (indent) (render (car (node-reads node))) (node-id node))))
+            ((:EXPR (_))
+             ->
+             ((node graph)
+              (format nil "~a~(~a~) ~(~a~) = ~a; // expr {ID: ~a}"
+                      (indent) (caten/ir:tensor-relay-dtype (car (relay-writes (read-type-relay node))))
+                      (car (node-writes node))
+                      (render (car (node-reads node)))
+                      (node-id node))))))
+    :compile nil :launch nil)
