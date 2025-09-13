@@ -12,9 +12,12 @@
    #:const
    #:render-kernel
    #:get-renderer
-   #:default-renderer
-   #:default-kernel
-   ))
+
+   #:Default-Renderer
+   #:Default-Kernel
+   #:JSONStyle-Renderer
+   #:JSONStyle-Kernel
+   #:print-blueprint))
 
 (in-package :caten/runtime/bring-your-own-backend)
 
@@ -354,3 +357,12 @@
                    (sym   (const (car (node-writes node)) :float32))
                    (val   (render (car (node-reads node)))))
               (format nil "{\"expr\":{\"id\":\"~a\",\"sym\":~a,\"value\":~a}}" ctype sym val)))))))
+
+(defun print-blueprint (blueprint stream &key (cls 'Default-Kernel))
+  (declare (type caten/ir:ASTGraph blueprint))
+  (let ((program
+          (caten/runtime/kernel:kernel-program
+           (caten/runtime/kernel:make-kernel blueprint :cls cls))))
+    (if stream
+        (format stream "~a" program)
+        program)))
