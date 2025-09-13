@@ -79,7 +79,42 @@
    (loop for s1 in (slice stride (- n)) for s2 in dilation
          collect (!mul (->size s1) (->size s2)))))
 
-(defun !unfold (x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling))
+(defun _pool (x k_ stride dilation &key (ceiling #'ceiling))
+  (declare (type Tensor x))
+  (assert (>= (tensor-nrank x) (length k_)))
+  ;; s_, d_ = make_pair(stride, len(k_)), make_pair(dilation, len(k_))
+  (multiple-value-bind (s_ d_)
+      (values (maybe-list stride k_) (maybe-list dilation k_))
+    (assert (= (length s_) (length d_) (length k_)))
+    ;;noop_, i_ = [None] * len(self.shape[:-len(k_)]), self.shape[-len(k_):]
+    (multiple-value-bind (noop_ noop1_ i_)
+	(values
+	 (loop repeat (length (butlast (tensor-shape x) (length k_))) collect t)
+	 (loop for i upfrom 0 below (length (butlast (tensor-shape x) (length k_))) collect (nth i (tensor-shape x)))
+	 (last (tensor-shape x) (length k_)))
+      ;;o_ = [math.ceil((i - d * (k-1))/s) for i,d,k,s in zip(i_, d_, k_, s_)]
+      (let ((o_ (loop for i in i_ for d in d_ for k in k_ for s in s_
+		      collect (funcall ceiling (/ (- i (* d (- k 1))) s))))) ;; TODO: Support symbolic (need !ceiling)
+        (let* ((xup (apply #'!repeat x (append (loop repeat (length noop_) collect 1)
+					       (loop for k in k_ for i in i_ for d in d_
+						     collect (funcall ceiling (/ (* k (+ i d)) i))))))
+	       ;; xup = xup.shrink(tuple(noop_ + [(0,k*(i+d)) for k,i,d in zip(k_, i_, d_)]))
+	       (xup (apply #'!view xup (append noop_ (loop for k in k_ for i in i_ for d in d_ collect `(0 ,(* k (+ i d)))))))
+	       ;; xup = xup.reshape(noop_ + flatten((k,i+d) for k,i,d in zip(k_, i_, d_)))
+	       (xup (!reshape xup (append noop1_ (loop for k in k_ for i in i_ for d in d_ append `(,k ,(+ i d))))))
+	       ;; xup = xup.shrink(noop_ + flatten(((0,k), (0,o*s)) for k,o,s in zip(k_, o_, s_)))
+	       (xup (apply #'!view xup (append noop_ (loop for k in k_ for o in o_ for s in s_ append (list (list 0 k) (list 0 (* o s)))))))
+	       ;; xup = xup.reshape(noop_ + flatten((k,o,s) for k,o,s in zip(k_, o_, s_)))
+	       (xup (!reshape xup (append noop1_ (loop for k in k_ for o in o_ for s in s_ append (list k o s)))))
+	       ;; xup = xup.shrink(noop_ + flatten(((0,k), (0,o), (0,1)) for k,o in zip(k_, o_)))
+	       (xup (apply #'!view xup (append noop_ (loop for k in k_ for o in o_ append (list (list 0 k) (list 0 o) (list 0 1))))))
+	       ;; xup = xup.reshape(noop_ + flatten((k,o) for k,o in zip(k_, o_)))
+	       (xup (!reshape xup (append noop1_ (loop for k in k_ for o in o_ append (list k o))))))
+	  ;; xup.permute(*range(len(noop_)), *[len(noop_)+i*2+1 for i in range(len(i_))], *[len(noop_)+i*2 for i in range(len(i_))])
+	  ;; Return: [N in_channels, o_, kernel_size]
+	  (!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))))))))))
+
+(defun !unfold (x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling) (mode nil))
   "
 Extracts sliding local blocks from a batched input tensor.
 
@@ -88,11 +123,13 @@ Extracts sliding local blocks from a batched input tensor.
 ```
 "
   (declare (type Tensor x) (type list kernel-size))
-  (let ((dilation (maybe-list dilation kernel-size)) (stride (maybe-list stride kernel-size)))
-    (assert (every #'numberp (slice (tensor-shape x) (- (length kernel-size)))) () "!unfold: the shape intersecting with kernel_size must be static, getting ~a with kernel-size=~a" (tensor-shape x) kernel-size)
-    (let ((shape (compute-unfold-shape (tensor-shape x) kernel-size ceiling stride dilation))
-          (stride (compute-unfold-stride (tensor-stride x) stride dilation (length kernel-size))))
-      (!as-strided x shape stride))))
+  (if mode
+      (_pool x kernel-size stride dilation :ceiling ceiling)
+      (let ((dilation (maybe-list dilation kernel-size)) (stride (maybe-list stride kernel-size)))
+        (assert (every #'numberp (slice (tensor-shape x) (- (length kernel-size)))) () "!unfold: the shape intersecting with kernel_size must be static, getting ~a with kernel-size=~a" (tensor-shape x) kernel-size)
+        (let ((shape (compute-unfold-shape (tensor-shape x) kernel-size ceiling stride dilation))
+              (stride (compute-unfold-stride (tensor-stride x) stride dilation (length kernel-size))))
+          (!as-strided x shape stride)))))
 
 (defun !convnd (x weight &key (bias nil) (groups 1) (stride 1) (dilation 1) (padding 0))
   (let ((out-channels (car (tensor-shape weight)))

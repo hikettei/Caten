@@ -203,12 +203,18 @@
               ;; Memo:
               ;; - VIEW Fusion, what is required?
               ;; - AST+Polyhedral Based Approach is right? or not?
+              ;; Workload:
+              ;; - [ ] Reschedule+MaskedReshape(Tile) == ShapeTracker
+              ;; - [ ] Detect Coalesce First.
+              ;; - [ ] 
               ;; but ranks should be normalized, reshape(A, 3, 3) -> reshape(A, 9) should be:
+              ;; 1. 
               ;; for i in range(9)
               ;;   S(i / 3, i % 3)
               ;; - They can permute, can handle broadcast, can handle A[0:100:2][0:10:2]
               ;; - [Question]
               ;;  - They can handle masked reshape?
+              ;;  - MaskedReshape = Tile?
               (let* ((dom-src (schedule-from-umap Ma))
                      (dom-dst (schedule-from-umap Xa))
                      (theta (isl:schedule-sequence dom-src dom-dst))
