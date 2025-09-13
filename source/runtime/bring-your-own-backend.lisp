@@ -17,6 +17,7 @@
    #:Default-Kernel
    #:JSONStyle-Renderer
    #:JSONStyle-Kernel
+   #:jr-gensym
    #:print-blueprint))
 
 (in-package :caten/runtime/bring-your-own-backend)
@@ -291,23 +292,22 @@
   (:RANGE ((:RANGE (~ _) :idx idx) -> (const idx :int64)))
   (:BIND  ((:BIND  (_) :value v) -> (const v :float32)))
   (:PolyAref
-   ((:PolyAref (arr _))
+   ((:PolyAref (list* arr args))
     ->
     ((node graph)
      (let ((args (map 'list #'render (cdr (node-reads node)))))
        (format nil "<PAref~(~a~)[~{~a~^, ~}]>" (render arr) args))))))
 
-(defmethod caten/runtime/renderer:%render-const ((renderer JSONStyle-Renderer) obj dtype)
-  (declare (ignore dtype))
-  (labels ((jr-gensym (val)
-             (if (symbolp val)
-                 (or (gethash val (jr-vars renderer))
-                     (prog1
-                         (setf (gethash val (jr-vars renderer)) (format nil "{\"symbol\": \"v~a\"}" (jr-cnt renderer)))
-                       (incf (jr-cnt renderer))))
-                 (format nil "{\"const\": ~a}" val))))
-    (jr-gensym obj)))
+(defmethod jr-gensym ((renderer JSONStyle-Renderer) val)
+  (if (symbolp val)
+      (or (gethash val (jr-vars renderer))
+          (prog1
+              (setf (gethash val (jr-vars renderer)) (format nil "{\"symbol\": \"v~a\"}" (jr-cnt renderer)))
+            (incf (jr-cnt renderer))))
+      (format nil "{\"const\": ~a}" val)))
 
+(defmethod caten/runtime/renderer:%render-const ((renderer JSONStyle-Renderer) obj dtype)
+  (jr-gensym renderer obj))
 ;; JSON-style kernel: serialize blueprint for dbcache identity
 (define-kernel (JSONStyle-Kernel JSONStyle-Renderer) () nil
   :specs
@@ -353,7 +353,7 @@
            ->
            ((node graph)
             (let* ((type (car (relay-writes (read-type-relay node))))
-                   (ctype (caten/runtime/renderer::->cdtype (caten/ir:tensor-relay-dtype type)))
+                   (ctype (caten/ir:tensor-relay-dtype type))
                    (sym   (const (car (node-writes node)) :float32))
                    (val   (render (car (node-reads node)))))
               (format nil "{\"expr\":{\"id\":\"~a\",\"sym\":~a,\"value\":~a}}" ctype sym val)))))))

@@ -39,12 +39,12 @@
     (indent) (format stream "~a = Affine(~a){~%" (render-list (node-writes node)) (render-list (node-reads node)))
     (let ((sched
             (uiop:symbol-call
-             :caten/codegen/search/ast :ast->str
+             :caten/codegen/ast :ast->str
              (uiop:symbol-call
-              :caten/codegen/search/ast
+              :caten/codegen/ast
               :compute-ast-from-schedule
               (uiop:symbol-call
-               :caten/codegen/search/polyhedral
+               :caten/codegen/polyhedral
                :psi-theta (getattr node :polyhedron)))
              :polyhedron (getattr node :polyhedron)
              :indent (+ indent 2))))

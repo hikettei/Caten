@@ -231,7 +231,7 @@ Creates a ScheduleGraph from the given grpah.
                                           :storage-map (getf item :storage-map))
                        else
                          collect item)))
-          (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 1)
+          (when (>= (the fixnum (ctx:getenv :DEBUG)) 1)
             (let ((dims (the list (alexandria:hash-table-keys (global-lex-order-dict schedule-space)))))
               (caten/utilities/logger:print-info "Constructed ~a-Dimensional Polyhedral Model: edges=~A" (length dims) dims)))
           (assert (= n-scheduled (length (the list (graph-nodes graph)))))

@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/diskcache
-  (:use :cl :caten/graph :caten/runtime/renderer :caten/codegen/polyhedral :caten/codegen/schedule)
+  (:use :cl :caten/graph :caten/runtime/renderer :caten/codegen/polyhedral :caten/codegen/schedule :caten/runtime/byoc)
   (:export
    #:DBEntry
    #:*db-connection*
@@ -66,7 +66,7 @@
                              (format out "{\"expr_store\":~a}" (e (car (node-reads node))))
                              (let ((type (car (relay-writes (read-type-relay node)))))
                                (format out "{\"expr\":{\"id\":~a,\"sym\":~a,\"value\":"
-                                       (caten/runtime/renderer::->cdtype (caten/ir:tensor-relay-dtype type))
+                                       (caten/ir:tensor-relay-dtype type)
                                        (jr-gensym renderer (car (node-writes node))))
                                (format out "~a" (e (car (node-reads node))))
                                (format out "}}")))))

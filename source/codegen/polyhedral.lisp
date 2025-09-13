@@ -65,7 +65,7 @@ indices.
   (declare (type Global-Lex-Order global-lex-order) (type node polyaref))
   (assert (eql (node-type polyaref) :PolyAref))
   (let ((rank (getattr polyaref :nrank))
-        (renderer (make-instance 'Default-Renderer :graph graph))
+        (renderer (make-instance 'caten/runtime/byoc:Default-Renderer :graph graph))
         (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0))))
     (loop for i upfrom 0 below rank
           for dim = (nth (1+ i) (node-reads polyaref))
