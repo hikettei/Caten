@@ -103,7 +103,10 @@
                     (isl:schedule-node-first-child sched)
                     (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
     (isl:schedule-node-get-schedule sched)))
-
+;; Loop Fusion is:
+;; Only command is required.
+;; Only view and view matters
+;; Use One dimensional affine expression, symbolic is replaced w/ some prime numbers
 ;; Problem1: (9) -> (3, 3) Reshape is not doable.
 ;; Problem2: Symbolic
 ;; TODO: Unravel
@@ -163,6 +166,8 @@
     ;;     MOVE    =====>     |        ==> VIEW
     ;;      |             MERGED_VIEW
     ;;     VIEW
+    ;; [TODO] Partial Realization+Solve Fusion In Advance,
+    ;; - If you use PolyhedralModel Approach, You should use codegen
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
@@ -195,7 +200,15 @@
               ;; - [ ] Reshape Unravel is doable from given strides (add max/min)
               ;; - [ ] (!reshape (!t (make-tensor `(3 3))) `(3 3))
               ;;  - [ ] Normalize first
-              ;; AST Simplify
+              ;; Memo:
+              ;; - VIEW Fusion, what is required?
+              ;; - AST+Polyhedral Based Approach is right? or not?
+              ;; but ranks should be normalized, reshape(A, 3, 3) -> reshape(A, 9) should be:
+              ;; for i in range(9)
+              ;;   S(i / 3, i % 3)
+              ;; - They can permute, can handle broadcast, can handle A[0:100:2][0:10:2]
+              ;; - [Question]
+              ;;  - They can handle masked reshape?
               (let* ((dom-src (schedule-from-umap Ma))
                      (dom-dst (schedule-from-umap Xa))
                      (theta (isl:schedule-sequence dom-src dom-dst))
