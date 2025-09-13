@@ -108,6 +108,7 @@
       `(progn
          (defclass ,kernel-name (,@direct-superclasses caten/runtime/kernel:Kernel) ,direct-slots)
          (defmethod caten/runtime/kernel:kernel-load-blueprint ((kernel ,kernel-name) (blueprint caten/ir:ASTGraph))
+           (caten/runtime/kernel:ast-ensure-expr-before-range blueprint)
            (let ((renderer (make-instance ',renderer-name :graph blueprint)))
              ;; Derive argument names and types from :DEFINE-GLOBAL nodes
              (let* ((globals (remove-if-not #'(lambda (n) (eql (node-type n) :DEFINE-GLOBAL)) (graph-nodes blueprint)))

@@ -1,5 +1,5 @@
 (defpackage :caten/runtime/kernel
-  (:use :cl)
+  (:use :cl :caten/graph)
   (:export
    #:backend-get-kernel-cls
    #:Kernel
@@ -15,7 +15,9 @@
    #:make-kernel
    #:render-kernel
    #:%render-kernel-op
-   #:render-kernel-node))
+   #:render-kernel-node
+
+   #:ast-ensure-expr-before-range))
 
 (in-package :caten/runtime/kernel)
 
@@ -44,6 +46,18 @@
     (when node
       (%render-kernel-op renderer (caten/graph:node-type node) node))))
 
+(defsimplifier
+    (ast-ensure-expr-before-range :speed 0)
+    ;; (RANGE 1 2) -> (RANGE (EXPR 1) (EXPR 2))
+    ((:RANGE (x y) :dtype dtype :idx idx)
+     ->
+     ((node graph)
+      (when (or (numberp x) (numberp y))
+        (caten/ir:with-context-nodes
+          (x (if (numberp x) (car (node-writes (caten/ir:%load (caten/ir:%salloc :dtype dtype) x))) x))
+          (y (if (numberp y) (car (node-writes (caten/ir:%load (caten/ir:%salloc :dtype dtype) y))) y))
+          (out (make-node :Render :RANGE (car (node-writes node)) (list x y) :dtype dtype :idx idx)))))))
+       
 (defun render-kernel (renderer blueprint)
   (let* ((outs (caten/graph:graph-outputs blueprint))
          (root (first outs)))
