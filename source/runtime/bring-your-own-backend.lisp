@@ -230,7 +230,7 @@
                       (body (render-kernel body)))
                  (format nil "~afor (~(~a~) ~(~a~)=0; ~(~a~)<~a; ~(~a~)+=~a)~%~a"
                          head dtype idx idx size idx step body))))))
-     (:EXPR ((:EXPR ((:SETF (_ _))))
+    (:EXPR ((:EXPR ((:SETF (_ _))))
              ->
              ((node graph)
               (format nil "~a~a; // EXPR(STORE) {ID: ~a}" (indent) (render (car (node-reads node))) (node-id node))))
@@ -243,3 +243,114 @@
                       (render (car (node-reads node)))
                       (node-id node))))))
     :compile nil :launch nil)
+
+;; JSONStyle-Renderer (moved from old/source/codegen/renderer.lisp)
+(define-renderer JSONStyle-Renderer ()
+  ((count :initform 0 :accessor jr-cnt)
+   (vars  :initform (make-hash-table) :accessor jr-vars))
+  ;; Load constant
+  (:LOAD ((:LOAD (_) :value x)
+          ->
+          ((node graph)
+           (const x :float32))))
+  ;; Unary
+  (:NEG  ((:NEG  (x)) -> (format nil "{\"op\": \"neg\",  \"x\": ~a}" (render x))))
+  (:NOT  ((:NOT  (x)) -> (format nil "{\"op\": \"not\",  \"x\": ~a}" (render x))))
+  (:SIN  ((:SIN  (x)) -> (format nil "{\"op\": \"sin\",  \"x\": ~a}" (render x))))
+  (:LOG2 ((:LOG2 (x)) -> (format nil "{\"op\": \"log2\", \"x\": ~a}" (render x))))
+  (:EXP2 ((:EXP2 (x)) -> (format nil "{\"op\": \"exp2\", \"x\": ~a}" (render x))))
+  (:SQRT ((:SQRT (x)) -> (format nil "{\"op\": \"sqrt\", \"x\": ~a}" (render x))))
+  (:RECIP((:RECIP(x)) -> (format nil "{\"op\": \"recip\",\"x\": ~a}" (render x))))
+  ;; Binary
+  (:ADD ((:ADD (lhs rhs)) -> ((node graph) (format nil "{\"op\": \"add\", \"lhs\": ~a, \"rhs\": ~a, \"wrap-around\": ~a}"
+                                     (render lhs) (render rhs) (getattr node :wrap-around :allow-undefined t)))))
+  (:MUL ((:MUL (lhs rhs)) -> ((node graph) (format nil "{\"op\": \"mul\", \"lhs\": ~a, \"rhs\": ~a, \"wrap-around\": ~a}"
+                                     (render lhs) (render rhs) (getattr node :wrap-around :allow-undefined t)))))
+  (:MOD ((:MOD (lhs rhs)) -> ((node graph) (format nil "{\"op\": \"mod\", \"lhs\": ~a, \"rhs\": ~a}" (render lhs) (render rhs)))))
+  (:IDIV ((:IDIV (lhs rhs)) -> (format nil "{\"op\": \"idiv\", \"lhs\": ~a, \"rhs\": ~a}" (render lhs) (render rhs))))
+  (:AND ((:AND (lhs rhs)) -> (format nil "{\"op\": \"and\", \"lhs\": ~a, \"rhs\": ~a}" (render lhs) (render rhs))))
+  (:OR  ((:OR  (lhs rhs)) -> (format nil "{\"op\": \"or\",  \"lhs\": ~a, \"rhs\": ~a}" (render lhs) (render rhs))))
+  (:XOR ((:XOR (lhs rhs)) -> (format nil "{\"op\": \"xor\", \"lhs\": ~a, \"rhs\": ~a}" (render lhs) (render rhs))))
+  (:MAX ((:MAX (lhs rhs)) -> (format nil "{\"op\": \"max\", \"lhs\": ~a, \"rhs\": ~a}" (render lhs) (render rhs))))
+  (:AREF ((:AREF (name idx)) -> (format nil "{\"op\": \"aref\", \"lhs\": ~a, \"rhs\": ~a}" (render name) (render idx))))
+  (:CAST ((:CAST (_ y) :dtype dtype) -> (format nil "{\"op\": \"cast\", \"x\": ~a, \"dtype\": \"~(~a~)\"}" (render y) dtype)))
+  (:MOVE ((:MOVE (_ y)) -> (format nil "{\"op\": \"move\", \"x\": ~a}" (render y))))
+  (:SETF ((:SETF (x y)) -> (format nil "{\"op\": \"setf\", \"lhs\": ~a, \"rhs\": ~a}" (render x) (render y))))
+  ;; Ternary
+  (:!= ((:!= (_ x y)) -> (format nil "{\"op\": \"!=\", \"x\": ~a, \"y\": ~a}" (render x) (render y))))
+  (:<  ((:<  (_ x y)) -> (format nil "{\"op\": \"<\",  \"x\": ~a, \"y\": ~a}" (render x) (render y))))
+  (:WHERE ((:WHERE (x y z)) -> (format nil "{\"op\": \"where\", \"x\": ~a, \"y\": ~a, \"z\": ~a}" (render x) (render y) (render z))))
+  ;; Others
+  (:Allocate ((:Allocate (_)) -> "\"<empty>\""))
+  (:EXPR ((:EXPR (x)) -> ((node graph) (const (car (node-writes node)) :float32))))
+  (:DEFINE-GLOBAL ((:DEFINE-GLOBAL () :name name) -> (const name :float32)))
+  (:DEFINE-LOCAL  ((:DEFINE-LOCAL  (_)) -> ((node graph) (const (car (node-writes node)) :float32))))
+  (:RANGE ((:RANGE (~ _) :idx idx) -> (const idx :int64)))
+  (:BIND  ((:BIND  (_) :value v) -> (const v :float32)))
+  (:PolyAref
+   ((:PolyAref (arr _))
+    ->
+    ((node graph)
+     (let ((args (map 'list #'render (cdr (node-reads node)))))
+       (format nil "<PAref~(~a~)[~{~a~^, ~}]>" (render arr) args))))))
+
+(defmethod caten/runtime/renderer:%render-const ((renderer JSONStyle-Renderer) obj dtype)
+  (declare (ignore dtype))
+  (labels ((jr-gensym (val)
+             (if (symbolp val)
+                 (or (gethash val (jr-vars renderer))
+                     (prog1
+                         (setf (gethash val (jr-vars renderer)) (format nil "{\"symbol\": \"v~a\"}" (jr-cnt renderer)))
+                       (incf (jr-cnt renderer))))
+                 (format nil "{\"const\": ~a}" val))))
+    (jr-gensym obj)))
+
+;; JSON-style kernel: serialize blueprint for dbcache identity
+(define-kernel (JSONStyle-Kernel JSONStyle-Renderer) () nil
+  :specs
+  ((:FUNCTION ((:FUNCTION (body))
+               ->
+               ((node graph)
+                (let* ((globals
+                         (loop for node in (graph-nodes graph)
+                               if (eql (node-type node) :DEFINE-GLOBAL)
+                                 collect node))
+                       (gstr (with-output-to-string (o)
+                               (loop for g in globals
+                                     for i from 0
+                                     for name = (car (node-writes g))
+                                     for dtype = (getattr g :dtype)
+                                     for mode  = (getattr g :mode)
+                                     for ptrp  = (getattr g :pointer-p) do
+                                       (when (> i 0) (format o ","))
+                                       (format o "{\"arg\":~a,\"dtype\":\"~a_~a_~(~a~)\"}"
+                                               (const name :float32)
+                                               (if ptrp "*" "") mode dtype)))))
+                  (format nil "{\"globals\":[~a],\"body\":~a}" gstr (render-kernel body))))))
+   (:PROGN ((:PROGN (~ _))
+            ->
+            ((node graph)
+             (let ((items (map 'list #'render-kernel (node-reads node))))
+               (format nil "{\"progn\":[~{~a~^,~}]}" items)))))
+   (:IF ((:IF ((:EXPR (cond)) body))
+         ->
+         ((node graph)
+          (format nil "{\"if\":{\"cond\":~a,\"then\":~a}}"
+                  (render cond) (render-kernel body)))))
+   (:FOR ((:FOR ((:RANGE ((:EXPR (size)) (:EXPR (step))) :dtype dtype :idx idx) body))
+          ->
+          ((node graph)
+           (format nil "{\"for\":{\"idx\":~a,\"lower\":0,\"upper\":~a,\"step\":~a,\"body\":~a}}"
+                   (const idx :int64) (render size) (render step) (render-kernel body)))))
+   (:EXPR ((:EXPR ((:SETF (_ _))))
+           ->
+           ((node graph)
+            (format nil "{\"expr_store\":~a}" (render (car (node-reads node))))))
+          ((:EXPR (_))
+           ->
+           ((node graph)
+            (let* ((type (car (relay-writes (read-type-relay node))))
+                   (ctype (caten/runtime/renderer::->cdtype (caten/ir:tensor-relay-dtype type)))
+                   (sym   (const (car (node-writes node)) :float32))
+                   (val   (render (car (node-reads node)))))
+              (format nil "{\"expr\":{\"id\":\"~a\",\"sym\":~a,\"value\":~a}}" ctype sym val)))))))
