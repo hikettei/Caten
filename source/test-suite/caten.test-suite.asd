@@ -1,45 +1,24 @@
-(asdf:defsystem "caten.test-suite"
-  :description "This is where unittest occur for Caten.
-Tests that are not related to the core functionality of Caten or are time-consuming are tested here."
-  :author      "hikettei <ichndm@gmail.com>"
-  :depends-on
-  ("rove" "trivia" "cl-ppcre" "py4cl" "caten/gguf")
-  :serial t
-  :components ((:file "package")
-	       (:file "helpers")
-               (:file "test-aasm")
-               (:file "test-air")
-               (:file "test-apis")
-               (:file "test-runtime")
-               (:file "test-ops")
-               (:file "test-expr")
-               (:file "test-autodiff")
-               (:file "test-activations")
-               (:file "test-optim")
-               (:file "test-simplifier")
-               (:file "test-view")
-               (:file "test-regression-test")
-               (:file "test-normalization")
-	       (:file "test-randomness")
-	       (:file "test-iseq-lowerer")
-	       (:file "test-gemm")
-               (:file "test-padding")
-	       (:file "test-conv")
-               (:file "test-pool")
-               (:file "test-shape-tracker")
-               (:file "test-schedule")
-               (:file "test-scheduler")
-               (:file "test-llm")
-               (:file "test-dynamic-shape")
-               (:file "test-memory-planner")
-               (:file "test-schedule-cache")
-               (:file "test-rope")
-               (:file "test-polyhedral")
-               (:file "test-kernel-opt")
-               (:file "external/test-gguf")
-               (:file "external/test-tokenizer"))
-  :perform
-  (asdf:test-op
-   (o s)
-   (let ((result (uiop:symbol-call (find-package :rove) :run s :style :spec)))
-     (assert (or (null (uiop:getenv "CI")) result)))))
+#.(progn
+    (defparameter *test-components*
+      (list
+       :graph/test-rewrite
+       :api/test-shape
+       ))
+    (defun generate-components () (loop for component in *test-components* collect `(:file ,(princ-to-string component))))
+    `(asdf:defsystem "caten.test-suite"
+       :description "This is where unittest occur for Caten."
+       :author      "hikettei <ichndm@gmail.com>"
+       :depends-on ("rove" "py4cl" "trivia" "cl-ppcre")
+       :components ,(generate-components)
+       :serial t
+       :perform
+       (asdf:test-op
+        (o s)
+        (format t "Running test-suite ...~%")
+        ,@(loop for component in *test-components*
+                collect
+                `(let ((pkg (find-package ,(intern (format nil "CATEN/TEST-SUITE/~a" component) "KEYWORD"))))
+                   (format t ,(format nil "Running ~a ...~%" component))
+                   (assert pkg () ,(format nil "A package CATEN/TEST-SUITE/~a is not found" component))
+                   (uiop:symbol-call :rove :run-suite pkg) ;; style spec is available on latest commit of rove
+                   )))))

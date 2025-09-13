@@ -2,33 +2,15 @@
   :description "Caten Code Generator Engine"
   :author "hikettei <ichndm@gmail.com>"
   :licence "MIT"
-  :depends-on ("caten.runtime" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi" "ironclad" "mito")
+  :depends-on ("caten.runtime" "caten.ir" "caten.graph" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cffi" "ironclad" "mito")
   :serial t
   :components
-  ((:file "helpers")
-   (:file "byoc")
-   (:file "iteration")
-   (:file "renderer")
-   (:file "rewriting-rules")
-   (:file "scheduler")
-   (:file "realize")
-   (:file "blueprint")
+  ((:file "directive")
+   (:file "schedule")
+   (:file "polyhedral")
+   (:file "diskcache")
+   (:file "optimization-rule")
+   (:file "ast")
+   (:file "search")
    (:file "memory-planner")
-   (:file "pprinter")
-   ;; AutoSchedulers
-   (:file "search/directive")
-   (:file "search/schedule")
-   (:file "search/polyhedral")
-   (:file "search/diskcache")
-   (:file "search/perf")
-   (:file "search/optimization-rule")
-   (:file "search/ast")
-   (:file "search/evaluator")
-   (:file "search/dataflow")
-   (:file "search/autotune")
-   (:file "search/lowerer")
-   
-   (:file "jit")
-   (:file "package")
-   ;(:file "documentation")
-   ))
+   (:file "lowerer")))

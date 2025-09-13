@@ -388,6 +388,10 @@
 (defun map-get-dim-name (map type pos)
   (%isl-map-get-dim-name (map-handle map) type pos))
 
+(define-isl-function map-params %isl-map-params
+  (:give set)
+  (:take map))
+
 (export 'basic-set-drop-constraints-involving-dims)
 (defun basic-set-drop-constraints-involving-dims (basic-set type first n)
   (%make-basic-set
@@ -499,6 +503,10 @@
 (export 'set-get-dim-id)
 (defun set-get-dim-id (set type pos)
   (%make-identifier (%isl-set-get-dim-id (set-handle set) type pos)))
+
+(export 'set-get-dim-name)
+(defun set-get-dim-name (set type pos)
+  (%isl-set-get-dim-name (set-handle set) type pos))
 
 (define-isl-function set-get-tuple-id %isl-set-get-tuple-id
   (:give identifier)
@@ -673,6 +681,18 @@
 (define-isl-function map-affine-hull %isl-map-affine-hull
   (:give basic-map)
   (:take map))
+
+(define-isl-function set-affine-hull %isl-set-affine-hull
+  (:give basic-set)
+  (:take set))
+
+(define-isl-function union-map-is-single-valued %isl-union-map-is-single-valued
+  (:give boolean)
+  (:keep union-map))
+
+(define-isl-function union-map-params %isl-union-map-params
+  (:give set)
+  (:take union-map))
 ;; Preimage
 (define-isl-function union-map-preimage-range-multi-aff %isl-union-map-preimage-range-multi-aff
   (:give union-map)
@@ -683,6 +703,16 @@
   (:give union-map)
   (:take union-map)
   (:take multi-aff))
+
+(define-isl-function union-map-preimage-range-pw-multi-aff %isl-union-map-preimage-range-pw-multi-aff
+  (:give union-map)
+  (:take union-map)
+  (:take pw-multi-aff))
+
+(define-isl-function union-map-preimage-domain-pw-multi-aff %isl-union-map-preimage-domain-pw-multi-aff
+  (:give union-map)
+  (:take union-map)
+  (:take pw-multi-aff))
 
 (define-isl-function union-set-preimage-multi-aff %isl-union-set-preimage-multi-aff
   (:give union-set)
@@ -698,6 +728,16 @@
   (:give map)
   (:take map)
   (:take multi-aff))
+
+(define-isl-function map-preimage-range-pw-multi-aff %isl-map-preimage-range-pw-multi-aff
+  (:give map)
+  (:take map)
+  (:take pw-multi-aff))
+
+(define-isl-function map-preimage-domain-pw-multi-aff %isl-map-preimage-domain-pw-multi-aff
+  (:give map)
+  (:take map)
+  (:take pw-multi-aff))
 
 (define-isl-function set-preimage-multi-aff %isl-set-preimage-multi-aff
   (:give set)
@@ -761,6 +801,7 @@
 (export 'map-is-equal)
 (defun map-is-equal (m1 m2)
   (eql :bool-true (%isl-map-is-equal (map-handle m1) (map-handle m2))))
+
 (define-isl-function map-wrap %isl-map-wrap
   (:give set)
   (:take map))
@@ -806,6 +847,11 @@
 (define-isl-function map-reverse %isl-map-reverse
   (:give map)
   (:take map))
+
+(define-isl-function map-reset-tuple-id %isl-map-reset-tuple-id
+  (:give map)
+  (:take map)
+  (:take dim-type))
 
 (define-isl-function map-apply-range %isl-map-apply-range
   (:give map)
@@ -1061,6 +1107,14 @@
   (:give aff)
   (:take multi-aff)
   (:take fixnum))
+
+(define-isl-function pw-multi-aff-from-map %isl-pw-multi-aff-from-map
+  (:give pw-multi-aff)
+  (:take map))
+
+(define-isl-function pw-multi-aff-get-space %isl-pw-multi-aff-get-space
+  (:give space)
+  (:keep pw-multi-aff))
 
 (define-isl-function union-pw-multi-aff-empty %isl-union-pw-multi-aff-empty
   (:give union-pw-multi-aff)
@@ -1773,3 +1827,42 @@
 (define-isl-function isl-printer-to-str %isl-printer-to-str
   (:give isl-printer)
   (:parm context *context*))
+;;;; Matrix
+(export 'basic-map-equalities-matrix)
+(defun basic-map-equalities-matrix (bmap &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+  (assert (= 5 (length order)))
+  (%make-mat (apply #'%isl-basic-map-equalities-matrix (basic-map-handle bmap) order)))
+(export 'basic-map-inequalities-matrix)
+(defun basic-map-inequalities-matrix (bmap &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+  (assert (= 5 (length order)))
+  (%make-mat (apply #'%isl-basic-map-inequalities-matrix (basic-map-handle bmap) order)))
+(export 'basic-set-equalities-matrix)
+(defun basic-set-equalities-matrix (bset &key (order (list :dim-cst :dim-param :dim-set :dim-div)))
+  (assert (= 4 (length order)))
+  (%make-mat (apply #'%isl-basic-set-equalities-matrix (basic-set-handle bset) order)))
+(export 'basic-set-inequalities-matrix)
+(defun basic-set-inequalities-matrix (bset &key (order (list :dim-cst :dim-param :dim-set :dim-div)))
+  (assert (= 4 (length order)))
+  (%make-mat (apply #'%isl-basic-set-inequalities-matrix (basic-set-handle bset) order)))
+(export 'basic-set-from-constraint-matrices)
+(defun basic-set-from-constraint-matrices (space eq ineq &key (order (list :dim-cst :dim-param :dim-set :dim-div)))
+  (assert (= 4 (length order)))
+  (%make-basic-set (apply #'%isl-basic-set-from-constraint-matrices (space-handle space) (mat-handle eq) (mat-handle ineq) order)))
+(export 'basic-map-from-constraint-matrices)
+(defun basic-map-from-constraint-matrices (space eq ineq &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+  (assert (= 5 (length order)))
+  (%make-basic-map (apply #'%isl-basic-map-from-constraint-matrices (space-handle space) (mat-handle eq) (mat-handle ineq) order)))
+
+(export 'mat-ref)
+(defun mat-ref (mat row col)
+  (assert (>= row 0))
+  (assert (>= col 0))
+  (assert (< row (%isl-mat-rows (mat-handle mat))))
+  (assert (< col (%isl-mat-cols (mat-handle mat))))
+  (let ((val (%isl-mat-get-element-val (mat-handle mat) row col)))
+    (prog1 (%isl-val-get-num-si val) (%isl-val-free val))))
+
+(export 'mat-rows)
+(defun mat-rows (mat) (%isl-mat-rows (mat-handle mat)))
+(export 'mat-cols)
+(defun mat-cols (mat) (%isl-mat-cols (mat-handle mat)))

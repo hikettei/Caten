@@ -1,4 +1,17 @@
 (in-package :caten/api)
+;; [TODO]
+;; - [ ] (change-facet 1 :Tensor) => PrintObjectできるようにしたい。
+;; ~~ GlobalRuntime ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *global-runtime* (make-hash-table))
+(defun get-global-runtime ()
+  "
+```
+(get-global-runtime)
+```
+Returns a temporary runtime object just used for allocation global buffer."
+  (or (gethash (ctx:getenv :BACKEND) *global-runtime*)
+      (setf (gethash (ctx:getenv :BACKEND) *global-runtime*) (caten/runtime/runtime:make-runtime))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 (defgeneric change-facet (obj direction)
   (:documentation "
@@ -21,12 +34,10 @@ Users can extend this method if needed.
 
 (defun simple-array->array (array dimensions dtype)
   (declare (type simple-array array))
-  (make-array dimensions :element-type (dtype->lisp dtype) :displaced-to array :displaced-index-offset 0))
+  (make-array dimensions :element-type (caten/utilities/dtype:dtype->lisp dtype) :displaced-to array :displaced-index-offset 0))
 
-(defmethod change-facet ((obj number) (direction (eql :tensor)))
-  (ctx:with-contextvar (:BACKEND "LISP")
-    (proceed (make-scalar obj :dtype (obj-dtype-of obj)))))
-
+(defmethod change-facet ((obj number) (direction (eql :tensor))) (make-scalar obj :dtype (obj-dtype-of obj)))
+(defmethod change-facet ((obj Tensor) (direction (eql :tensor))) obj)
 (defmethod change-facet ((obj list) direction)
   (labels ((list-dimensions (list depth)
 	     (loop repeat depth
@@ -35,7 +46,7 @@ Users can extend this method if needed.
 	   (list-to-array (list depth)
 	     (make-array (list-dimensions list depth)
 			 :initial-contents list
-			 :element-type (dtype->lisp (obj-dtype-of (car (flatten list))))))
+			 :element-type (caten/utilities/dtype:dtype->lisp (obj-dtype-of (car (alexandria:flatten list))))))
 	   (get-dimensions (x &optional (n 1))
 	     (if (some #'listp x)
 		 (get-dimensions (car x) (1+ n))
@@ -53,28 +64,21 @@ Users can extend this method if needed.
 			        :displaced-to obj))))
          (dtype (if (eql t (array-element-type obj))
                     (obj-dtype-of (aref storage 0))
-                    (caten/common.dtype:lisp->dtype (array-element-type obj))))
-         (buffer (make-buffer (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil :device (caten/codegen/byoc:get-buffer-type)))
-         ;; TODO: Transfer into device without initializing runtime
-         (_ (open-buffer (get-global-runtime) buffer))
-         (__ (transfer-from-array (get-global-runtime) buffer storage))
-         (place (make-tensor (array-dimensions obj) :dtype dtype :from buffer)))
-    (declare (ignore _ __))
-    (setf (tensor-buffer place) buffer)
-    place))
+                    (caten/utilities/dtype:lisp->dtype (array-element-type obj)))))
+    (make-tensor (array-dimensions obj) :dtype dtype :from storage)))
 
 (defmethod change-facet ((obj tensor) (direction (eql :array)))
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
-  (let ((storage (transfer-into-array (tensor-buffer obj))))
-    (simple-array->array storage (buffer-shape (tensor-buffer obj)) (tensor-dtype obj))))
+  (let ((storage (caten/runtime/buffer:transfer-into-array (tensor-buffer obj))))
+    (simple-array->array storage (caten/runtime/buffer:buffer-shape (tensor-buffer obj)) (tensor-dtype obj))))
 
 (defmethod change-facet ((obj tensor) (direction (eql :simple-array)))
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
-  (transfer-into-array (tensor-buffer obj)))
+  (caten/runtime/buffer:transfer-into-array (tensor-buffer obj)))
 
 (defun synchronize-facet (placeholder bind direction)
   (when (and (tensor-p placeholder) (not (eql direction :tensor)))
-    (transfer-from-array (get-global-runtime) (tensor-buffer placeholder) (change-facet (change-facet bind :tensor) :simple-array))))
+    (caten/runtime/buffer:transfer-from-array (get-global-runtime) (tensor-buffer placeholder) (change-facet (change-facet bind :tensor) :simple-array))))
 
 (defmacro with-facet ((bind (object &key (direction :array))) &body body &aux (placeholder (gensym)))
   "

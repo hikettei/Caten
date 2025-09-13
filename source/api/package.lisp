@@ -1,230 +1,74 @@
-(in-package :cl-user)
 (defpackage :caten/api
-  (:nicknames :caten)
-  (:documentation "API frontend for ASM/VM/JIT etc, including:
-- AbstractTensor Frontend
-- Shape Tracker
-- Merge View Solver
-- ASM Bindings
-- Graph Caller")
-  (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/runtime)
-  (:local-nicknames (:docs :caten/common.documentation))
-  (:import-from
-   :caten/common.dtype
-   #:dtype-t
-   #:dtype->lisp)
-  
-  ;; from aot-compilation.lisp
+  (:use :cl :trivia :cl-ppcre :caten/ir :caten/graph)
+  ;; From tensor.lisp
   (:export
-   #:caten/defun[t]
-   #:caten/defun[all]
-   #:caten/defun[float]
-   #:caten/defun[int]
-   #:caten/defun[uint])
-  
-  ;; from tensor.lisp
-  (:export
-   #:*global-runtime*
-   #:get-global-runtime
-   #:make-tensor
-   #:make-view-internal
-   #:tensor-graph
-   #:tensor-lowered-graph
-   #:fconst #:uconst #:iconst
-   #:->iconst #:->fconst #:->uconst
-   
    #:Tensor
-   #:tensor-p
-   #:tensor-shape
-   #:tensor-buffer
-   #:tensor-dtype
-   #:tensor-order
+   #:tensor-graph
    #:tensor-id
-   #:tensor-op
-   #:tensor-tr
+   #:tensor-buffer
+
+   #:%%make-tensor
+   #:tensor-simplify
+   #:tensor-verify
+   #:tensor-node
+   #:tensor-is-symbolic-p
+   #:tensor->id
+   #:tensor-type
+   #:node->tensor
+   #:ensure-node-is-tensor
+   #:tensor-shape
+   #:tensor-nrank
+   #:tensor-stride
+   #:tensor-dtype
    #:tensor-views
-   #:tensor-requires-grad
-   #:tensor-grad
-   #:tensor-variables
-   #:grad
-   #:shape
-   #:ndim
-   #:dtype-of
-   #:order
 
-   #:*external-simplifiers*
-   #:proceed
+   #:tensor-from-graph
+   #:apply-tensor-graph
+   #:with-inlined-tir
+   #:apply-tir
 
-   #:inf #:-inf #:nan
-   #:float-type-of)
-  
-  ;; from model.lisp
-  (:export
-   #:defmodel
-   #:call
-   #:defcall
-   #:defsequence
-   #:asnode)
-  
-  ;; from conditions.lisp
-  (:export
-   #:caten-forward-error
-   #:caten-backward-error)
-  
-  ;; from shape-tracker.lisp
-  (:export
-   #:st
-   #:bc)
-  
-  ;; from merge-views.lisp
-  (:export
-    #:Tracker
-    #:tr-shape #:tr-base-shape #:tr-stride #:tr-order #:tr-broadcast #:tr-mask #:tr-permute #:tr-contiguous
-    #:canonicalize-int
-    #:un1d
-    #:start-tracking
-    #:tr-apply-permute #:tr-apply-reshape #:tr-apply-uprank #:tr-reshapeable-p #:tr-apply-slice #:tr-apply-broadcast)
-  
-  ;; from module.lisp
-  (:export
-   #:Module
-   #:impl
-   #:defmodule
-   #:module-outputs
-   #:module-attrs
-   #:module-sv4bws
-   ;; State-Dict
-   #:State-Dict
-   #:Make-State-Dict
-   #:State-Dict-Entry
-   #:State-Dict-p
-   #:Copy-State-Dict
-   #:->state-dict
-   #:get-state-dict
-   #:load-state-dict)
-  
-  ;; from high-level-ops.lisp
-  (:export
-   ;; reductions
-   #:SumNode
-   #:!sum
-   #:MeanNode
-   #:!mean
-   #:!matmul
-   #:!softmax
+   #:make-tensor
+   #:make-scalar
 
-   ;; composed mathematical functions
-   #:!sinh #:!cosh #:!tanh
-   #:!truncate #:!ceiling #:!floor
+   #:!+ #:!- #:!* #:!/ #:!add #:!sub #:!mul #:!div
+   #:!idiv #:!move #:!maximum #:!minimum
 
-   ;; linalg
-   #:!tril
-   #:!triu
+   #:!sin
 
-   ;; argmax/min
-   #:!argmax #:!argmin
-
-   ;; statical
-   #:!variance #:!std
-   ;; dimension manipulation
-   #:!split
-   #:!chunk
-   #:!concatenate
-
-   #:!square #:!rsqrt #:!gid #:!normalize-axis)
-  
-  ;; from helpers.lisp
-  (:export
-   #:with-no-grad
-   #:with-attrs
-   #:normalize-axis
-   #:normalize-axes)
-  
-  ;; from iseq.lisp
-  (:export
-   #:%compile-toplevel
-   #:caten
-   #:forward
-   #:backward
-   #:proceed
-   #:%run)
-
-  ;; from function.lisp
-  (:export
-   #:Func
-   #:func-variables
-   #:lower
-   #:!identity
-   ;; shaping
-   #:!view #:!view-from-base #:!reshape #:!flatten #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose
-   #:!expand
+   ;; Movements
+   #:!contiguous
+   #:!reshape
+   #:!permute
+   #:!t
+   #:!transpose
    #:!uprank
-   ;; Binary
-   #:!add #:!+
-   #:!sub #:!-
-   #:!mul #:!*
-   #:!div #:!/
-   #:!mod
-   #:!idiv
-   #:!move
-   #:!assign
-   #:!maximum #:!minimum
-   #:!max #:!min
-   #:!gcd #:!lcm
+   #:!flatten
+   #:!repeat
+   #:!expand
+   #:!squeeze
+   #:!unsqueeze
+   #:!view
 
-   ;; Unary
-   #:!neg #:!recip
-   #:!cast #:!signum #:!abs
-   #:!sin #:!cos #:!tan
-   #:!exp #:!exp2
-   #:!log #:!log2
-   #:!sqrt #:!expt
-   ;; Logical
-   #:!< #:!> #:!<= #:!>= #:!eq #:!neq
-   ;; TernaryOps
-   #:!where
-   ;; more
-   #:!const
-   #:!stride
-   #:!index-components
-   #:!xor #:!or #:!and
-   ;; utils
-   #:!rsqrt #:!square
-   #:!clip #:!erf
+   ;; floating utils
+   #:inf
+   #:-inf
+   #:nan
+   #:float-infinity-p
+   #:float-nan-p
+   #:float-type-of
    )
-  
   ;; from facets.lisp
   (:export
+   #:get-global-runtime
    #:change-facet
    #:with-facet
    #:with-facets)
-  
-  ;; from initializers.lisp
+  ;; from hlops.lisp
   (:export
-   #:*inference-mode*
-   #:with-inference-mode
-   #:make-input
-   #:make-param
-   
-   #:set-manual-seed
-   #:with-manual-seed
-   #:*rng-counter*
-   #:get-rng-counter
-   #:ax+b
-   #:!full
-   #:!rand
-   #:!randn
-   #:!normal
-   #:!uniform
-   #:!randint
-
-   ;; static
-   #:rand
-   #:uniform
-   #:randn
-   #:normal
-   #:randint
-   #:linspace
-   #:xavier-uniform
-   #:xavier-gaussian
-   ))
+   #:!sum
+   #:!matmul)
+  ;; from shape.lisp
+  (:export
+   #:*restart-point*
+   #:Restart-Point)
+  )

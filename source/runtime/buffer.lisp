@@ -19,7 +19,6 @@ Buffer expects the following methods to be implemented:
   (:export
    #:AbstractBuffer
    #:buffer-shape
-   #:buffer-storage-size
    #:buffer-stride
    #:buffer-dtype
    #:buffer-views
@@ -28,7 +27,7 @@ Buffer expects the following methods to be implemented:
    #:make-buffer
    #:buffer-p
    #:copy-buffer
-   
+   #:backend-get-buffer-cls
    #:open-buffer
    #:close-buffer
    #:transfer-from-array
@@ -40,6 +39,8 @@ Buffer expects the following methods to be implemented:
 
 (in-package :caten/runtime/buffer)
 
+(defgeneric backend-get-buffer-cls (backend-id))
+
 (defparameter *max-display-matrix* 2)
 (defparameter *max-display-len* 10)
 
@@ -49,8 +50,7 @@ Buffer expects the following methods to be implemented:
    (dtype :accessor buffer-dtype :initarg :dtype :type keyword)
    (views :accessor buffer-views :initarg :views :initform nil :type list)
    (nrank :accessor buffer-nrank :initarg :nrank :initform 0 :type fixnum)
-   (value :accessor buffer-value :initarg :value :initform nil))
-  (:documentation ""))
+   (value :accessor buffer-value :initarg :value :initform nil)))
 
 (defmethod print-object ((obj AbstractBuffer) stream)
   (print-unreadable-object (obj stream :type t :identity t)
@@ -66,14 +66,6 @@ Buffer expects the following methods to be implemented:
       (when (slot-boundp buffer slot)
         (setf (slot-value copy slot) (slot-value buffer slot))))
     copy))
-
-(defmethod buffer-storage-size ((buffer AbstractBuffer))
-  (min
-   (apply #'* (buffer-shape buffer))
-   (apply #'* (loop for s in (buffer-shape buffer)
-                    for nth upfrom 0
-                    for v = (nth nth (buffer-views buffer))
-                    if (and (listp v) (fourth v)) collect 1 else collect s))))
 
 (defgeneric open-buffer (runtime buffer)
   (:documentation "Fills the (buffer-value buffer) with zero the given shape and dtype."))
@@ -102,7 +94,7 @@ Buffer expects the following methods to be implemented:
                  (* stride idx)))))
     (bref buffer (apply #'+ (map 'list #'->idx (iota (buffer-nrank buffer)))))))
 
-(defun make-buffer (shape stride dtype views &key (value nil) (device 'AbstractBuffer))
+(defun make-buffer (shape stride dtype views &key (value nil) (device (backend-get-buffer-cls (ctx:getenv :BACKEND))))
   "
 ```
 (make-buffer shape stride dtype views &key (value nil) (device 'AbstractBuffer))

@@ -242,6 +242,10 @@
 (defmethod print-object ((value union-pw-multi-aff) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-union-pw-multi-aff-to-str (union-pw-multi-aff-handle value)) stream)))
+
+(defmethod print-object ((value pw-multi-aff) stream)
+  (print-unreadable-object (value stream :type t)
+    (write-string (%isl-pw-multi-aff-to-str (pw-multi-aff-handle value)) stream)))
 ;;;; astexpr
 (define-isl-object ast-expr
   :free %isl-ast-expr-free
@@ -396,3 +400,17 @@
   (def schedule-node-error))
 ;;;; printer
 (define-isl-object isl-printer :free %isl-printer-free)
+;;;; matrix
+(define-isl-object mat
+  :free %isl-mat-free
+  :copy %isl-mat-copy)
+
+(defmethod print-object ((mat mat) stream)
+  (print-unreadable-object (mat stream :type t)
+    (format stream ":rows ~a :cols ~a~%~a" (%isl-mat-rows (mat-handle mat)) (%isl-mat-cols (mat-handle mat))
+            (with-output-to-string (out)
+              (dotimes (i (%isl-mat-rows (mat-handle mat)))
+                (format out "    ")
+                (dotimes (j (%isl-mat-cols (mat-handle mat)))
+                  (format out "~a " (mat-ref mat i j)))
+                (format out "~%"))))))

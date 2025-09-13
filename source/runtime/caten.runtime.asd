@@ -1,10 +1,11 @@
 (asdf:defsystem "caten.runtime"
-  :description "A compiled air graph runner for multiple hardwares"
+  :description ""
   :author "hikettei <ichndm@gmail.com>"
   :license "MIT"
-  :depends-on ("caten.air" "caten.aasm" "closer-mop")
+  :depends-on ("caten.graph" "caten.ir" "closer-mop")
   :serial t
   :components ((:file "buffer")
-               (:file "profile")
                (:file "runtime")
-               (:file "package")))
+               (:file "kernel")
+               (:file "renderer")
+               (:file "bring-your-own-backend")))
