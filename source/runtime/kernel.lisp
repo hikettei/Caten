@@ -55,7 +55,7 @@
         (caten/ir:with-context-nodes
           (x (if (numberp x) (car (node-writes (caten/ir:%load (caten/ir:%salloc :dtype dtype) x))) x))
           (y (if (numberp y) (car (node-writes (caten/ir:%load (caten/ir:%salloc :dtype dtype) y))) y))
-          (out (make-node :Render :RANGE (car (node-writes node)) (list x y) :dtype dtype :idx idx)))))))
+          (out (make-node :Render :RANGE (node-writes node) (list x y) :dtype dtype :idx idx)))))))
        
 (defun render-kernel (renderer blueprint)
   (let* ((outs (caten/graph:graph-outputs blueprint))
@@ -63,8 +63,12 @@
     (assert root () "Kernel blueprint must have a root output node.")
     (render-kernel-node renderer root)))
 
-(defun make-kernel (name blueprint &key (backend (ctx:getenv :BACKEND)))
-  (let* ((cls (backend-get-kernel-cls backend))
-         (kernel (make-instance (or cls 'Kernel) :name name)))
-    (kernel-load-blueprint kernel blueprint)
-    kernel))
+(defun make-kernel (astgraph &key (cls (backend-get-kernel-cls (ctx:getenv :BACKEND))))
+  (declare (type caten/ir:ASTGraph astgraph))
+  (assert (= 1 (length (graph-outputs astgraph))))
+  (assert (subtypep cls 'Kernel))
+  (let ((root (id->value astgraph (car (graph-outputs astgraph)))))
+    (assert (and root (eql (node-type root) :FUNCTION)) () "A root of kernel ASTGraph should be a function!")
+    (let ((kernel (make-instance cls :name (getattr root :name))))
+      (kernel-load-blueprint kernel astgraph)
+      kernel)))

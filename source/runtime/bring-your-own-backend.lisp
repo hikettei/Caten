@@ -13,6 +13,7 @@
    #:render-kernel
    #:get-renderer
    #:default-renderer
+   #:default-kernel
    ))
 
 (in-package :caten/runtime/bring-your-own-backend)

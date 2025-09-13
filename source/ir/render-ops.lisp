@@ -48,8 +48,8 @@ Constraints:
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
-(defun %function (prog &key (name (gensym "FNAME")) (out (gensym "FUNCTION")))
-  (declare (type (or symbol node) prog) (type symbol name out))
+(defun %function (args prog &key (name (gensym "FNAME")) (out (gensym "FUNCTION")))
+  (declare (type (or symbol node) prog) (type symbol name out) (ignore args))
   (emit (make-node :Render :FUNCTION (list out) (list (node->id1 prog)) :name name)))
 
 (defun %global (write-to name dtype pointer-p &key (mode :io))
@@ -751,7 +751,6 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
                         (opts
                          (list
                           #'fold-constant
-                          #'fuse-duplicated-store
                           #'simplify-control-flow
                           #'exprify-ast
                           #'ast-simplify-expr
@@ -768,7 +767,7 @@ so this rule should be applied JUST BEFORE RENDERING THE FINAL CODE."
     g))
 
 (defun simplify-ast (graph)
-  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'ast-synchronize-read-write #'(lambda (x) (graph-infer-type-relay x) x))))
+  (%simplify-ast graph :opts (list #'fold-constant #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'ast-synchronize-read-write #'(lambda (x) (graph-infer-type-relay x) x))))
 
 (defun ast-simplify-expr-subgraph (graph &aux (simplified-subgraphs))
   (loop for node in (graph-nodes graph)
