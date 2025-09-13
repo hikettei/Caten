@@ -53,9 +53,9 @@
      ((node graph)
       (when (or (numberp x) (numberp y))
         (caten/ir:with-context-nodes
-          (x (if (numberp x) (car (node-writes (caten/ir:%load (caten/ir:%salloc :dtype dtype) x))) x))
-          (y (if (numberp y) (car (node-writes (caten/ir:%load (caten/ir:%salloc :dtype dtype) y))) y))
-          (out (make-node :Render :RANGE (node-writes node) (list x y) :dtype dtype :idx idx)))))))
+          (x (if (numberp x) (car (node-writes (caten/ir:%expr (caten/ir:%load (caten/ir:%salloc :dtype dtype) x)))) x))
+          (y (if (numberp y) (car (node-writes (caten/ir:%expr (caten/ir:%load (caten/ir:%salloc :dtype dtype) y)))) y))
+          (out (caten/ir:emit (make-node :Render :RANGE (node-writes node) (list x y) :dtype dtype :idx idx))))))))
        
 (defun render-kernel (renderer blueprint)
   (let* ((outs (caten/graph:graph-outputs blueprint))
@@ -70,5 +70,7 @@
   (let ((root (id->value astgraph (car (graph-outputs astgraph)))))
     (assert (and root (eql (node-type root) :FUNCTION)) () "A root of kernel ASTGraph should be a function!")
     (let ((kernel (make-instance cls :name (getattr root :name))))
+      (ast-ensure-expr-before-range astgraph)
+      (graph-infer-type-relay astgraph)
       (kernel-load-blueprint kernel astgraph)
       kernel)))

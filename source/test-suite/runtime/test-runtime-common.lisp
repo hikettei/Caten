@@ -30,10 +30,9 @@
     (%function
      (list
       (%global 'x 'x :float32 t :mode :io)
-      (%global 'y 'y :float32 t :mode :io)
-      (%global 'n 'n :int64 nil :mode :read))
+      (%global 'y 'y :float32 t :mode :io))
      (%range
-      'i 'n
+      'i 10
       (%expr (%setf (%aref 'x 'i) (%add (%aref 'x 'i) (%aref 'y 'i)))))
      :name 'example-kernel)))
 

@@ -94,7 +94,7 @@
                          (get-renderer () ,renderer)
                          (const (id dtype) (caten/runtime/renderer:%render-const ,renderer id dtype)))
                     #'render #'get-renderer #'const ;; to supress defined but not used warnings
-                    (caten/graph:node-ematch ,node ,@(cdr pattern))))))))
+                    (caten/graph:node-ematch (,node :extra-graph (caten/runtime/renderer::renderer-graph ,renderer)) ,@(cdr pattern))))))))
 
 (defmacro define-kernel ((kernel-name renderer-name) direct-superclasses direct-slots &key (launch) (compile) (specs))
   (flet ((ensure-lambda (n form name)
@@ -105,11 +105,10 @@
             (append
              (loop for i upfrom 0 below n collect (nth i (car form)))
              (list (if (= 2 (length form)) (cdr form) `(progn ,@(cdr form))))))))
-    (alexandria:with-gensyms (renderer)
+    (alexandria:with-gensyms (renderer node)
       `(progn
          (defclass ,kernel-name (,@direct-superclasses caten/runtime/kernel:Kernel) ,direct-slots)
          (defmethod caten/runtime/kernel:kernel-load-blueprint ((kernel ,kernel-name) (blueprint caten/ir:ASTGraph))
-           (caten/runtime/kernel:ast-ensure-expr-before-range blueprint)
            (let ((renderer (make-instance ',renderer-name :graph blueprint)))
              ;; Derive argument names and types from :DEFINE-GLOBAL nodes
              (let* ((globals (remove-if-not #'(lambda (n) (eql (node-type n) :DEFINE-GLOBAL)) (graph-nodes blueprint)))
@@ -131,13 +130,13 @@
          ,@(loop for pattern in specs
                  do (assert (and (listp pattern) (keywordp (car pattern))) () "define-kernel: spec := `(,op_id ,@(pattern_match_rules))")
                  collect
-                 `(defmethod caten/runtime/kernel:%render-kernel-op ((,renderer ,renderer-name) (op-id (eql ,(car pattern))) node)
+                 `(defmethod caten/runtime/kernel:%render-kernel-op ((,renderer ,renderer-name) (op-id (eql ,(car pattern))) ,node)
                     (flet ((render (id) (caten/runtime/renderer:render-node ,renderer id))
                            (const (id dtype) (caten/runtime/renderer:%render-const ,renderer id dtype))
                            (get-renderer () ,renderer)
                            (render-kernel (id) (caten/runtime/kernel:render-kernel-node ,renderer id)))
                       #'render #'const #'get-renderer #'render-kernel ;; to supress defined but not used warnings
-                      (caten/graph:node-ematch node ,@(cdr pattern)))))))))
+                      (caten/graph:node-ematch (,node :extra-graph (caten/runtime/renderer::renderer-graph ,renderer)) ,@(cdr pattern)))))))))
 ;; ~~ Default Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-renderer Default-Renderer () nil
   (:LOAD ((:LOAD (_) :value x) -> ((node graph) (const x (caten/ir:tensor-relay-dtype (car (relay-writes (read-type-relay node))))))))
