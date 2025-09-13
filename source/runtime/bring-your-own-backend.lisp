@@ -179,3 +179,43 @@
      (if (eql dtype :float64)
          (format nil "~,15f" obj)
          (format nil "~(~a~)" obj)))))
+
+;; Indentation control for blueprint printers
+(defparameter *indent* 0)
+;; Default C-style Kernel printer using Default-Renderer for expressions
+(defun indent () (make-string *indent* :initial-element #\Space))
+(define-kernel (Default-Kernel Default-Renderer) () nil
+  :specs
+  ((:PROGN ((:PROGN (~ _))
+            ->
+            ((node graph)
+             (let ((head (indent)) (*indent* (+ 2 *indent*)))
+               (let ((body (map 'list #'render-kernel (node-reads node))))
+                 (format nil "~a{~%~{~a~^~%~}~%~a}" head body head))))))
+   (:IF ((:IF ((:EXPR (cond)) body))
+         ->
+         ((node graph)
+          (let ((head (indent)) (*indent* (+ 2 *indent*)))
+            (let* ((cond-str (render cond)) (body (render-kernel body)))
+              (format nil "~aif (~a)~%~a" head cond-str body))))))
+   (:FOR ((:FOR ((:RANGE ((:EXPR (size)) (:EXPR (step))) :dtype dtype :idx idx) body))
+          ->
+          ((node graph)
+           (let ((head (indent)) (*indent* (+ 2 *indent*)))
+             (let* ((size (render size)) (step (render step))
+                    (body (render-kernel body)))
+               (format nil "~afor (~(~a~) ~(~a~)=0; ~(~a~)<~a; ~(~a~)+=~a)~%~a"
+                       head dtype idx idx size idx step body))))))
+   (:EXPR ((:EXPR ((:SETF (_ _))))
+           ->
+           ((node graph)
+            (format nil "~a~a; // EXPR(STORE) {ID: ~a}" (indent) (render (car (node-reads node))) (node-id node))))
+          ((:EXPR (_))
+           ->
+           ((node graph)
+            (format nil "~a~(~a~) ~(~a~) = ~a; // expr {ID: ~a}"
+                    (indent) (caten/ir:tensor-relay-dtype (car (relay-writes (read-type-relay node))))
+                    (car (node-writes node))
+                    (render (car (node-reads node)))
+                    (node-id node))))))
+  :compile nil :launch nil)
