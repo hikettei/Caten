@@ -1,5 +1,12 @@
 # Repository Guidelines
 
+## Running tests
+
+To run all unittests, use:
+```
+$ make test
+```
+
 ## Project Structure & Module Organization
 - Core code lives in `source/` with submodules: `api`, `graph`, `ir`, `runtime` (and `runtime/byoc`), `isl`, `utilities`. Systems are defined via `*.asd` (entry: `caten.asd`).
 - Tests are under `source/test-suite/**` (Rove). Test system: `source/test-suite/caten.test-suite.asd`.

@@ -25,7 +25,7 @@
     (defcolor white-bright :white :effect :bright))
 
   (defun getenv (name)
-    (uiop:symbol-call :caten/common.contextvar :getenv name))
+    (uiop:symbol-call :caten/utilities/contextvar :getenv name))
   
   (defmacro maybe-ansi (op &rest args)
     `(if (= 1 (getenv :COLOR))
