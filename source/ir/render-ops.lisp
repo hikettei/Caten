@@ -48,6 +48,10 @@ Constraints:
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
+(defun %function (prog &key (name (gensym "FNAME")) (out (gensym "FUNCTION")))
+  (declare (type (or symbol node) prog) (type symbol name out))
+  (emit (make-node :Render :FUNCTION (list out) (list (node->id1 prog)) :name name)))
+
 (defun %global (write-to name dtype pointer-p &key (mode :io))
   (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name write-to))
   (emit (make-node :Render :DEFINE-GLOBAL (list write-to) nil :name name :dtype dtype :pointer-p pointer-p :mode mode)))
