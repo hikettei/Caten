@@ -96,7 +96,7 @@
   (assert (eql (node-type child) :VIEW))
   (error "wip"))
 
-(defun compute-equalities-matrix-on-view (view)
+(defun compute-equalities-matrix-on-view (view &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
   "X = View(Y, ...)"
   (declare (type Node view))
   (assert (eql :VIEW (node-type view)))
@@ -114,16 +114,24 @@
             grids Y :domid "Y" :varid "VAR")))
     (when (and access-umap-X access-umap-Y)
       (let* ((D (isl:union-map-apply-range access-umap-X (isl:union-map-reverse access-umap-Y)))
-             (Equalities))
+             (Equalities)
+             (EqualitiesCols))
         (caten/codegen/schedule:%foreach-map
          D
          #'(lambda (map)
              (let* ((bmap (isl:map-affine-hull (isl:map-compute-divs map)))
-                    (E (isl:basic-map-equalities-matrix bmap :order (list :dim-cst :dim-param :dim-in :dim-out :dim-div))))
-               (assert (null Equalities) () "Multiple Equalities Detected.")
-               (setf Equalities E)
+                    (E (isl:basic-map-equalities-matrix bmap :order order)))
+               (assert (and (null Equalities) (null Equalitiescols)) () "Multiple Equalities Detected.")
+               (assert (= 0 (isl:basic-map-dim bmap :dim-div)) () "basic_map_dim(bmap, isl_dim_div) != 0 is not expected?...")
+               (setf Equalities E
+                     EqualitiesCols
+                     (loop for type in order
+                           append
+                           (loop for i upfrom 0 below (isl:basic-map-dim bmap type)
+                                 collect (or (isl:basic-map-get-dim-name bmap type i)
+                                             (progn (assert (eql type :dim-cst)) :dim-cst)))))
                map)))
-        Equalities))))
+        (values Equalities EqualitiesCols)))))
 
 (defsimplifier
     (%graph-rewrite-view-as-partial-view :speed 0)
@@ -139,10 +147,11 @@
       ;; - [ ] Fix infer-tensor-info in simplifiers.lisp (reinitialize-tensor)
       ;; - [ ] LoopRangeとは違う？
       ;; X = View(Y, ...)
-      (let ((E (compute-equalities-matrix-on-view node)))
+      (multiple-value-bind (E cols) (compute-equalities-matrix-on-view node)
         (when E
           (print "PartialView")
           (print E)
+          (print cols)
           nil)))))
 
 (defsimplifier
