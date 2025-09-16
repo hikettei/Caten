@@ -103,6 +103,54 @@
                     (isl:schedule-node-first-child sched)
                     (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
     (isl:schedule-node-get-schedule sched)))
+
+(defgeneric search-merged-view (graph parent child))
+(defmethod search-merged-view ((graph TensorGraph) (parent Node) (child Node))
+  (assert (eql (node-type parent) :VIEW))
+  (assert (eql (node-type child) :VIEW))
+  (error "wip"))
+
+(defmethod search-merged-view ((graph TensorGraph) (parent TensorRelay) (child TensorRelay))
+  ;; Simple Loop Fusion (= permute, broadcast)
+  ;; but it can tile things (= masked reshape)
+  ;; and detect lexmin/lexmax (= padding)
+  ;; 今，DST --> SRCのFusionを考えているのだから，DSTをSRCへMappingできるかが問題になる.
+  ;; Iteration Space does not matter.
+  ;; for i in range(id_1):
+  ;;  for j in range(id_2):
+  ;;   pass
+  ;; ========================
+  ;; for i in range(27)
+  ;; ==>
+  ;; for i in range(3)
+  ;;   for j in range(3)
+  ;;     for k in range(3)
+  ;; ========================
+  ;; for i in range(3)
+  ;;   for j in range(3)
+  ;;     for k in range(3)
+  ;; ==>
+  ;; for i in range(27)
+  ;; ========================
+  ;; 巨大な素数でOneDimensional Affineを作った方がいい気がするよ ~~
+  ;; HashTableKeys PolyhedralGrids
+  ;; hash-table-keys => subgraph -> collect a list of LOADS
+  ;; id_3 = A*B is possible
+  (let* ((polyhedral-grids (create-glo-from-relays child))
+         (access-umap-parent
+           (caten/codegen/polyhedral:relay-on-global-lex-order
+            polyhedral-grids parent :domid "DST" :varid "Y"))
+         (access-umap-child
+           (caten/codegen/polyhedral:relay-on-global-lex-order
+            polyhedral-grids child :domid "SRC" :varid "X")))
+    ;; dilation should be at least constant!
+    (when (and access-umap-parent access-umap-child)
+      ;; Reshape (9) -> (3, 3)
+      ;; PartialView()
+      (print polyhedral-grids)
+      (print access-umap-parent)
+      (print access-umap-child)
+      )))
 ;; Loop Fusion is:
 ;; Only command is required.
 ;; Only view and view matters
@@ -206,7 +254,7 @@
               ;; Workload:
               ;; - [ ] Reschedule+MaskedReshape(Tile) == ShapeTracker
               ;; - [ ] Detect Coalesce First.
-              ;; - [ ] 
+              ;; - [ ] Codegen Bring Back Fusion (Reschedule by our impl)
               ;; but ranks should be normalized, reshape(A, 3, 3) -> reshape(A, 9) should be:
               ;; 1. 
               ;; for i in range(9)
@@ -215,11 +263,29 @@
               ;; - [Question]
               ;;  - They can handle masked reshape?
               ;;  - MaskedReshape = Tile?
+              ;; https://github.com/Meinersbur/isl/blob/433e17b9bccf4417725744316dff8a44caedcbcc/isl_scheduler.c#L2972
               (let* ((dom-src (schedule-from-umap Ma))
                      (dom-dst (schedule-from-umap Xa))
                      (theta (isl:schedule-sequence dom-src dom-dst))
                      (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta))
                      (cst (caten/codegen/schedule:compute-schedule-constraints (isl:union-set-union (isl:union-map-domain Ma) (isl:union-map-domain Xa)) deps)))
+                (print "++++++++++++++")
+                (caten/codegen/schedule:%foreach-map
+                 deps
+                 #'(lambda (map)
+                     (let ((bmap (isl:map-affine-hull (isl:map-compute-divs map))))
+                       (print bmap)
+                       (let ((E (isl:basic-map-equalities-matrix bmap :order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+                             (I (isl:basic-map-inequalities-matrix bmap :order (list :dim-cst :dim-param :dim-in :dim-out :dim-div))))
+                         (dotimes (i (isl:mat-rows E))
+                           (dotimes (j (isl:mat-cols E))
+                             (setf (isl:mat-ref E i j) (- (isl:mat-ref E i j)))))
+                         (print
+                         (isl:basic-map-from-constraint-matrices
+                          (isl:map-get-space map)
+                          E I
+                          :order (list :dim-cst :dim-param :dim-out :dim-in :dim-div)))))))
+                     
                 (print (isl:union-map-union Xa Ya))
                 (print Ma)
                 (let ((fused (isl:schedule-constraints-compute-schedule cst)))

@@ -1862,6 +1862,14 @@
   (let ((val (%isl-mat-get-element-val (mat-handle mat) row col)))
     (prog1 (%isl-val-get-num-si val) (%isl-val-free val))))
 
+(defun (setf mat-ref) (value mat row col)
+  (declare (type integer value))
+  (assert (>= row 0))
+  (assert (>= col 0))
+  (assert (< row (%isl-mat-rows (mat-handle mat))))
+  (assert (< col (%isl-mat-cols (mat-handle mat))))
+  (%isl-mat-set-element-si (mat-handle mat) row col value))
+
 (export 'mat-rows)
 (defun mat-rows (mat) (%isl-mat-rows (mat-handle mat)))
 (export 'mat-cols)

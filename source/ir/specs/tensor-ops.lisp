@@ -390,6 +390,13 @@ View is the only node which can change the layout of tensors.
                              (list
                               (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i by)))))))))
 
+
+(defnode (:Schedule :PartialView) (ScheduleItem)
+         ""
+         :slots ((dims :type list))
+         :type-relay #'(lambda (id->type node)
+                         nil))
+
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)
 	 "The node :INDEX-COMPONENTS Indicates which element-wise computation of the Tensor is being performed. Typically, it should return the argument used when performing Aref on the Tensor with the corresponding `strides`.
