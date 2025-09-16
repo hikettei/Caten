@@ -90,72 +90,40 @@
     ;; [TODO] Quasiaffine    
     glo))
 
-(defun schedule-from-umap (umap)
-  (declare (type isl::union-map umap))
-  (let* ((sched (isl:schedule-get-root (isl:schedule-from-domain (isl:union-map-domain umap))))
-         (domain (isl:set-from-union-set (isl:union-map-domain umap)))
-         (dims (loop for dim upfrom 0 below (isl:set-dim domain :dim-set)
-                     collect (isl:set-get-dim-name domain :dim-set dim))))
-    (loop with dom-name = (isl:set-get-tuple-name domain)
-          for dim in dims
-          do (setf sched
-                   (isl:schedule-node-insert-partial-schedule
-                    (isl:schedule-node-first-child sched)
-                    (isl:multi-union-pw-aff-from-str (format nil "[{~a[~{~(~a~)~^, ~}] -> [(~(~a~))]}]" dom-name dims dim)))))
-    (isl:schedule-node-get-schedule sched)))
-
 (defgeneric search-merged-view (graph parent child))
 (defmethod search-merged-view ((graph TensorGraph) (parent Node) (child Node))
   (assert (eql (node-type parent) :VIEW))
   (assert (eql (node-type child) :VIEW))
   (error "wip"))
 
-(defmethod search-merged-view ((graph TensorGraph) (parent TensorRelay) (child TensorRelay))
-  ;; Simple Loop Fusion (= permute, broadcast)
-  ;; but it can tile things (= masked reshape)
-  ;; and detect lexmin/lexmax (= padding)
-  ;; 今，DST --> SRCのFusionを考えているのだから，DSTをSRCへMappingできるかが問題になる.
-  ;; Iteration Space does not matter.
-  ;; for i in range(id_1):
-  ;;  for j in range(id_2):
-  ;;   pass
-  ;; ========================
-  ;; for i in range(27)
-  ;; ==>
-  ;; for i in range(3)
-  ;;   for j in range(3)
-  ;;     for k in range(3)
-  ;; ========================
-  ;; for i in range(3)
-  ;;   for j in range(3)
-  ;;     for k in range(3)
-  ;; ==>
-  ;; for i in range(27)
-  ;; ========================
-  ;; [TODO]
-  ;; - 巨大な素数でOneDimensional Affineを作成する
-  ;; - View => Decompose Into PartialView
-  ;;   - If it is difficult, keep view (use it like a realize)
-  ;; - Handle Reshape (9) => (3 3) via dims
-  ;; 巨大な素数でOneDimensional Affineを作った方がいい気がするよ ~~
-  ;; HashTableKeys PolyhedralGrids
-  ;; hash-table-keys => subgraph -> collect a list of LOADS
-  ;; id_3 = A*B is possible
-  (let* ((polyhedral-grids (create-glo-from-relays child))
-         (access-umap-parent
+(defun compute-equalities-matrix-on-view (view)
+  "X = View(Y, ...)"
+  (declare (type Node view))
+  (assert (eql :VIEW (node-type view)))
+  (let* ((X (car (relay-writes (read-type-relay view))))
+         (Y (car (relay-reads (read-type-relay view))))
+         (grids (create-glo-from-relays X Y))
+         ;; [TODO]
+         ;; - ensure grids support symbolic by fixing dimensions
+         ;; - [ ] mod stride[n]での周期性を保証する
+         (access-umap-X
            (caten/codegen/polyhedral:relay-on-global-lex-order
-            polyhedral-grids parent :domid "DST" :varid "Y"))
-         (access-umap-child
+            grids X :domid "X" :varid "VAR"))
+         (access-umap-Y
            (caten/codegen/polyhedral:relay-on-global-lex-order
-            polyhedral-grids child :domid "SRC" :varid "X")))
-    ;; dilation should be at least constant!
-    (when (and access-umap-parent access-umap-child)
-      ;; Reshape (9) -> (3, 3)
-      ;; PartialView()
-      (print polyhedral-grids)
-      (print access-umap-parent)
-      (print access-umap-child)
-      )))
+            grids Y :domid "Y" :varid "VAR")))
+    (when (and access-umap-X access-umap-Y)
+      (let* ((D (isl:union-map-apply-range access-umap-X (isl:union-map-reverse access-umap-Y)))
+             (Equalities))
+        (caten/codegen/schedule:%foreach-map
+         D
+         #'(lambda (map)
+             (let* ((bmap (isl:map-affine-hull (isl:map-compute-divs map)))
+                    (E (isl:basic-map-equalities-matrix bmap :order (list :dim-cst :dim-param :dim-in :dim-out :dim-div))))
+               (assert (null Equalities) () "Multiple Equalities Detected.")
+               (setf Equalities E)
+               map)))
+        Equalities))))
 
 (defsimplifier
     (%graph-rewrite-view-as-partial-view :speed 0)
@@ -171,19 +139,11 @@
       ;; - [ ] Fix infer-tensor-info in simplifiers.lisp (reinitialize-tensor)
       ;; - [ ] LoopRangeとは違う？
       ;; X = View(Y, ...)
-      (let* ((X (car (relay-writes (read-type-relay node))))
-             (Y (car (relay-reads (read-type-relay node))))
-             (grids (create-glo-from-relays X Y))
-             (access-umap-X
-               (caten/codegen/polyhedral:relay-on-global-lex-order
-                grids X :domid "X" :varid "VAR"))
-             (access-umap-Y
-               (caten/codegen/polyhedral:relay-on-global-lex-order
-                grids Y :domid "Y" :varid "VAR")))
-        (when (and access-umap-X access-umap-Y)
+      (let ((E (compute-equalities-matrix-on-view node)))
+        (when E
           (print "PartialView")
-          nil
-          )))))
+          (print E)
+          nil)))))
 
 (defsimplifier
     (%graph-simplify-partial-view :speed 0)
