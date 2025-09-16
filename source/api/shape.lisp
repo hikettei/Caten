@@ -96,16 +96,15 @@
   (assert (eql (node-type child) :VIEW))
   (error "wip"))
 
-(defun compute-equalities-matrix-on-view (view &key (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
-  "X = View(Y, ...)"
-  (declare (type Node view))
-  (assert (eql :VIEW (node-type view)))
-  (let* ((X (car (relay-writes (read-type-relay view))))
-         (Y (car (relay-reads (read-type-relay view))))
+(defun compute-equalities-matrix-on-relay (X Y &aux (order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
+  "X = View(Y, ...) align Y domain in respect to X"
+  (declare (type TensorRelay X Y))
+  (let* ((gid2shape/stride (make-hash-table :test 'equal))
          (grids (create-glo-from-relays X Y))
          ;; [TODO]
          ;; - ensure grids support symbolic by fixing dimensions
          ;; - [ ] mod stride[n]での周期性を保証する
+         ;; - [ ] Insert Realize when edges are not tensor-symbolics-p
          (access-umap-X
            (caten/codegen/polyhedral:relay-on-global-lex-order
             grids X :domid "X" :varid "VAR"))
@@ -113,7 +112,7 @@
            (caten/codegen/polyhedral:relay-on-global-lex-order
             grids Y :domid "Y" :varid "VAR")))
     (when (and access-umap-X access-umap-Y)
-      (let* ((D (isl:union-map-apply-range access-umap-X (isl:union-map-reverse access-umap-Y)))
+      (let* ((D (isl:union-map-apply-range access-umap-Y (isl:union-map-reverse access-umap-X)))
              (Equalities)
              (EqualitiesCols))
         (caten/codegen/schedule:%foreach-map
@@ -131,15 +130,85 @@
                                  for name = (isl:basic-map-get-dim-name bmap type i)
                                  collect
                                  (case type
-                                   (:dim-in (cons "X" name))
-                                   (:dim-out (cons "Y" name))
+                                   (:dim-in
+                                    (cons "X" name))
+                                   (:dim-out
+                                    (setf (gethash name gid2shape/stride)
+                                          (list (nth i (tensor-relay-shape X)) (nth i (tensor-relay-stride X)) i))
+                                    (cons "Y" name))
                                    (:dim-cst (assert (null name) () ":dim_cst should not introduce a tuple_name") :dim-cst)
                                    (otherwise name)))))
                map)))
-        (values Equalities EqualitiesCols)))))
+        (values Equalities EqualitiesCols D gid2shape/stride)))))
+;; Ops.DOMAIN
+;; Ops.PartialView ==> Directly Mappable to Affine
+;; Ops.FILTER
+;; Ops.REALIZE
+(defun solve-equalities-on-cols (E cols col)
+  (declare (type isl::mat E) (type list cols))
+  ;; A = B
+  (let* ((col-dim-pos (or (position col cols :test #'equal) (error "solve-equalities-on-cols: the col ~a not found in cols ~a" col cols)))
+         (var-space-list
+           (loop for i upfrom 0 for c in cols
+                 if (and (listp c) (string= "X" (car c)))
+                   collect i))
+         (col-involving-rows
+           (loop for i upfrom 0 below (isl:mat-rows E)
+                 for coeff = (isl:mat-ref E i col-dim-pos) do
+                   (let ((c (map 'list #'(lambda (pos) (isl:mat-ref E i pos)) var-space-list)))
+                     (assert (<= (count-if (alexandria:compose #'not #'zerop) c) 1)))
+                 if (not (= 0 coeff))
+                   collect (cons i (* -1 coeff)))))
+    (assert (= 1 (length col-involving-rows)))
+    (multiple-value-bind (tgt-row coeff) (values (car (car col-involving-rows)) (cdr (car col-involving-rows)))
+      (or
+       (loop for j upfrom 0 below (isl:mat-cols E)
+             for col in cols
+             for val = (isl:mat-ref E tgt-row j)
+             if (and (null (find j var-space-list)) (not (= val 0)) (not (= coeff 0)))
+               collect
+             `(* ,(/ val coeff) ,(case col (:dim-cst 1) (otherwise (if (listp col) (cdr col) col)))))
+       0))))
+
+(defun aff->partial-schedule (dom aff gid2shape/stride)
+  (declare (type hash-table gid2shape/stride))
+  (match aff
+    ((list (list '* (guard a (numberp a)) (guard b (stringp b))))
+     (let ((shape/stride/dim (gethash b gid2shape/stride)))
+       (multiple-value-bind (shape stride dim) (apply #'values shape/stride/dim)
+         (assert (and shape stride dim))
+         ;; [TODO] Inherit (Connect?) Parent's partial view.
+         ;; - [ ] Identify who and who are equivalent.
+         (%partial-schedule 'placeholder shape stride a 0))))
+    (0
+     (%partial-schedule 'placeholder 1 0 1 0))
+    (_
+     (error "FAILED DUE TO: ~a" aff) ;; [todo] remove
+     :failed)))
+;; Domain
+;; PartialSchedule
+(defsimplifier
+    (%graph-force-view :speed 0)
+    ;; Force view on toplevel
+    ((:ALLOCATE (list* _) :nrank (guard nrank (> nrank 0)))
+     ->
+     ((node graph)
+      (let ((users (id->users graph (car (node-writes node)))))
+        (when (not (and (= 1 (length users)) (eql :VIEW (node-type (car users)))))
+          (let* ((alc (copy-node node))
+                 (dst (car (node-writes node)))
+                 (via (caten/utilities/gensym:lgensym "ALC_"))
+                 (rel (car (relay-writes (read-type-relay node)))))
+            (setf (node-id alc) (gensym "NID") (node-writes alc) (list via))
+            (print (tensor-relay-shape rel))
+            (list
+             alc
+             (print (%view via (tensor-relay-shape rel) (map 'list #'car (tensor-relay-views rel))
+                    (map 'list #'second (tensor-relay-views rel)) (tensor-relay-stride rel) :id dst)))))))))
 
 (defsimplifier
-    (%graph-rewrite-view-as-partial-view :speed 0)
+    ;; top_down?
+    (%graph-rewrite-view-as-partial-schedule :speed 0)
     ((:VIEW (list* base _))
      ->
      ((node graph)
@@ -150,21 +219,43 @@
       ;;   - [ ] Solve on equlities matrix. (more pattern, more likely to purge views, it is simple)
       ;; - [ ] Fix TypeInference
       ;; - [ ] Fix infer-tensor-info in simplifiers.lisp (reinitialize-tensor)
+      ;;   - [ ] It should use node-type-relay right?
       ;; - [ ] LoopRangeとは違う？
+      ;; - [ ] Introducing > 1 constants => ?
       ;; X = View(Y, ...)
-      (multiple-value-bind (E cols) (compute-equalities-matrix-on-view node)
-        (when E
-          (print "PartialView")
-          (print E)
-          (print cols)
-          nil)))))
-
-(defsimplifier
-    (%graph-simplify-partial-view :speed 0)
-    ((:PartialView (base size stride alpha beta) :dims dims)
-     ->
-     ((node graph)
-      )))
+      ;; (graph-infer-type-relay node) ;; <= compute only diffs?
+      ;; Ops.GRID or Ops.DOMAIN(SIZE)
+      ;; PartialView(A, DOMAIN[], dilation, offset)
+      ;; - ParentのOps.GRIDを使うようにAccessMapを解析していく。
+      ;; - 同一のOps.GRIDを使うグループ=Fusion
+      ;; - [ ] BinaryOps/TernaryOps can provide equalities of doms
+      (let ((X (car (relay-writes (read-type-relay node))))
+            (Y (car (relay-reads (read-type-relay node))))
+            (views) (failed nil))
+        
+        (multiple-value-bind (E cols D gid2shape/stride) (compute-equalities-matrix-on-relay X Y)
+          (when E
+            (print "PartialView")
+            (print node)
+            (print (tensor-relay-nrank (car (relay-reads (read-type-relay node)))))
+            (print (tensor-relay-nrank (car (relay-writes (read-type-relay node)))))
+            (print E)
+            (print D)
+            (dolist (col cols)
+              (when (and (listp col) (string= "X" (car col)))
+                (let ((pwv (aff->partial-schedule (cdr col) (solve-equalities-on-cols E cols col) gid2shape/stride)))
+                  (when (eql pwv :failed) (setf failed t))
+                  (push pwv views))))
+            (when (and views (null failed))
+              (setf views (nreverse views))
+              (let ((top (car (node-reads node))))
+                (dolist (view views)
+                  (setf (car (node-reads view)) top
+                        top (car (node-writes view))))
+                (setf (node-writes (car (last views))) (copy-list (node-writes node)))
+                (print node)
+                (print views)
+                ))))))))
 ;; Loop Fusion is:
 ;; Only command is required.
 ;; Only view and view matters
@@ -172,151 +263,20 @@
 ;; Problem1: (9) -> (3, 3) Reshape is not doable.
 ;; Problem2: Symbolic
 ;; TODO: Unravel
-(defsimplifier
-    (%graph-simplify-views :speed 0)
-    ;; Extra !contiguous
-    ((:MOVE ((:ALLOCATE (~ _)) (:ALLOCATE (~ _))) :reduction (guard r (null r)))
-     ->
-     ((node graph)
-      ;; actually X == Y is asserted by running graph-infer-type-relay
-      (multiple-value-bind (x y) (values (id->value graph (car (node-reads node))) (id->value graph (second (node-reads node))))
-        (when (and x y (equal (cdr (node-reads x)) (cdr (node-reads y))) (null (getattr x :from)) (null (getattr y :from)))
-          y))))
-    ;; ALLOC CONTIGUOUS_PATH
-    ;;    \   /                 CONTIGUOUS_PATH
-    ;;     MOVE          =====>        |
-    ;;      |                        VIEW
-    ;;     VIEW
-    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
-     ->
-     ((node graph)
-      (let* ((top (id->value graph y)) (removable-p t))
-        (when (and top (not (eql (node-type top) :VIEW)))
-          (loop while top for parent = (id->value graph (get-output-to top)) do
-            (setf top parent)
-            (when (and top (eql (node-type top) :VIEW))
-              (setf removable-p nil)
-              (return)))
-          (when removable-p
-            (let ((node (copy-node node)))
-              (setf (node-id node) (gensym "NID")
-                    (car (node-reads node)) y)
-              node))))))
-    ;; A case for view is creating identity view from contiguous.
-    ((:VIEW (~ args))
-     ->
-     ((node graph)
-      (let ((alloc (id->value graph (car args))))
-        (when (eql (node-type alloc) :ALLOCATE)
-          (let ((alloc-rel (car (relay-writes (read-type-relay alloc))))
-                (view-rel  (car (relay-writes (read-type-relay node)))))
-            (when (tensor-relay-equal alloc-rel view-rel)
-              alloc))))))
-    ;; VIEW(VIEW(x)) is the first VIEW.
-    ((:VIEW (list* (:VIEW (~ _)) _))
-     ->
-     ((node graph)
-      (let ((val (id->value graph (car (node-reads node)))))
-        (assert val)
-        (let ((node (copy-node node)))
-          (setf (node-id node) (gensym "NID")
-                (car (node-reads node)) (car (node-reads val)))
-          node))))
-    ;; VIEW(CONTIGUOUS(VIEW(x))) is directly view-able?
-    ;; ALLOC VIEW
-    ;;    \   /             VIEW
-    ;;     MOVE    =====>     |        ==> VIEW
-    ;;      |             MERGED_VIEW
-    ;;     VIEW
-    ;; [TODO] Partial Realization+Solve Fusion In Advance,
-    ;; - If you use PolyhedralModel Approach, You should use codegen
-    ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
-     ->
-     ((view-x graph)
-      (when nil
-      ;; Y -> M -> X
-      (let ((Y (id->value graph y))
-            (move (id->value graph (car (node-reads view-x)))))
-        (when (and Y move)
-          (let* ((xt (car (relay-writes (read-type-relay view-x))))
-                 (yt (car (relay-writes (read-type-relay Y))))
-                 (mt (car (relay-reads (read-type-relay move))))
-                 (glo (create-glo-from-relays xt yt mt))
-                 (Xa (caten/codegen/polyhedral:relay-on-global-lex-order glo xt :domid "DST" :varid "Y"))
-                 (Ya (caten/codegen/polyhedral:relay-on-global-lex-order glo yt :domid "SRC" :varid "X"))
-                 (Ma (caten/codegen/polyhedral:relay-on-global-lex-order glo mt :domid "SRC" :varid "Y")))
-            (when (and Xa Ya Ma) ;; Y -> M -> X
-              ;; [TODO] decompose strides to lcm
-              (print (tensor-relay-nrank xt))
-              (print (tensor-relay-nrank yt))
-              (print (tensor-relay-nrank mt))
-              ;; [src]
-              ;; for i in schedule_from_domain(M and YT)
-              ;;  M = Transform(YT)
-              ;; [dst]
-              ;; for i in schedule_from_domain(XT)
-              ;;  read(M)
-              ;; If it is fusible, Transform(TY) is a new view object because it is simplified so
-              ;; Special Notation for Reshape?
-              ;; Reshape Semantic Review
-              ;; - [ ] Produce Shape Error
-              ;; - [ ] Reshape Unravel is doable from given strides (add max/min)
-              ;; - [ ] (!reshape (!t (make-tensor `(3 3))) `(3 3))
-              ;;  - [ ] Normalize first
-              ;; Memo:
-              ;; - VIEW Fusion, what is required?
-              ;; - AST+Polyhedral Based Approach is right? or not?
-              ;; Workload:
-              ;; - [ ] Reschedule+MaskedReshape(Tile) == ShapeTracker
-              ;; - [ ] Detect Coalesce First.
-              ;; - [ ] Codegen Bring Back Fusion (Reschedule by our impl)
-              ;; but ranks should be normalized, reshape(A, 3, 3) -> reshape(A, 9) should be:
-              ;; 1. 
-              ;; for i in range(9)
-              ;;   S(i / 3, i % 3)
-              ;; - They can permute, can handle broadcast, can handle A[0:100:2][0:10:2]
-              ;; - [Question]
-              ;;  - They can handle masked reshape?
-              ;;  - MaskedReshape = Tile?
-              ;; https://github.com/Meinersbur/isl/blob/433e17b9bccf4417725744316dff8a44caedcbcc/isl_scheduler.c#L2972
-              (let* ((dom-src (schedule-from-umap Ma))
-                     (dom-dst (schedule-from-umap Xa))
-                     (theta (isl:schedule-sequence dom-src dom-dst))
-                     (deps (caten/codegen/schedule:compute-dependence-relation (isl:union-map-union Xa Ya) Ma theta))
-                     (cst (caten/codegen/schedule:compute-schedule-constraints (isl:union-set-union (isl:union-map-domain Ma) (isl:union-map-domain Xa)) deps)))
-                (print "++++++++++++++")
-                (caten/codegen/schedule:%foreach-map
-                 deps
-                 #'(lambda (map)
-                     (let ((bmap (isl:map-affine-hull (isl:map-compute-divs map))))
-                       (print bmap)
-                       (let ((E (isl:basic-map-equalities-matrix bmap :order (list :dim-cst :dim-param :dim-in :dim-out :dim-div)))
-                             (I (isl:basic-map-inequalities-matrix bmap :order (list :dim-cst :dim-param :dim-in :dim-out :dim-div))))
-                         (dotimes (i (isl:mat-rows E))
-                           (dotimes (j (isl:mat-cols E))
-                             (setf (isl:mat-ref E i j) (- (isl:mat-ref E i j)))))
-                         (print
-                         (isl:basic-map-from-constraint-matrices
-                          (isl:map-get-space map)
-                          E I
-                          :order (list :dim-cst :dim-param :dim-out :dim-in :dim-div)))))))
-                     
-                (print (isl:union-map-union Xa Ya))
-                (print Ma)
-                (let ((fused (isl:schedule-constraints-compute-schedule cst)))
-                  ;(print (isl:schedule-get-root fused))
-                  (print (caten/codegen/ast::ast->str (caten/codegen/ast:compute-ast-from-schedule fused)))
-                  )
-                ;; dom_src_new = apply(dom_src, WaR.coefficient_matrix)
-                ;; - dom_src_new and dom_dst deps are corresponding one-by-one
-                ;; - and node dependency was broken
-                ;; ==> dom_src_new == dom_dst and dom_dst is the only read
-                ;; thus view is replaceable with only single dom_src_new
-                nil)))))))))
-
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))
   (graph-infer-type-relay graph)
-  (%graph-simplify-views graph)
-  (%graph-rewrite-view-as-partial-view graph)
+  ;; (%graph-simplify-views graph)
+  ;; (%graph-rewrite-view-as-partial-schedule graph)
   graph)
+
+(defun tensor-realize (tensor)
+  ;; Likewise RANGIFY, this can be pullback into TensorGraph w/ VIEW
+  ;; for fast autodiff
+  (%graph-force-view (tensor-graph tensor))
+  (tensor-simplify tensor)
+  (graph-infer-type-relay (tensor-graph tensor))
+  ;; (%graph-rewrite-view-as-partial-schedule (tensor-graph tensor))
+  (tensor-graph tensor)
+  ;; lower-hlops
+  )
