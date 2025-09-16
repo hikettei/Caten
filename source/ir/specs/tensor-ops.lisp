@@ -391,7 +391,7 @@ View is the only node which can change the layout of tensors.
                               (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i by)))))))))
 
 
-(defnode (:Schedule :PartialView) (ScheduleItem)
+(defnode (:Schedule :PartialView) ()
          ""
          :slots ((dims :type list))
          :type-relay #'(lambda (id->type node)

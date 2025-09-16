@@ -69,7 +69,7 @@
          for d in dilation
          for stride in strides
          collect (->size (compute-filter-size s d w stride :ceiling ceiling)))
-   (map 'list #'->size window-shape))))
+   (map 'list #'->size window-shape)))
 
 (defun compute-unfold-stride (stride strides dilation n)
   (append
