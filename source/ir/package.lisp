@@ -73,7 +73,8 @@
   ;; from view.lisp
   (:export
    #:infer-tensor-info
-   #:%view)
+   #:%view
+   #:%partial-view)
   ;; from logical.lisp
   (:export
    #:%where)

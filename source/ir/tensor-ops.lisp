@@ -301,7 +301,6 @@ If i is a tensor, %load fills the visible area of i with value."
   "Creates a view against base. (views are only created against the original buffer)
 Each dimension grid_id is mapped by linear function specified by offsets and coeffs.
 i.e.: _gid_n = _gid_n'*coeffs[n]+offsets[n]"
-  ;; Allocation w/o allocation
   (declare (type node base)
 	   (type list offsets coeffs shape stride))
   (flet ((->const (x)
@@ -330,6 +329,12 @@ stride=~a"
 			     (map 'list #'node->id1 coeffs)
 			     (map 'list #'node->id1 stride))
 		     :nrank nrank))))
+
+(defun %partial-view (base size stride dilation offset &key (dims 0) (id (lgensym "PV_")))
+  "Creates a partial view on base."
+  (declare (type (or number symbol node) base size stride dilation offset))
+  (emit (make-node :Schedule :PartialView (list id) (map 'list #'node->id1 (list base size stride dilation offset))
+                   :dims dims)))
 
 (defmethod print-node ((node Node) (id (eql :View)))
   (let ((nrank (getattr node :nrank)))

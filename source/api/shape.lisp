@@ -132,6 +132,11 @@
   ;; ==>
   ;; for i in range(27)
   ;; ========================
+  ;; [TODO]
+  ;; - 巨大な素数でOneDimensional Affineを作成する
+  ;; - View => Decompose Into PartialView
+  ;;   - If it is difficult, keep view (use it like a realize)
+  ;; - Handle Reshape (9) => (3 3) via dims
   ;; 巨大な素数でOneDimensional Affineを作った方がいい気がするよ ~~
   ;; HashTableKeys PolyhedralGrids
   ;; hash-table-keys => subgraph -> collect a list of LOADS
@@ -150,6 +155,41 @@
       (print polyhedral-grids)
       (print access-umap-parent)
       (print access-umap-child)
+      )))
+
+(defsimplifier
+    (%graph-rewrite-view-as-partial-view :speed 0)
+    ((:VIEW (list* base _))
+     ->
+     ((node graph)
+      ;; [TODO]
+      ;; - [ ] Extract Access Relations in one dimensional polyhedral space
+      ;; - [ ] View => Decompose Into PartialView
+      ;;   - [ ] If it is difficult, keep view (use it like a realize)
+      ;;   - [ ] Solve on equlities matrix. (more pattern, more likely to purge views, it is simple)
+      ;; - [ ] Fix TypeInference
+      ;; - [ ] Fix infer-tensor-info in simplifiers.lisp (reinitialize-tensor)
+      ;; - [ ] LoopRangeとは違う？
+      ;; X = View(Y, ...)
+      (let* ((X (car (relay-writes (read-type-relay node))))
+             (Y (car (relay-reads (read-type-relay node))))
+             (grids (create-glo-from-relays X Y))
+             (access-umap-X
+               (caten/codegen/polyhedral:relay-on-global-lex-order
+                grids X :domid "X" :varid "VAR"))
+             (access-umap-Y
+               (caten/codegen/polyhedral:relay-on-global-lex-order
+                grids Y :domid "Y" :varid "VAR")))
+        (when (and access-umap-X access-umap-Y)
+          (print "PartialView")
+          nil
+          )))))
+
+(defsimplifier
+    (%graph-simplify-partial-view :speed 0)
+    ((:PartialView (base size stride alpha beta) :dims dims)
+     ->
+     ((node graph)
       )))
 ;; Loop Fusion is:
 ;; Only command is required.
@@ -219,6 +259,7 @@
     ((:VIEW (list* (:MOVE ((:ALLOCATE (~ _)) y) :reduction (guard r (null r))) _))
      ->
      ((view-x graph)
+      (when nil
       ;; Y -> M -> X
       (let ((Y (id->value graph y))
             (move (id->value graph (car (node-reads view-x)))))
@@ -297,10 +338,11 @@
                 ;; - and node dependency was broken
                 ;; ==> dom_src_new == dom_dst and dom_dst is the only read
                 ;; thus view is replaceable with only single dom_src_new
-                nil))))))))
+                nil)))))))))
 
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))
   (graph-infer-type-relay graph)
   (%graph-simplify-views graph)
+  (%graph-rewrite-view-as-partial-view graph)
   graph)
