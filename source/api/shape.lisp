@@ -200,15 +200,48 @@
                  (via (caten/utilities/gensym:lgensym "ALC_"))
                  (rel (car (relay-writes (read-type-relay node)))))
             (setf (node-id alc) (gensym "NID") (node-writes alc) (list via))
-            (print (tensor-relay-shape rel))
             (list
              alc
-             (print (%view via (tensor-relay-shape rel) (map 'list #'car (tensor-relay-views rel))
-                    (map 'list #'second (tensor-relay-views rel)) (tensor-relay-stride rel) :id dst)))))))))
+             (%view via (tensor-relay-shape rel) (map 'list #'car (tensor-relay-views rel))
+                    (map 'list #'second (tensor-relay-views rel)) (tensor-relay-stride rel) :id dst))))))))
 
 (defsimplifier
-    ;; top_down?
     (%graph-rewrite-view-as-partial-schedule :speed 0)
+    ((:VIEW (list* base _) :nrank nrank)
+     -> ((node graph)
+         ;; Loop Fusion should be done in shape.lisp, not Affine/NonAffine?
+         ;; - Can this approach find FlashAtten, good tile for conv+pool?
+         (let* ((relay (car (relay-writes (read-type-relay node))))
+                (root (%schedule-domain base (tensor-relay-shape relay)))
+                (top (car (node-writes root)))
+                (items
+                  (loop for rank upfrom 0 below nrank
+                        for size = (nth rank (tensor-relay-shape relay))
+                        for stride = (nth rank (tensor-relay-stride relay))
+                        for dilation = (second (nth rank (tensor-relay-views relay)))
+                        for offset = (car (nth rank (tensor-relay-views relay)))
+                        collect
+                        (let ((sched (%partial-schedule top size stride dilation offset :dim rank)))
+                          (setf top (car (node-writes sched)))
+                          sched))))
+           ;; [TODO] ScalarView?
+           (setf (car (node-writes (car (last items)))) (car (node-writes node)))
+           (append
+            (list root)
+            items)))))
+
+;; [TODO] これはFusionの時のAccessMap Analysusで使うべき
+;; VIEW -> MOVE -> VIEW
+;;  ^---------------| this
+(defsimplifier
+    ;; top_down?
+    (%graph-fuse-partial-schedule :speed 0)
+    (T
+     ->
+     ((node graph)
+      (when (eql (node-class node) :BinaryOps)
+        ;; DOMAIN is equal
+        )))
     ((:VIEW (list* base _))
      ->
      ((node graph)
@@ -236,6 +269,7 @@
         (multiple-value-bind (E cols D gid2shape/stride) (compute-equalities-matrix-on-relay X Y)
           (when E
             (print "PartialView")
+            ;; PartialViewは必要？Viewじゃダメ？
             (print node)
             (print (tensor-relay-nrank (car (relay-reads (read-type-relay node)))))
             (print (tensor-relay-nrank (car (relay-writes (read-type-relay node)))))
@@ -270,13 +304,14 @@
   ;; (%graph-rewrite-view-as-partial-schedule graph)
   graph)
 
-(defun tensor-realize (tensor)
+(defun tensor-realize (tensor) ;; rename: tensor-simplify-view
   ;; Likewise RANGIFY, this can be pullback into TensorGraph w/ VIEW
   ;; for fast autodiff
   (%graph-force-view (tensor-graph tensor))
   (tensor-simplify tensor)
   (graph-infer-type-relay (tensor-graph tensor))
-  ;; (%graph-rewrite-view-as-partial-schedule (tensor-graph tensor))
+  (%graph-rewrite-view-as-partial-schedule (tensor-graph tensor))
+  ;(%graph-simplify-views (tensor-graph tensor))
   (tensor-graph tensor)
   ;; lower-hlops
   )

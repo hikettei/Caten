@@ -275,12 +275,6 @@ stride=~a"
 			     (map 'list #'node->id1 stride))
 		     :nrank nrank))))
 
-(defun %partial-schedule (base size stride dilation offset &key (dims 0) (id (lgensym "PV_")))
-  "Creates a partial view on base."
-  (declare (type (or number symbol node) base size stride dilation offset))
-  (emit (make-node :Schedule :PartialSchedule (list id) (map 'list #'node->id1 (list base size stride dilation offset))
-                   :dims dims)))
-
 (defmethod print-node ((node Node) (id (eql :View)))
   (let ((nrank (getattr node :nrank)))
     (when (and nrank (not (= nrank 0)) (eql (node-class node) :Buffer))
@@ -295,3 +289,13 @@ stride=~a"
 		  (render-list
 		   (map 'list #'(lambda (x y) (format nil "(~a)" (render-list (list x y)))) upfrom by)))
 		(render-list (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank))))))))
+
+(defun %partial-schedule (base size stride dilation offset &key (dim 0) (id (lgensym "PV_")))
+  "Creates a partial view on base."
+  (declare (type (or number symbol node) base size stride dilation offset))
+  (emit (make-node :Schedule :PartialSchedule (list id) (map 'list #'node->id1 (list base size stride dilation offset))
+                   :dim dim)))
+
+(defun %schedule-domain (base shape &key (id (lgensym "DOM_")))
+  (declare (type list shape) (type (or symbol node) base))
+  (emit (make-node :Schedule :ScheduleDomain (list id) (append (list (node->id1 base)) (map 'list #'node->id1 shape)) :nrank (length shape))))

@@ -394,15 +394,14 @@ View is the only node which can change the layout of tensors.
          "
 Attributes dimentions-wise view on the given tensor:
 ```
-out = PartialView(x, size, stride, dilation, offset, dims=list)
+out = PartialView(x, size, stride, dilation, offset, dim=fixnum)
 ```
 "
-         :slots ((dims :type list))
+         :slots ((dim :type fixnum))
          :type-relay #'(lambda (id->type node)
                          (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
                          (multiple-value-bind (x size stride alpha beta) (apply #'values (node-reads node))
-                           (let* ((base (gethash x id->type))
-                                  (dims (getattr node :dims)))
+                           (let* ((base (gethash x id->type)))
                              (assert base ())
                              (assert (= 5 (length (node-reads node))) () "PartialView is defined as PartialView(x, size, stride, dilation, offset), getting ~a args." (length (node-reads node)))
                              ;(assert (every #'(lambda (d) (and (>= d 0) (nth d (tensor-relay-shape base)))) dims)
@@ -414,6 +413,19 @@ out = PartialView(x, size, stride, dilation, offset, dims=list)
                                ;; [TODO] Update views?
                                (list
                                 (make-tensor-relay new-shape new-stride (tensor-relay-dtype base) new-views)))))))
+
+(defnode (:Schedule :ScheduleDomain) ()
+    "
+A root for PartialSchedule chain.
+```
+out = ScheduleDomain(tensor, sz1, sz2, ...)
+```
+"
+    :slots ((nrank :type fixnum))
+    :type-relay #'(lambda (id->type node)
+                    (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
+
+                    ))
 ;; Later rewrittern as primitive ops before rendering
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)

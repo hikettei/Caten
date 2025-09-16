@@ -74,7 +74,8 @@
   (:export
    #:infer-tensor-info
    #:%view
-   #:%partial-schedule)
+   #:%partial-schedule
+   #:%schedule-domain)
   ;; from logical.lisp
   (:export
    #:%where)

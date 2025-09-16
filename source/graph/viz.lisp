@@ -104,6 +104,12 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
               (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :input) "filled, solid"))))
           (:Schedule
            (ecase (node-type node)
+             (:ScheduleDomain
+              (node (node-id node)
+                    (with-output-to-string (out)
+                      (format out "{ScheduleDomain|~a}" (cdr (node-reads node))))
+                    (helper/color :parameter)
+                    "filled, solid"))
              (:PartialSchedule
               (node (node-id node)
                     (with-output-to-string (out)
