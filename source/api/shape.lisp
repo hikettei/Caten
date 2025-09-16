@@ -128,8 +128,13 @@
                      (loop for type in order
                            append
                            (loop for i upfrom 0 below (isl:basic-map-dim bmap type)
-                                 collect (or (isl:basic-map-get-dim-name bmap type i)
-                                             (progn (assert (eql type :dim-cst)) :dim-cst)))))
+                                 for name = (isl:basic-map-get-dim-name bmap type i)
+                                 collect
+                                 (case type
+                                   (:dim-in (cons "X" name))
+                                   (:dim-out (cons "Y" name))
+                                   (:dim-cst (assert (null name) () ":dim_cst should not introduce a tuple_name") :dim-cst)
+                                   (otherwise name)))))
                map)))
         (values Equalities EqualitiesCols)))))
 
