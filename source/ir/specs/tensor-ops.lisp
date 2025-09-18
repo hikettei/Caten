@@ -389,43 +389,6 @@ View is the only node which can change the layout of tensors.
                              (assert (= (length (node-reads node)) (+ 1 (* 4 nrank))) () "Failed to verify :VIEW~%Invaild number of node-reads (~a)" node)
                              (list
                               (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i by)))))))))
-;; Removed from TensorGraph before codegen
-(defnode (:Schedule :PartialSchedule) ()
-         "
-Attributes dimentions-wise view on the given tensor:
-```
-out = PartialView(x, size, stride, dilation, offset, dim=fixnum)
-```
-"
-         :slots ((dim :type fixnum))
-         :type-relay #'(lambda (id->type node)
-                         (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
-                         (multiple-value-bind (x size stride alpha beta) (apply #'values (node-reads node))
-                           (let* ((base (gethash x id->type)))
-                             (assert base ())
-                             (assert (= 5 (length (node-reads node))) () "PartialView is defined as PartialView(x, size, stride, dilation, offset), getting ~a args." (length (node-reads node)))
-                             ;(assert (every #'(lambda (d) (and (>= d 0) (nth d (tensor-relay-shape base)))) dims)
-                             ;        ()
-                             ;        "PartialView: every dims(=~a) should exist in the base tensor-relay(shape=~a) and must be >= 0." dims (tensor-relay-shape base))
-                             (let ((new-shape (copy-list (tensor-relay-shape base)))
-                                   (new-stride (copy-list (tensor-relay-stride base)))
-                                   (new-views (copy-list (tensor-relay-views base))))
-                               ;; [TODO] Update views?
-                               (list
-                                (make-tensor-relay new-shape new-stride (tensor-relay-dtype base) new-views)))))))
-
-(defnode (:Schedule :ScheduleDomain) ()
-    "
-A root for PartialSchedule chain.
-```
-out = ScheduleDomain(tensor, sz1, sz2, ...)
-```
-"
-    :slots ((nrank :type fixnum))
-    :type-relay #'(lambda (id->type node)
-                    (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
-
-                    ))
 ;; Later rewrittern as primitive ops before rendering
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)

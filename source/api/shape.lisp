@@ -185,96 +185,49 @@
     (_
      (error "FAILED DUE TO: ~a" aff) ;; [todo] remove
      :failed)))
-;; Domain
-;; PartialSchedule
+
 (defsimplifier
-    (%graph-force-view :speed 0)
-    ;; Force view on toplevel
-    ((:ALLOCATE (list* _) :nrank (guard nrank (> nrank 0)))
+    (%graph-simplify-views :speed 0)
+    ;; Extra !contiguous
+    ((:MOVE ((:ALLOCATE (~ _)) (:ALLOCATE (~ _))) :reduction (guard r (null r)))
      ->
      ((node graph)
-      (let ((users (id->users graph (car (node-writes node)))))
-        (when (not (and (= 1 (length users)) (eql :VIEW (node-type (car users)))))
-          (let* ((alc (copy-node node))
-                 (dst (car (node-writes node)))
-                 (via (caten/utilities/gensym:lgensym "ALC_"))
-                 (rel (car (relay-writes (read-type-relay node)))))
-            (setf (node-id alc) (gensym "NID") (node-writes alc) (list via))
-            (list
-             alc
-             (%view via (tensor-relay-shape rel) (map 'list #'car (tensor-relay-views rel))
-                    (map 'list #'second (tensor-relay-views rel)) (tensor-relay-stride rel) :id dst))))))))
+      ;; actually X == Y is asserted by running graph-infer-type-relay
+      (multiple-value-bind (x y) (values (id->value graph (car (node-reads node))) (id->value graph (second (node-reads node))))
+        (when (and x y (equal (cdr (node-reads x)) (cdr (node-reads y))) (null (getattr x :from)) (null (getattr y :from)))
+          y))))
+    ;; A case for view is creating identity view from contiguous.
+    ((:VIEW (~ args))
+     ->
+     ((node graph)
+      (let ((alloc (id->value graph (car args))))
+        (when (eql (node-type alloc) :ALLOCATE)
+          (let ((alloc-rel (car (relay-writes (read-type-relay alloc))))
+                (view-rel  (car (relay-writes (read-type-relay node)))))
+            (when (tensor-relay-equal alloc-rel view-rel)
+              alloc))))))
+    ;; VIEW(VIEW(x)) is the first VIEW.
+    ((:VIEW (list* (:VIEW (~ _)) _))
+     ->
+     ((node graph)
+      (let ((val (id->value graph (car (node-reads node)))))
+        (assert val)
+        (let ((node (copy-node node)))
+          (setf (node-id node) (gensym "NID")
+                (car (node-reads node)) (car (node-reads val)))
+          node)))))
 
-(defsimplifier
-    (%graph-rewrite-view-as-partial-schedule :speed 0)
-    ((:VIEW (list* base _) :nrank nrank)
-     -> ((node graph)
-         ;; Loop Fusion should be done in shape.lisp, not Affine/NonAffine?
-         ;; - Can this approach find FlashAtten, good tile for conv+pool?
-         (let* ((relay (car (relay-writes (read-type-relay node))))
-                (root (%schedule-domain base (tensor-relay-shape relay)))
-                (top (car (node-writes root)))
-                (items
-                  (loop for rank upfrom 0 below nrank
-                        for size = (nth rank (tensor-relay-shape relay))
-                        for stride = (nth rank (tensor-relay-stride relay))
-                        for dilation = (second (nth rank (tensor-relay-views relay)))
-                        for offset = (car (nth rank (tensor-relay-views relay)))
-                        collect
-                        (let ((sched (%partial-schedule top size stride dilation offset :dim rank)))
-                          (setf top (car (node-writes sched)))
-                          sched))))
-           ;; [TODO] ScalarView?
-           (setf (car (node-writes (car (last items)))) (car (node-writes node)))
-           (append
-            (list root)
-            items)))))
-
-;; [TODO] これはFusionの時のAccessMap Analysusで使うべき
-;; VIEW -> MOVE -> VIEW
-;;  ^---------------| this
 (defsimplifier
     ;; top_down?
     (%graph-fuse-partial-schedule :speed 0)
-    (T
-     ->
-     ((node graph)
-      (when (eql (node-class node) :BinaryOps)
-        ;; DOMAIN is equal
-        )))
     ((:VIEW (list* base _))
      ->
      ((node graph)
-      ;; [TODO]
-      ;; - [ ] Extract Access Relations in one dimensional polyhedral space
-      ;; - [ ] View => Decompose Into PartialView
-      ;;   - [ ] If it is difficult, keep view (use it like a realize)
-      ;;   - [ ] Solve on equlities matrix. (more pattern, more likely to purge views, it is simple)
-      ;; - [ ] Fix TypeInference
-      ;; - [ ] Fix infer-tensor-info in simplifiers.lisp (reinitialize-tensor)
-      ;;   - [ ] It should use node-type-relay right?
-      ;; - [ ] LoopRangeとは違う？
-      ;; - [ ] Introducing > 1 constants => ?
-      ;; X = View(Y, ...)
-      ;; (graph-infer-type-relay node) ;; <= compute only diffs?
-      ;; Ops.GRID or Ops.DOMAIN(SIZE)
-      ;; PartialView(A, DOMAIN[], dilation, offset)
-      ;; - ParentのOps.GRIDを使うようにAccessMapを解析していく。
-      ;; - 同一のOps.GRIDを使うグループ=Fusion
-      ;; - [ ] BinaryOps/TernaryOps can provide equalities of doms
       (let ((X (car (relay-writes (read-type-relay node))))
             (Y (car (relay-reads (read-type-relay node))))
             (views) (failed nil))
-        
         (multiple-value-bind (E cols D gid2shape/stride) (compute-equalities-matrix-on-relay X Y)
           (when E
-            (print "PartialView")
-            ;; PartialViewは必要？Viewじゃダメ？
-            (print node)
-            (print (tensor-relay-nrank (car (relay-reads (read-type-relay node)))))
-            (print (tensor-relay-nrank (car (relay-writes (read-type-relay node)))))
-            (print E)
-            (print D)
             (dolist (col cols)
               (when (and (listp col) (string= "X" (car col)))
                 (let ((pwv (aff->partial-schedule (cdr col) (solve-equalities-on-cols E cols col) gid2shape/stride)))
@@ -289,29 +242,23 @@
                 (setf (node-writes (car (last views))) (copy-list (node-writes node)))
                 (print node)
                 (print views)
+                nil
                 ))))))))
-;; Loop Fusion is:
-;; Only command is required.
-;; Only view and view matters
-;; Use One dimensional affine expression, symbolic is replaced w/ some prime numbers
-;; Problem1: (9) -> (3, 3) Reshape is not doable.
-;; Problem2: Symbolic
-;; TODO: Unravel
+
 (defun graph-simplify-views (graph)
   (declare (type TensorGraph graph))
   (graph-infer-type-relay graph)
-  ;; (%graph-simplify-views graph)
-  ;; (%graph-rewrite-view-as-partial-schedule graph)
   graph)
 
 (defun tensor-realize (tensor) ;; rename: tensor-simplify-view
   ;; Likewise RANGIFY, this can be pullback into TensorGraph w/ VIEW
   ;; for fast autodiff
-  (%graph-force-view (tensor-graph tensor))
+  ;(%graph-force-view (tensor-graph tensor))
   (tensor-simplify tensor)
   (graph-infer-type-relay (tensor-graph tensor))
-  (%graph-rewrite-view-as-partial-schedule (tensor-graph tensor))
-  ;(%graph-simplify-views (tensor-graph tensor))
+  (%graph-simplify-views (tensor-graph tensor))
+  (%graph-fuse-partial-schedule (tensor-graph tensor))
+  (verify-graph (tensor-graph tensor))
   (tensor-graph tensor)
   ;; lower-hlops
   )

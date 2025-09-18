@@ -107,13 +107,14 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
              (:ScheduleDomain
               (node (node-id node)
                     (with-output-to-string (out)
-                      (format out "{ScheduleDomain|~a}" (cdr (node-reads node))))
+                      (format out "{ScheduleDomain(~a)|~a|~a}" (getattr node :id) (subseq (node-reads node) 0 (getattr node :nrank)) (subseq (node-reads node) (getattr node :nrank))))
                     (helper/color :parameter)
                     "filled, solid"))
              (:PartialSchedule
               (node (node-id node)
                     (with-output-to-string (out)
-                      (format out "{PartialSchedule|stride: ~a|aff: f(x)=~a~a}"
+                      (format out "{PartialSchedule(dim=~a)|stride: ~a|aff: f(x)=~a~a}"
+                              (getattr node :dim)
                               (nth 2 (node-reads node))
                               (case (nth 3 (node-reads node))
                                 (0 "")
