@@ -374,10 +374,11 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;; 3. Broadcasting Error
 ;; BinaryOps
 ;; ShapeTracker?
-(defun tensor-realize (tensor)
-  (tensor-graph tensor)
-  ;; lower-hlops
-  )
+
+(defun caten (tensor)
+  (let ((schedule-graph
+          (caten/codegen/lowerer:make-schedule-graph (tensor-graph tensor))))
+    schedule-graph))
 ;; - [ ] 残っている懸念事項
 ;; - [x] ShapeInference
 ;;  - [ ] RuntimeCheck => handler-caseで対応？てかもういらないか

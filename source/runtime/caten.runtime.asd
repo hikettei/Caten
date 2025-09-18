@@ -6,6 +6,6 @@
   :serial t
   :components ((:file "buffer")
                (:file "runtime")
-               (:file "kernel")
                (:file "renderer")
+               (:file "kernel")
                (:file "bring-your-own-backend")))

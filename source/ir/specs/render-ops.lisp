@@ -91,6 +91,20 @@ The node `:PROGN` will execute nodes from S1 to Sn in sequence. S1 ~ Sn is a nod
          :slots nil
          :type-relay (ast-type-map :PROGN))
 
+(defnode (:Render :FUNCTION) (RenderOps)
+         "
+Function node. Root of ASTGraph.
+
+```
+ID <- FUNCTION(BODY, name=symbol)
+```
+
+Accepts exactly one argument which is an AST node (RenderOps).
+The slot `name` holds the function name (which is a symbol).
+"
+         :slots ((name :type symbol))
+         :type-relay (ast-type-map :FUNCTION '(:PROGN :FOR :IF :EXPR :BARRIER)))
+
 (defnode (:Render :BARRIER) (RenderOps)
          "
 ```

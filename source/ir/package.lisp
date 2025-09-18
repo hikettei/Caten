@@ -87,7 +87,7 @@
   ;; AST
   (:export #:ASTGraph #:with-blueprint #:simplify-ast)
   ;; ASTOps
-  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%polyaref #:%function #:%expr #:%setf #:%defsmem #:%function #:%lid)
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%polyaref #:%function #:%expr #:%setf #:%defsmem #:%lid)
   ;; RuntimeOps
   (:export #:RuntimeGraph #:$sink #:$kernel #:$sync)
   ;; ScheduleOps

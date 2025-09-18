@@ -213,9 +213,10 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
   `(defun ,name (graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil))
      (funcall (Simplifier (:speed ,speed) ,@rules) graph :no-verify no-verify :return-changed-p return-changed-p :debug-opt debug-opt)))
 
-(defmacro node-ematch (node &rest rules)
+(defmacro node-ematch ((node &key (extra-graph nil)) &rest rules)
   (with-gensyms (graph block)
     `(let ((,graph (make-graph ,node)))
+       (when ,extra-graph (insert-nodes ,graph (graph-nodes ,extra-graph)))
        (setf (graph-outputs ,graph) (copy-list (node-writes ,node))
              ,graph (->fast-graph ,graph))
        (block ,block

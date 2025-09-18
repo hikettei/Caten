@@ -65,7 +65,7 @@ indices.
   (declare (type Global-Lex-Order global-lex-order) (type node polyaref))
   (assert (eql (node-type polyaref) :PolyAref))
   (let ((rank (getattr polyaref :nrank))
-        (renderer (make-instance 'Default-Renderer :graph graph))
+        (renderer (make-instance 'caten/runtime/byoc:Default-Renderer :graph graph))
         (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0))))
     (loop for i upfrom 0 below rank
           for dim = (nth (1+ i) (node-reads polyaref))
@@ -79,11 +79,10 @@ indices.
 
 (defun relay-on-global-lex-order (global-lex-order relay &key (domid "domid") (varid "varid"))
   (declare (type Global-Lex-Order global-lex-order) (type string domid varid))
-  (let (;(renderer (make-instance 'Default-Renderer :graph graph))
-        (schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0)))
+  (let ((schedule-dims (make-list (global-lex-order-dim global-lex-order) :initial-element (list 0)))
         (domain)
         (quasiaffine))
-      ;; stride*(gid_n*by+upfrom)
+    ;; stride*(gid_n*by+upfrom)
     (loop for size in (caten/ir:tensor-relay-shape relay)
           for view in (caten/ir:tensor-relay-views relay)
           for stride in (caten/ir:tensor-relay-stride relay)
@@ -91,19 +90,18 @@ indices.
           for by = (nth 1 view)
           for nth upfrom 0
           for gid = (format nil "_gid~a" nth)
-          for plc = (gethash stride (global-lex-order-dict global-lex-order))
-          if (not (eql stride 0)) do ;; unless broadcasted
+          for plc = (gethash stride (global-lex-order-dict global-lex-order)) do
             (assert plc () "view-on-lex-order: The dimension ~a is not exist in scheduling space: ~a" stride (alexandria:hash-table-keys (global-lex-order-dict global-lex-order)))
-            (when (symbolp by) ;; failed
+            (when (symbolp by) ;; failed: detected symbolic dilation
               (return-from relay-on-global-lex-order))
             (when (symbolp size) (push size quasiaffine))
             (when (symbolp upfrom) (push upfrom quasiaffine))
             (push (cons gid size) domain)
-            (push (format nil "~(~a~)*~a+~(~a~)" gid by upfrom) (nth plc schedule-dims)))
+            (push (format nil "~(~a~)*(~(~a~)*~a+~(~a~))" stride gid by upfrom) (nth plc schedule-dims)))
     (flet ((r (items) (format nil "~{~a~^+~}" items))
            (s (item) (format nil "0 <= ~a < ~(~a~)" (car item) (cdr item))))
       (isl:union-map-from-str
-       (format nil "[~{~(~a~)~^, ~}] -> { ~a[~{~a~^, ~}] -> ~(~a~)[~{~a~^, ~}] : ~{~a~^ and ~} }"
+       (format nil "[~{~(~a~)~^, ~}] -> { ~a[~{~a~^, ~}] -> ~(~a~)[~{~a~^+ ~}] : ~{~a~^ and ~} }"
                (remove-duplicates quasiaffine)
                domid
                (reverse (map 'list #'car domain))

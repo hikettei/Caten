@@ -1,5 +1,7 @@
 (defpackage :caten/test-suite/runtime/test-runtime-common
-  (:use :rove :cl :caten/runtime/buffer :caten/runtime/runtime :caten/runtime/bring-your-own-backend)
+  (:use :rove :cl :caten/runtime/buffer :caten/runtime/runtime :caten/runtime/bring-your-own-backend
+        :caten/runtime/kernel
+        :caten/ir :caten/graph)
   (:export #:runtime/buffer/test #:runtime/kernel/test #:runtime-test-all))
 (in-package :caten/test-suite/runtime/test-runtime-common)
 
@@ -22,6 +24,20 @@
             (open-buffer runtime buf)
             (ok (= 0 (transfer-into-array buf)))
             (close-buffer runtime buf)))))))
+
+(defun get-example-kernel ()
+  (with-blueprint ()
+    (%function
+     (list
+      (%global 'x 'x :float32 t :mode :io)
+      (%global 'y 'y :float32 t :mode :io))
+     (%range
+      'i 10
+      (%expr (%setf (%aref 'x 'i) (%add (%aref 'x 'i) (%aref 'y 'i)))))
+     :name 'example-kernel)))
+
+(defun render-example-kernel ()
+  (make-kernel (get-example-kernel) :cls 'Default-Kernel))
 
 (defun runtime/kernel/test (&key
                               (backend "CLANG")

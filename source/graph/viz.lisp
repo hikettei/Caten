@@ -102,6 +102,29 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                     (helper/color :node) "filled, solid"))
              (otherwise
               (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :input) "filled, solid"))))
+          (:Schedule
+           (ecase (node-type node)
+             (:ScheduleDomain
+              (node (node-id node)
+                    (with-output-to-string (out)
+                      (format out "{ScheduleDomain(~a)|~a|~a}" (getattr node :id) (subseq (node-reads node) 0 (getattr node :nrank)) (subseq (node-reads node) (getattr node :nrank))))
+                    (helper/color :parameter)
+                    "filled, solid"))
+             (:PartialSchedule
+              (node (node-id node)
+                    (with-output-to-string (out)
+                      (format out "{PartialSchedule(dim=~a)|stride: ~a|aff: f(x)=~a~a}"
+                              (getattr node :dim)
+                              (nth 2 (node-reads node))
+                              (case (nth 3 (node-reads node))
+                                (0 "")
+                                (1 "x")
+                                (otherwise (format nil "~a*x" (nth 3 (node-reads node)))))
+                              (case (nth 4 (node-reads node))
+                                (0 "")
+                                (otherwise (format nil "+~a" (nth 4 (node-reads node)))))))
+                    (helper/color :module)
+                    "filled, solid"))))
           (:INDEX-COMPONENTS
            (node (node-id node) (node-name node) (helper/color :node) "filled, solid"))
           (:Module

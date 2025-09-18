@@ -30,14 +30,10 @@
     :transfer-into-array ((buffer) (buffer-value buffer))
     :bref ((buffer idx) (aref (buffer-value buffer) idx)))
 
-(define-renderer CStyle-Renderer () nil
-  (:ADD ((:ADD (x y)) -> (format nil "~a+~a" (render x) (render y))))
-  )
-;  ((:PROGN (~ x)) nil))
+;; Inherit default expression rendering so all ops like :ADD/:MUL/:SIN work out of the box.
+(define-renderer CStyle-Renderer (Default-Renderer) nil)
 
-(define-kernel (ClangKernel CStyle-Renderer) () nil
-               :launch nil
-               :compile nil)
+(define-kernel (ClangKernel CStyle-Renderer) () nil)
 
 ;; (define-optimizer (ClangOptimizer) :allow-profile t)
 (define-backend :CLANG :runtime ClangRuntime :buffer ClangBuffer :kernel ClangKernel :renderer CStyle-Renderer)

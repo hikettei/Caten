@@ -389,7 +389,7 @@ View is the only node which can change the layout of tensors.
                              (assert (= (length (node-reads node)) (+ 1 (* 4 nrank))) () "Failed to verify :VIEW~%Invaild number of node-reads (~a)" node)
                              (list
                               (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i by)))))))))
-
+;; Later rewrittern as primitive ops before rendering
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)
 	 "The node :INDEX-COMPONENTS Indicates which element-wise computation of the Tensor is being performed. Typically, it should return the argument used when performing Aref on the Tensor with the corresponding `strides`.
